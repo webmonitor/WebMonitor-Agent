@@ -165,7 +165,7 @@ docker compose --profile dev run --rm dev uv export --locked --no-dev --no-emit-
 docker compose --profile dev run --rm dev uv build --wheel
 ```
 
-前端使用 Node 22 与唯一 `web/package-lock.json`；在开发容器的 `web/` 目录运行 `npm run generate:api`，从运行中的 `/api/v1/openapi.json` 生成 `web/src/lib/api/schema.d.ts`。构建/typecheck 不能替代真实业务验收。
+前端使用 Node 22 与唯一 `web/pnpm-lock.yaml`（`packageManager` 固定 pnpm 10，镜像内 `pnpm install --frozen-lockfile`）；在开发容器的 `web/` 目录运行 `pnpm run generate:api`，从运行中的 `/api/v1/openapi.json` 生成 `web/src/lib/api/schema.d.ts`。构建/typecheck 不能替代真实业务验收。
 
 ## 可重复真实验收
 

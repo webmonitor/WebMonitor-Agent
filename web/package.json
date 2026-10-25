@@ -2,6 +2,7 @@
   "name": "webmonitor-web",
   "version": "0.1.0",
   "private": true,
+  "packageManager": "pnpm@10.34.8",
   "engines": {"node": ">=22 <23"},
   "scripts": {"dev": "next dev", "build": "next build", "start": "next start", "typecheck": "tsc --noEmit", "generate:api": "openapi-typescript http://api:8000/api/v1/openapi.json -o src/lib/api/schema.d.ts"},
   "dependencies": {
