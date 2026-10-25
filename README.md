@@ -154,14 +154,12 @@ docker compose --profile dev run --rm dev pytest
 
 项目测试仅发现 `tests/unit` 与 `tests/integration`，不执行 `reference/` 中第三方项目的测试。覆盖百分比零基线、连续新增、数字表示等价、邀请并发、审批改版、过期租约/暂停 fencing、失败保留基线、收件人撤权、SDK 合成 ID、截断工具响应、压缩预算与覆盖证明等边界。
 
-依赖通过 `requirements-dev.txt` / `requirements.txt` 保留哈希校验，项目安装与 `--require-hashes` 依赖事务分开。不要在宿主创建 `.venv` 或使用 `uv sync` / `uv run` 安装、运行本项目。
+依赖通过单一 `requirements.txt` 保留哈希校验（含运行时与开发依赖），项目安装与 `--require-hashes` 依赖事务分开。不要在宿主创建 `.venv` 或使用 `uv sync` / `uv run` 安装、运行本项目。
 
-锁文件维护与构建也通过开发容器运行：
+本项目不使用 `uv.lock`：版本由 `pyproject.toml` 的精确 pin 决定，只包含本项目实际用到的依赖；工作区 `../.github/requirements-workspace.txt` 是三个项目的并集，供宿主 conda 环境使用。依赖文件与构建在开发容器内生成：
 
 ```sh
-docker compose --profile dev run --rm dev uv lock --python 3.12
-docker compose --profile dev run --rm dev uv export --locked --all-groups --no-emit-project --format requirements-txt --output-file requirements-dev.txt
-docker compose --profile dev run --rm dev uv export --locked --no-dev --no-emit-project --format requirements-txt --output-file requirements.txt
+docker compose --profile dev run --rm dev uv pip compile pyproject.toml --group dev --generate-hashes --python-version 3.12 --universal -o requirements.txt
 docker compose --profile dev run --rm dev uv build --wheel
 ```
 

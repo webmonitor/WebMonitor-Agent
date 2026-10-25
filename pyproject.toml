@@ -7,34 +7,45 @@ name = "webmonitor-agent"
 version = "0.1.0"
 description = "AI-driven web monitoring application"
 requires-python = ">=3.12,<3.13"
+# Exact pins for what this project actually imports. The workspace conda
+# environment (../.github/requirements-workspace.txt) is the union of all three
+# projects; each project pins only its own needs. No lock file:
+# requirements.txt is generated from this list by `uv pip compile
+# --generate-hashes` (see README).
 dependencies = [
-  "fastapi>=0.110,<1",
-  "uvicorn[standard]>=0.30,<1",
-  "pydantic>=2,<3",
-  "pydantic-settings>=2,<3",
-  "httpx>=0.27,<1",
-  "sqlalchemy[asyncio]>=2,<3",
-  "alembic>=1,<2",
-  "asyncpg>=0.29,<1",
-  "playwright>=1.49,<2",
-  "boto3>=1,<2",
-  "openai>=3,<4",
+  "fastapi==0.142.2",
+  "uvicorn[standard]==0.54.0",
+  "pydantic==2.13.5",
+  "pydantic-settings==2.15.0",
+  "httpx==0.28.1",
+  "sqlalchemy[asyncio]==2.1.1",
+  "asyncpg==0.31.0",
+  "playwright==1.63.0",
+  "boto3==1.43.107",
+  "openai==3.23.0",
   "openai-agents==0.22.3",
   "mcp==2.2.0",
-  "argon2-cffi>=23.1,<26",
-  "beautifulsoup4>=4.12,<5",
-  "lxml>=5,<7",
-  "email-validator>=2.2,<3",
-  "jinja2>=3.1,<4",
-  "aiosmtplib>=3,<6",
-  "nh3>=0.2,<1",
+  "argon2-cffi==25.1.0",
+  "beautifulsoup4==4.15.0",
+  "lxml==6.1.3",
+  "email-validator==2.3.0",
+  "jinja2==3.1.6",
+  "aiosmtplib==5.1.3",
+  "nh3==0.3.7",
 ]
 
 [project.scripts]
 webmonitor = "webmonitor.cli:main"
 
 [dependency-groups]
-dev = ["pytest>=8,<10", "pytest-asyncio>=0.24,<2", "pytest-cov>=6,<8", "ruff>=0.9,<1", "mypy>=1,<2", "uv==0.12.13"]
+dev = [
+  "pytest==9.1.1",
+  "pytest-asyncio==1.4.0",
+  "pytest-cov==7.1.0",
+  "ruff==0.16.10",
+  "mypy==1.20.2",
+  "uv==0.12.13",
+]
 
 [tool.hatch.build.targets.wheel]
 packages = ["src/webmonitor"]

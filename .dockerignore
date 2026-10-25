@@ -1,8 +1,6 @@
 **
-!requirements-dev.txt
 !requirements.txt
 !pyproject.toml
-!uv.lock
 !src/
 !src/**
 !deploy/

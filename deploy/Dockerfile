@@ -8,8 +8,8 @@ ENV PYTHONDONTWRITEBYTECODE=1 \
     PLAYWRIGHT_BROWSERS_PATH=/opt/playwright
 
 WORKDIR /app
-COPY requirements-dev.txt ./
-RUN pip install --no-cache-dir --require-hashes -r requirements-dev.txt \
+COPY requirements.txt ./
+RUN pip install --no-cache-dir --require-hashes -r requirements.txt \
     && python -m playwright install --with-deps chromium \
     && rm -rf /var/lib/apt/lists/* \
     && groupadd --gid 10001 webmonitor \
