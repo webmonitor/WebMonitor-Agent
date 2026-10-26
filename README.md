@@ -156,7 +156,7 @@ docker compose --profile dev run --rm dev pytest
 
 依赖通过单一 `requirements.txt` 保留哈希校验（含运行时与开发依赖），项目安装与 `--require-hashes` 依赖事务分开。不要在宿主创建 `.venv` 或使用 `uv sync` / `uv run` 安装、运行本项目。
 
-本项目不使用 `uv.lock`：版本由 `pyproject.toml` 的精确 pin 决定，只包含本项目实际用到的依赖；工作区 `../.github/requirements-workspace.txt` 是三个项目的并集，供宿主 conda 环境使用。依赖文件与构建在开发容器内生成：
+本项目不使用 `uv.lock`：版本由 `pyproject.toml` 的精确 pin 决定，只包含本项目实际用到的依赖；工作区 `../.github/env/requirements-workspace.txt` 是三个项目的并集，供宿主 conda 环境使用。依赖文件与构建在开发容器内生成：
 
 ```sh
 docker compose --profile dev run --rm dev uv pip compile pyproject.toml --group dev --generate-hashes --python-version 3.12 --universal -o requirements.txt
