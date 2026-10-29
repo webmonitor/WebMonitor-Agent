@@ -25,15 +25,12 @@ import {
   type JobView,
 } from "@/lib/api/hooks";
 import { CreateMonitorCard } from "@/features/chat/create-monitor-card";
-import { errorText, stepLabel } from "@/lib/format";
+import { useFormat } from "@/lib/format";
+import { useI18n } from "@/lib/i18n";
 
 const ACTIVE = ["queued", "running"];
 
-const EXAMPLES = [
-  "监控这个页面的价格，降价 10% 时邮件提醒我",
-  "关注公告栏有没有出现新的通知",
-  "每天检查一次库存数量，有变化就告诉我",
-];
+const EXAMPLE_KEYS = ["chat.examples.price", "chat.examples.notice", "chat.examples.stock"] as const;
 
 /**
  * The job appends a `started` entry and later a terminal entry per tool call, and
@@ -59,6 +56,8 @@ function mergeSteps(steps: JobView["steps"]) {
 
 /** The collapsed "what the assistant did" trail: one line, expandable, no box. */
 function WorkLog({ job, open = false }: { job: JobView; open?: boolean }) {
+  const { t } = useI18n();
+  const { errorText, stepLabel } = useFormat();
   const steps = mergeSteps(job.steps);
   if (steps.length === 0) return null;
   const failed = steps.filter((step) => step.status === "failed").length;
@@ -66,7 +65,9 @@ function WorkLog({ job, open = false }: { job: JobView; open?: boolean }) {
     <details open={open} className="group mt-2.5 text-[13px]">
       <summary className="inline-flex cursor-pointer list-none items-center gap-1.5 rounded-full border bg-card px-2.5 py-1 text-muted-foreground transition-colors select-none hover:text-foreground [&::-webkit-details-marker]:hidden">
         <ChevronRight className="size-3.5 transition-transform group-open:rotate-90" />
-        {failed > 0 ? `${steps.length} 步，${failed} 步未完成` : `查看 ${steps.length} 步操作`}
+        {failed > 0
+          ? t("chat.worklog.incomplete", { total: steps.length, failed })
+          : t("chat.worklog.view", { total: steps.length })}
       </summary>
       <ol className="mt-2.5 space-y-2 border-l pl-3.5">
         {steps.map((step, index) => (
@@ -125,12 +126,15 @@ export function ChatPanel({
   pendingDraft?: DraftView;
 }) {
   const router = useRouter();
+  const { t } = useI18n();
+  const { errorText, stepLabel } = useFormat();
   const conversation = useConversation(conversationId);
   const send = useSendMessage(conversationId ?? "");
   const start = useStartConversation();
   const cancel = useCancelRun(conversationId ?? "");
   const [draft, setDraft] = useState("");
-  const [error, setError] = useState("");
+  // Keep the failure as a code so the visible text follows the active locale.
+  const [error, setError] = useState<{ code: string | null } | null>(null);
   const [pinned, setPinned] = useState(true);
   const [composerFocused, setComposerFocused] = useState(false);
   const scroller = useRef<HTMLDivElement>(null);
@@ -166,7 +170,7 @@ export function ChatPanel({
     const content = draft.trim();
     if (!content || send.isPending || start.isPending || running) return;
     if (!conversationId && !drafting) return;
-    setError("");
+    setError(null);
     try {
       if (!conversationId) {
         // The conversation is created together with its first message, so an
@@ -181,7 +185,7 @@ export function ChatPanel({
       // Your own message always brings the conversation back to the latest turn.
       setPinned(true);
     } catch (failure) {
-      setError(failure instanceof ApiError ? errorText(failure.code) : "消息没有发出去，请重试。");
+      setError({ code: failure instanceof ApiError ? failure.code : null });
     }
   }
 
@@ -189,8 +193,8 @@ export function ChatPanel({
     return (
       <section className="grid h-full place-items-center px-6">
         <div className="max-w-sm space-y-2 text-center">
-          <h2 className="text-lg font-semibold">先选一个对话</h2>
-          <p className="meta">在左侧选择一个已有对话，或点顶部的「新对话」开始新的一个。</p>
+          <h2 className="text-lg font-semibold">{t("chat.select.title")}</h2>
+          <p className="meta">{t("chat.select.body")}</p>
         </div>
       </section>
     );
@@ -206,12 +210,14 @@ export function ChatPanel({
       <header className="flex h-12 shrink-0 items-center justify-between gap-3 px-4 pt-1 sm:px-6">
         <div className="mx-auto flex w-full max-w-3xl items-center gap-2">
           <h2 className="truncate text-[13px] text-muted-foreground">
-            {snapshot?.conversation.title?.trim() || "新对话"}
+            {snapshot?.conversation.title?.trim() || t("chat.newConversation")}
           </h2>
           {monitorId && (
             <Link href={`/app/monitors/${monitorId}`} className="shrink-0">
               <Badge tone={lastDraft?.status === "published" ? "success" : "warning"}>
-                {lastDraft?.status === "published" ? "监控已创建" : "正在修改"}
+                {lastDraft?.status === "published"
+                  ? t("chat.badge.published")
+                  : t("chat.badge.editing")}
               </Badge>
             </Link>
           )}
@@ -232,10 +238,10 @@ export function ChatPanel({
               empty ? "flex min-h-full flex-col justify-center" : ""
             }`}
           >
-            {conversationId && conversation.isPending && <p className="meta">正在加载对话…</p>}
+            {conversationId && conversation.isPending && <p className="meta">{t("chat.loading")}</p>}
             {conversation.error && (
               <p className="text-sm text-error" role="alert">
-                对话加载失败，请刷新页面。
+                {t("chat.loadError")}
               </p>
             )}
 
@@ -249,26 +255,29 @@ export function ChatPanel({
                     <Radar className="size-5 text-primary" />
                   </span>
                   <h2 className="text-[1.375rem] font-semibold tracking-tight">
-                    你想盯着哪个网页？
+                    {t("chat.hero.title")}
                   </h2>
                   <p className="mx-auto max-w-md text-[13px] leading-6 text-muted-foreground">
-                    说清楚要看什么、什么情况下提醒你。助手会先打开页面试采集一次，再由你决定是否开始监控。
+                    {t("chat.hero.body")}
                   </p>
                 </div>
                 <ul className="flex flex-wrap justify-center gap-2">
-                  {EXAMPLES.map((example) => (
-                    <li key={example}>
-                      <button
-                        className="cursor-pointer rounded-full border bg-card px-3.5 py-2 text-[13px] text-muted-foreground transition-colors hover:border-primary/30 hover:text-foreground"
-                        onClick={() => {
-                          setDraft(example);
-                          composer.current?.focus();
-                        }}
-                      >
-                        {example}
-                      </button>
-                    </li>
-                  ))}
+                  {EXAMPLE_KEYS.map((exampleKey) => {
+                    const example = t(exampleKey);
+                    return (
+                      <li key={exampleKey} className="max-w-full">
+                        <button
+                          className="cursor-pointer rounded-full border bg-card px-3.5 py-2 text-[13px] text-muted-foreground transition-colors hover:border-primary/30 hover:text-foreground"
+                          onClick={() => {
+                            setDraft(example);
+                            composer.current?.focus();
+                          }}
+                        >
+                          {example}
+                        </button>
+                      </li>
+                    );
+                  })}
                 </ul>
               </div>
             )}
@@ -294,9 +303,7 @@ export function ChatPanel({
                     <AssistantText content={running.partial_text} />
                   ) : (
                     <Thinking
-                      label={
-                        activeStep ? `${stepLabel(activeStep.name)}…` : "正在理解你的要求…"
-                      }
+                      label={activeStep ? `${stepLabel(activeStep.name)}…` : t("chat.thinking")}
                     />
                   )}
                   {running.partial_text && activeStep && (
@@ -321,16 +328,16 @@ export function ChatPanel({
               {!running && stopped && (
                 <li className="flex items-center gap-2.5 text-[15px] text-muted-foreground">
                   <Square className="size-3.5" />
-                  这次检查已停止。
+                  {t("chat.stopped")}
                 </li>
               )}
               {!running && failed && (
                 <li className="flex gap-3 rounded-2xl border border-error/20 bg-error/5 px-4 py-3">
                   <TriangleAlert className="mt-0.5 size-4 shrink-0 text-error" />
                   <div className="min-w-0 flex-1">
-                    <p className="text-[13px] font-medium text-error">这次没有完成</p>
+                    <p className="text-[13px] font-medium text-error">{t("chat.failed.title")}</p>
                     <p className="mt-0.5 text-[13px] leading-6 text-muted-foreground">
-                      {errorText(failed.error_code)}。你可以再发一次，或者换一种说法描述需求。
+                      {t("chat.failed.body", { reason: errorText(failed.error_code) })}
                     </p>
                     <WorkLog job={failed} />
                   </div>
@@ -350,7 +357,7 @@ export function ChatPanel({
             <Button
               variant="outline"
               size="icon"
-              aria-label="回到最新消息"
+              aria-label={t("chat.scrollToLatest")}
               className="pointer-events-auto size-8 rounded-full bg-card shadow-sm"
               onClick={() => setPinned(true)}
             >
@@ -379,14 +386,16 @@ export function ChatPanel({
               }}
               rows={1}
               maxLength={limit}
-              aria-label="描述你想监控的内容"
+              aria-label={t("chat.composer.label")}
               className="max-h-[12.5rem] min-h-9 flex-1 resize-none bg-transparent px-1 py-1.5 text-[15px] leading-6 outline-none placeholder:text-muted-foreground/70"
-              placeholder={busy ? "助手正在处理，可以先继续输入…" : "描述你想监控的内容，例如价格、库存、公告"}
+              placeholder={
+                busy ? t("chat.composer.placeholderBusy") : t("chat.composer.placeholder")
+              }
             />
             {busy ? (
               <Button
                 size="icon"
-                aria-label="停止这次检查"
+                aria-label={t("chat.composer.stop")}
                 className="size-9 shrink-0 rounded-full"
                 onClick={() => void cancel.mutateAsync()}
                 disabled={cancel.isPending}
@@ -396,7 +405,7 @@ export function ChatPanel({
             ) : (
               <Button
                 size="icon"
-                aria-label="发送"
+                aria-label={t("chat.composer.send")}
                 className="size-9 shrink-0 rounded-full"
                 onClick={() => void submit()}
                 disabled={!draft.trim() || send.isPending || start.isPending}
@@ -412,16 +421,16 @@ export function ChatPanel({
           <p className="mt-2 min-h-4 text-center text-[11px] text-muted-foreground">
             {error ? (
               <span className="text-error" role="alert">
-                {error}
+                {error.code ? errorText(error.code) : t("chat.sendError")}
               </span>
             ) : draft.length > limit * 0.9 ? (
-              `${draft.length}/${limit} 字`
+              t("chat.composer.counter", { count: draft.length, limit })
             ) : composerFocused ? (
-              "Enter 发送，Shift + Enter 换行"
+              t("chat.composer.hintSend")
             ) : busy ? (
-              "助手正在打开页面试采集，可以点右侧按钮停止"
+              t("chat.composer.hintBusy")
             ) : (
-              "助手会先采集一次，再由你确认是否开始定时监控"
+              t("chat.composer.hintIdle")
             )}
           </p>
         </div>

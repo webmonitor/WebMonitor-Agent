@@ -4,14 +4,19 @@ import { PageBody, PageHeader } from "@/components/page-header";
 import { EmptyState } from "@/components/empty-state";
 import { Button } from "@/components/ui/button";
 import { useAckEvent, useEvents } from "@/lib/api/hooks";
-import { dayLabel } from "@/lib/format";
+import { useFormat } from "@/lib/format";
+import { useI18n } from "@/lib/i18n";
 import { EventCard } from "@/features/events/event-card";
 
 type Filter = "all" | "unread";
 
+const FILTERS: Filter[] = ["all", "unread"];
+
 export function EventsPage() {
   const events = useEvents();
   const acknowledge = useAckEvent();
+  const { t } = useI18n();
+  const { dayLabel } = useFormat();
   const [filter, setFilter] = useState<Filter>("all");
 
   const items = events.data?.items ?? [];
@@ -27,20 +32,17 @@ export function EventsPage() {
       else buckets.push({ day, events: [event] });
     }
     return buckets;
-  }, [visible]);
+  }, [visible, dayLabel]);
 
   return (
     <div className="h-full overflow-y-auto">
       <PageBody>
         <PageHeader
-          title="事件"
-          description="监控发现变化、采集失败或恢复时都会记录在这里。新监控的第一次成功采集用来建立基线，从第二次采集开始比较变化。"
+          title={t("activity.events.title")}
+          description={t("activity.events.description")}
           actions={
             <div className="flex items-center gap-1 rounded-lg border bg-card p-0.5">
-              {([
-                ["all", "全部"],
-                ["unread", unreadCount ? `未读 ${unreadCount}` : "未读"],
-              ] as const).map(([value, label]) => (
+              {FILTERS.map((value) => (
                 <Button
                   key={value}
                   size="sm"
@@ -48,27 +50,35 @@ export function EventsPage() {
                   className="h-7 px-2.5 text-xs"
                   onClick={() => setFilter(value)}
                 >
-                  {label}
+                  {value === "unread"
+                    ? unreadCount
+                      ? t("activity.events.filter.unreadCount", { count: unreadCount })
+                      : t("activity.events.filter.unread")
+                    : t("activity.events.filter.all")}
                 </Button>
               ))}
             </div>
           }
         />
 
-        {events.isPending && <p className="meta">正在加载…</p>}
+        {events.isPending && <p className="meta">{t("activity.events.loading")}</p>}
         {events.error && (
           <p className="text-sm text-error" role="alert">
-            事件加载失败，请刷新页面重试。
+            {t("activity.events.error")}
           </p>
         )}
 
         {!events.isPending && visible.length === 0 && (
           <EmptyState
-            title={filter === "unread" ? "没有未读事件" : "还没有事件"}
+            title={
+              filter === "unread"
+                ? t("activity.events.empty.unreadTitle")
+                : t("activity.events.empty.title")
+            }
             description={
               filter === "unread"
-                ? "所有事件都已标记为已读。"
-                : "监控开始按计划采集后，发生变化时会在这里出现。"
+                ? t("activity.events.empty.unreadDescription")
+                : t("activity.events.empty.description")
             }
           />
         )}

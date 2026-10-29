@@ -4,7 +4,8 @@ import { Check, CheckCheck } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import type { EventView } from "@/lib/api/hooks";
-import { eventLabel, fieldLabel, formatTime, formatValue } from "@/lib/format";
+import { useFormat } from "@/lib/format";
+import { useI18n } from "@/lib/i18n";
 
 type Tone = "brand" | "success" | "warning" | "error" | "neutral";
 
@@ -42,16 +43,18 @@ export function ChangeRows({
   change: Record<string, unknown>;
   type?: string;
 }) {
+  const { t } = useI18n();
+  const { fieldLabel, formatValue } = useFormat();
   if (type === "run_failed") {
-    return <p className="text-[13px] text-muted-foreground">这次采集没有成功，监控继续使用上一次采集到的内容。</p>;
+    return <p className="text-[13px] text-muted-foreground">{t("activity.eventCard.failedNote")}</p>;
   }
   if (type === "recovered") {
-    return <p className="text-[13px] text-muted-foreground">采集恢复正常，监控重新开始比较内容。</p>;
+    return <p className="text-[13px] text-muted-foreground">{t("activity.eventCard.recoveredNote")}</p>;
   }
   const labels = (change.labels ?? {}) as Record<string, string>;
   const rows = differencesOf(change);
   if (rows.length === 0) {
-    return <p className="text-[13px] text-muted-foreground">内容发生变化，但没有可对照的字段。</p>;
+    return <p className="text-[13px] text-muted-foreground">{t("activity.eventCard.noFields")}</p>;
   }
   return (
     <ul className="space-y-1.5">
@@ -82,6 +85,8 @@ export function EventCard({
   onAcknowledge?: (id: string) => void;
   acknowledging?: boolean;
 }) {
+  const { t } = useI18n();
+  const { eventLabel, formatTime } = useFormat();
   const unread = !event.acknowledged_at;
   return (
     <li className={`surface-pad space-y-2.5 ${unread ? "border-l-2 border-l-primary/60" : ""}`}>
@@ -108,12 +113,12 @@ export function EventCard({
               disabled={acknowledging}
             >
               <Check className="size-3.5" />
-              标为已读
+              {t("activity.eventCard.acknowledge")}
             </Button>
           ) : (
             <span className="flex shrink-0 items-center gap-1 text-[11px] text-muted-foreground">
               <CheckCheck className="size-3.5" />
-              已读
+              {t("activity.eventCard.read")}
             </span>
           ))}
       </div>

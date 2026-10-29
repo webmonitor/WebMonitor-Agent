@@ -3,6 +3,8 @@ import * as React from "react";
 import { QueryClient, QueryClientProvider, useQuery, useQueryClient } from "@tanstack/react-query";
 import { api, ApiError, clearSessionClient } from "@/lib/api/client";
 import type { components } from "@/lib/api/schema";
+import { I18nProvider } from "@/lib/i18n";
+import type { Locale } from "@/lib/i18n/messages";
 
 type AuthProfile = components["schemas"]["Member"];
 const AuthContext = React.createContext<{user: AuthProfile | undefined; isPending: boolean; error: Error | null; refresh: () => Promise<unknown>; logout: () => Promise<void>} | null>(null);
@@ -34,7 +36,7 @@ function AuthProvider({children}: {children: React.ReactNode}) {
   return <AuthContext.Provider value={{user:query.data ?? undefined,isPending:query.isPending,error:query.error,refresh:query.refetch,logout}}>{children}</AuthContext.Provider>;
 }
 export function useAuth(){const context=React.useContext(AuthContext);if(!context)throw new Error("AuthProvider missing");return context;}
-export function Providers({children}: {children:React.ReactNode}) {
+export function Providers({children, initialLocale}: {children:React.ReactNode; initialLocale: Locale}) {
   const [client]=React.useState(()=>new QueryClient({defaultOptions:{queries:{retry:1,refetchOnWindowFocus:false}}}));
-  return <QueryClientProvider client={client}><AuthProvider>{children}</AuthProvider></QueryClientProvider>;
+  return <I18nProvider initialLocale={initialLocale}><QueryClientProvider client={client}><AuthProvider>{children}</AuthProvider></QueryClientProvider></I18nProvider>;
 }

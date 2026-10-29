@@ -1,19 +1,8 @@
-const DATE_TIME = new Intl.DateTimeFormat("zh-CN", {
-  month: "numeric",
-  day: "numeric",
-  hour: "2-digit",
-  minute: "2-digit",
-  hour12: false,
-});
+"use client";
 
-const FULL_DATE_TIME = new Intl.DateTimeFormat("zh-CN", {
-  year: "numeric",
-  month: "long",
-  day: "numeric",
-  hour: "2-digit",
-  minute: "2-digit",
-  hour12: false,
-});
+import { useMemo } from "react";
+import { useI18n } from "@/lib/i18n";
+import type { Locale, MessageKey } from "@/lib/i18n/messages";
 
 function toDate(value?: string | null): Date | null {
   if (!value) return null;
@@ -27,209 +16,361 @@ function sameDay(left: Date, right: Date): boolean {
     && left.getDate() === right.getDate();
 }
 
-/** "今天 11:00" / "昨天 21:40" / "10/27 09:12" — compact, used in lists. */
-export function formatTime(value?: string | null): string {
-  const date = toDate(value);
-  if (!date) return "—";
-  const now = new Date();
-  const time = DATE_TIME.format(date).replace(/^\d+\/\d+\s*/, "");
-  if (sameDay(date, now)) return `今天 ${time}`;
-  const yesterday = new Date(now);
-  yesterday.setDate(now.getDate() - 1);
-  if (sameDay(date, yesterday)) return `昨天 ${time}`;
-  return DATE_TIME.format(date);
-}
-
-/** "11:00:12" — for lists where several checks share the same minute. */
-export function formatClock(value?: string | null): string {
-  const date = toDate(value);
-  if (!date) return "—";
-  return new Intl.DateTimeFormat("zh-CN", {
-    hour: "2-digit", minute: "2-digit", second: "2-digit", hour12: false,
-  }).format(date);
-}
-
-/** "2026年10月29日 11:00" — used where the exact moment matters. */
-export function formatDateTime(value?: string | null): string {
-  const date = toDate(value);
-  return date ? FULL_DATE_TIME.format(date) : "—";
-}
-
-export function formatRelative(value?: string | null): string {
-  const date = toDate(value);
-  if (!date) return "—";
-  const seconds = Math.round((date.getTime() - Date.now()) / 1000);
-  const future = seconds > 0;
-  const magnitude = Math.abs(seconds);
-  const unit = magnitude < 60
-    ? [Math.max(magnitude, 1), "秒"]
-    : magnitude < 3600
-      ? [Math.round(magnitude / 60), "分钟"]
-      : magnitude < 86400
-        ? [Math.round(magnitude / 3600), "小时"]
-        : [Math.round(magnitude / 86400), "天"];
-  return future ? `${unit[0]} 分钟后` : `${unit[0]} ${unit[1]}前`;
-}
-
-export function dayLabel(value?: string | null): string {
-  const date = toDate(value);
-  if (!date) return "未知时间";
-  const now = new Date();
-  if (sameDay(date, now)) return "今天";
-  const yesterday = new Date(now);
-  yesterday.setDate(now.getDate() - 1);
-  if (sameDay(date, yesterday)) return "昨天";
-  return new Intl.DateTimeFormat("zh-CN", { month: "long", day: "numeric" }).format(date);
-}
-
 const CURRENCY_SYMBOLS: Record<string, string> = { CNY: "¥", USD: "$", EUR: "€", GBP: "£", JPY: "¥" };
 
-function money(value: Record<string, unknown>): string | null {
-  const amount = value.amount;
-  if (typeof amount !== "string" && typeof amount !== "number") return null;
-  const currency = typeof value.currency === "string" ? value.currency : "";
-  const symbol = CURRENCY_SYMBOLS[currency];
-  const text = String(amount);
-  if (symbol) return `${symbol}${text}`;
-  return currency ? `${currency} ${text}` : text;
-}
-
-/** Renders extracted values the way a reader expects: ¥128.50, 2026/10/31 16:00, a、b. */
-export function formatValue(value: unknown): string {
-  if (value === null || value === undefined || value === "") return "—";
-  if (typeof value === "boolean") return value ? "是" : "否";
-  if (typeof value === "number") return new Intl.NumberFormat("zh-CN").format(value);
-  if (typeof value === "string") {
-    const date = /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}/.test(value) ? toDate(value) : null;
-    return date ? DATE_TIME.format(date) : value;
-  }
-  if (Array.isArray(value)) {
-    if (value.length === 0) return "空";
-    return value.map((item) => formatValue(item)).join("、");
-  }
-  if (typeof value === "object") {
-    const record = value as Record<string, unknown>;
-    const asMoney = money(record);
-    if (asMoney) return asMoney;
-    const entries = Object.entries(record);
-    if (entries.length === 0) return "—";
-    return entries.map(([key, item]) => `${key}：${formatValue(item)}`).join("，");
-  }
-  return String(value);
-}
-
-const STATUS_LABELS: Record<string, string> = {
-  queued: "等待中",
-  running: "进行中",
-  succeeded: "成功",
-  failed: "失败",
-  cancelled: "已取消",
-  discarded: "已跳过",
-  active: "监控中",
-  paused: "已暂停",
-  draft: "待确认",
-  published: "已创建",
-  healthy: "正常",
-  pending_first_success: "正在建立基线",
-  ready: "基线已就绪",
-  sent: "已发送",
-  sending: "发送中",
-  retrying: "重试中",
-  started: "进行中",
+const STATUS_KEYS: Partial<Record<string, MessageKey>> = {
+  queued: "format.status.queued",
+  running: "format.status.running",
+  succeeded: "format.status.succeeded",
+  failed: "format.status.failed",
+  cancelled: "format.status.cancelled",
+  discarded: "format.status.discarded",
+  active: "format.status.active",
+  paused: "format.status.paused",
+  draft: "format.status.draft",
+  published: "format.status.published",
+  healthy: "format.status.healthy",
+  pending_first_success: "format.status.pending_first_success",
+  ready: "format.status.ready",
+  sent: "format.status.sent",
+  sending: "format.status.sending",
+  retrying: "format.status.retrying",
+  started: "format.status.started",
 };
 
-export function statusLabel(status?: string | null): string {
-  if (!status) return "—";
-  return STATUS_LABELS[status] ?? status;
-}
-
-const EVENT_LABELS: Record<string, string> = {
-  price_changed: "价格变化",
-  list_changed: "列表变化",
-  content_changed: "内容变化",
-  run_failed: "采集失败",
-  recovered: "已恢复",
+const EVENT_KEYS: Partial<Record<string, MessageKey>> = {
+  price_changed: "format.event.price_changed",
+  list_changed: "format.event.list_changed",
+  content_changed: "format.event.content_changed",
+  run_failed: "format.event.run_failed",
+  recovered: "format.event.recovered",
 };
 
-export function eventLabel(type?: string | null): string {
-  if (!type) return "变化";
-  return EVENT_LABELS[type] ?? type;
-}
-
-const STEP_LABELS: Record<string, string> = {
-  analyze_target: "读取目标页面",
-  list_notification_groups: "确认通知组",
-  save_monitor_draft: "整理监控设置",
-  preview_monitor: "试采集一次",
-  request_creation: "等待你确认",
+const STEP_KEYS: Partial<Record<string, MessageKey>> = {
+  analyze_target: "format.step.analyze_target",
+  list_notification_groups: "format.step.list_notification_groups",
+  save_monitor_draft: "format.step.save_monitor_draft",
+  preview_monitor: "format.step.preview_monitor",
+  request_creation: "format.step.request_creation",
 };
 
-export function stepLabel(name: string): string {
-  return STEP_LABELS[name] ?? name;
-}
-
-const ERROR_LABELS: Record<string, string> = {
-  url_forbidden: "目标地址不在允许范围内",
-  target_unavailable: "目标页面暂时无法访问",
-  target_http_error: "目标页面返回错误",
-  collection_timeout: "采集超时",
-  browser_unavailable: "浏览器环境不可用",
-  storage_unavailable: "证据存储暂时不可用",
-  template_contract_failed: "邮件内容缺少必要字段",
-  model_unavailable: "模型服务暂时不可用",
-  lease_expired: "本次执行超时",
-  preview_missing: "还没有预览结果",
-  preview_expired: "预览已过期",
-  preview_stale: "通知组或页面已变化 预览已失效",
-  stale_revision: "草稿已更新",
-  run_in_progress: "上一条消息还在处理",
-  notification_recipients_empty: "通知组里没有可用收件人",
-  notification_group_unavailable: "通知组已停用",
-  forbidden: "没有权限执行该操作",
-  unauthenticated: "登录已失效 请重新登录",
-  rate_limited: "操作过于频繁",
-  invalid_credentials: "邮箱或密码不正确",
-  validation_failed: "提交的内容不符合要求",
+const ERROR_KEYS: Partial<Record<string, MessageKey>> = {
+  url_forbidden: "format.error.url_forbidden",
+  target_unavailable: "format.error.target_unavailable",
+  target_http_error: "format.error.target_http_error",
+  collection_timeout: "format.error.collection_timeout",
+  browser_unavailable: "format.error.browser_unavailable",
+  storage_unavailable: "format.error.storage_unavailable",
+  template_contract_failed: "format.error.template_contract_failed",
+  model_unavailable: "format.error.model_unavailable",
+  lease_expired: "format.error.lease_expired",
+  preview_missing: "format.error.preview_missing",
+  preview_expired: "format.error.preview_expired",
+  preview_stale: "format.error.preview_stale",
+  stale_revision: "format.error.stale_revision",
+  run_in_progress: "format.error.run_in_progress",
+  notification_recipients_empty: "format.error.notification_recipients_empty",
+  notification_group_unavailable: "format.error.notification_group_unavailable",
+  forbidden: "format.error.forbidden",
+  unauthenticated: "format.error.unauthenticated",
+  rate_limited: "format.error.rate_limited",
+  invalid_credentials: "format.error.invalid_credentials",
+  validation_failed: "format.error.validation_failed",
+  csrf_unavailable: "format.error.csrf_unavailable",
+  network_unavailable: "format.error.network_unavailable",
+  request_failed: "format.error.request_failed",
+  registration_failed: "format.error.registration_failed",
 };
 
-export function errorText(code?: string | null): string {
-  if (!code) return "未知原因";
-  return ERROR_LABELS[code] ?? "操作未能完成";
-}
-
-const WARNING_LABELS: Record<string, string> = {
-  pagination_coverage_unproven: "分页后的内容覆盖范围尚未确认",
-  coverage_bounded: "检查范围覆盖页面的一部分",
-  template_contract_failed: "邮件模板缺少必要字段，该类邮件暂不发送",
+const WARNING_KEYS: Partial<Record<string, MessageKey>> = {
+  pagination_coverage_unproven: "format.warning.pagination_coverage_unproven",
+  coverage_bounded: "format.warning.coverage_bounded",
+  template_contract_failed: "format.warning.template_contract_failed",
 };
 
-export function warningText(warning: string): string {
-  const [code, target] = warning.split(":");
-  const label = WARNING_LABELS[code] ?? code.replace(/_/g, " ");
-  return target ? `${label}（${eventLabel(target)}）` : label;
-}
+const OPERATOR_KEYS: Partial<Record<string, MessageKey>> = {
+  increase_gte: "format.operator.increase_gte",
+  decrease_gte: "format.operator.decrease_gte",
+  change_gte: "format.operator.change_gte",
+  gt: "format.operator.gt",
+  gte: "format.operator.gte",
+  lt: "format.operator.lt",
+  lte: "format.operator.lte",
+  eq: "format.operator.eq",
+};
 
-export function formatInterval(seconds?: number | null): string {
-  if (!seconds) return "—";
-  if (seconds % 86400 === 0) return `每 ${seconds / 86400} 天`;
-  if (seconds % 3600 === 0) return `每 ${seconds / 3600} 小时`;
-  if (seconds % 60 === 0) return `每 ${seconds / 60} 分钟`;
-  return `每 ${seconds} 秒`;
-}
+const FIELD_KEYS: Partial<Record<string, MessageKey>> = {
+  current_price: "format.field.current_price",
+  previous_price: "format.field.previous_price",
+  price: "format.field.price",
+  current_fee: "format.field.current_fee",
+  effective_date: "format.field.effective_date",
+  title: "format.field.title",
+  name: "format.field.name",
+  stock: "format.field.stock",
+  quantity: "format.field.quantity",
+  status: "format.field.status",
+  summary: "format.field.summary",
+  content: "format.field.content",
+  date: "format.field.date",
+  time: "format.field.time",
+};
 
-export function formatTimezone(zone?: string | null): string {
-  if (!zone) return "—";
-  if (zone === "Asia/Shanghai") return "北京时间";
-  if (zone === "Asia/Tokyo") return "东京时间";
-  if (zone === "Europe/London") return "伦敦时间";
-  if (zone === "America/New_York") return "纽约时间";
-  if (zone === "UTC") return "UTC";
-  return zone;
-}
+const ZONE_KEYS: Partial<Record<string, MessageKey>> = {
+  "Asia/Shanghai": "format.zone.Asia/Shanghai",
+  "Asia/Tokyo": "format.zone.Asia/Tokyo",
+  "Europe/London": "format.zone.Europe/London",
+  "America/New_York": "format.zone.America/New_York",
+};
 
-export function formatMode(mode?: string | null): string {
-  if (mode === "browser") return "浏览器渲染";
-  return "直接抓取";
+type Rule = {
+  type?: string;
+  field?: string;
+  operator?: string;
+  value?: number | string;
+  keyword?: string;
+  watch_fields?: string[];
+};
+
+const ARRAY_JOIN: Record<Locale, string> = { en: ", ", "zh-CN": "、" };
+const ENTRY_JOIN: Record<Locale, string> = { en: "; ", "zh-CN": "，" };
+const ENTRY_SEPARATOR: Record<Locale, string> = { en: ": ", "zh-CN": "：" };
+const LIST_JOIN: Record<Locale, string> = { en: ", ", "zh-CN": "、" };
+
+export function useFormat() {
+  const { locale, t } = useI18n();
+
+  return useMemo(() => {
+    const intl = locale === "zh-CN" ? "zh-CN" : "en-US";
+    const dateTime = new Intl.DateTimeFormat(intl, {
+      month: "numeric", day: "numeric", hour: "2-digit", minute: "2-digit", hour12: false,
+    });
+    const fullDateTime = new Intl.DateTimeFormat(intl, {
+      year: "numeric", month: "long", day: "numeric", hour: "2-digit", minute: "2-digit", hour12: false,
+    });
+    const clock = new Intl.DateTimeFormat(intl, {
+      hour: "2-digit", minute: "2-digit", second: "2-digit", hour12: false,
+    });
+    const numbers = new Intl.NumberFormat(intl);
+
+    /** "Today 11:00" / "Yesterday 21:40" / "10/27 09:12" — compact, used in lists. */
+    function formatTime(value?: string | null): string {
+      const date = toDate(value);
+      if (!date) return "—";
+      const now = new Date();
+      const time = clock.format(date).slice(0, 5);
+      if (sameDay(date, now)) return `${t("format.today")} ${time}`;
+      const yesterday = new Date(now);
+      yesterday.setDate(now.getDate() - 1);
+      if (sameDay(date, yesterday)) return `${t("format.yesterday")} ${time}`;
+      return dateTime.format(date);
+    }
+
+    function formatClock(value?: string | null): string {
+      const date = toDate(value);
+      return date ? clock.format(date) : "—";
+    }
+
+    function formatDateTime(value?: string | null): string {
+      const date = toDate(value);
+      return date ? fullDateTime.format(date) : "—";
+    }
+
+    function formatRelative(value?: string | null): string {
+      const date = toDate(value);
+      if (!date) return "—";
+      const seconds = Math.round((date.getTime() - Date.now()) / 1000);
+      const magnitude = Math.abs(seconds);
+      const [amount, unit]: [number, string] = magnitude < 60
+        ? [Math.max(magnitude, 1), locale === "zh-CN" ? "秒" : "second"]
+        : magnitude < 3600
+          ? [Math.round(magnitude / 60), locale === "zh-CN" ? "分钟" : "minute"]
+          : magnitude < 86400
+            ? [Math.round(magnitude / 3600), locale === "zh-CN" ? "小时" : "hour"]
+            : [Math.round(magnitude / 86400), locale === "zh-CN" ? "天" : "day"];
+      const plural = amount === 1 ? unit : `${unit}s`;
+      return locale === "zh-CN"
+        ? seconds > 0 ? `${amount} ${unit}后` : `${amount} ${unit}前`
+        : seconds > 0
+          ? `in ${amount} ${plural}`
+          : `${amount} ${plural} ago`;
+    }
+
+    function dayLabel(value?: string | null): string {
+      const date = toDate(value);
+      if (!date) return t("format.unknownTime");
+      const now = new Date();
+      if (sameDay(date, now)) return t("format.today");
+      const yesterday = new Date(now);
+      yesterday.setDate(now.getDate() - 1);
+      if (sameDay(date, yesterday)) return t("format.yesterday");
+      return new Intl.DateTimeFormat(intl, { month: "long", day: "numeric" }).format(date);
+    }
+
+    function money(value: Record<string, unknown>): string | null {
+      const amount = value.amount;
+      if (typeof amount !== "string" && typeof amount !== "number") return null;
+      const currency = typeof value.currency === "string" ? value.currency : "";
+      const symbol = CURRENCY_SYMBOLS[currency];
+      const text = String(amount);
+      if (symbol) return `${symbol}${text}`;
+      return currency ? `${currency} ${text}` : text;
+    }
+
+    function formatValue(value: unknown): string {
+      if (value === null || value === undefined || value === "") return "—";
+      if (typeof value === "boolean") return value ? t("format.yes") : t("format.no");
+      if (typeof value === "number") return numbers.format(value);
+      if (typeof value === "string") {
+        const date = /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}/.test(value) ? toDate(value) : null;
+        return date ? dateTime.format(date) : value;
+      }
+      if (Array.isArray(value)) {
+        if (value.length === 0) return t("format.empty");
+        return value.map((item) => formatValue(item)).join(ARRAY_JOIN[locale]);
+      }
+      if (typeof value === "object") {
+        const record = value as Record<string, unknown>;
+        const asMoney = money(record);
+        if (asMoney) return asMoney;
+        const entries = Object.entries(record);
+        if (entries.length === 0) return "—";
+        return entries
+          .map(([key, item]) => `${key}${ENTRY_SEPARATOR[locale]}${formatValue(item)}`)
+          .join(ENTRY_JOIN[locale]);
+      }
+      return String(value);
+    }
+
+    function statusLabel(status?: string | null): string {
+      if (!status) return "—";
+      const key = STATUS_KEYS[status];
+      return key ? t(key) : status;
+    }
+
+    function eventLabel(type?: string | null): string {
+      if (!type) return t("format.change");
+      const key = EVENT_KEYS[type];
+      return key ? t(key) : type;
+    }
+
+    function stepLabel(name: string): string {
+      const key = STEP_KEYS[name];
+      return key ? t(key) : name;
+    }
+
+    function errorText(code?: string | null): string {
+      if (!code) return t("format.unknownReason");
+      const key = ERROR_KEYS[code];
+      return key ? t(key) : t("format.operationFailed");
+    }
+
+    function warningText(warning: string): string {
+      const [code, target] = warning.split(":");
+      const key = WARNING_KEYS[code];
+      const label = key ? t(key) : code.replace(/_/g, " ");
+      return target ? `${label} (${eventLabel(target)})` : label;
+    }
+
+    function formatInterval(seconds?: number | null): string {
+      if (!seconds) return "—";
+      if (seconds % 86400 === 0) return t("format.interval", { duration: locale === "zh-CN" ? `${seconds / 86400} 天` : `${seconds / 86400} days` });
+      if (seconds % 3600 === 0) return t("format.interval", { duration: locale === "zh-CN" ? `${seconds / 3600} 小时` : `${seconds / 3600} hours` });
+      if (seconds % 60 === 0) return t("format.interval", { duration: locale === "zh-CN" ? `${seconds / 60} 分钟` : `${seconds / 60} minutes` });
+      return t("format.interval", { duration: locale === "zh-CN" ? `${seconds} 秒` : `${seconds} seconds` });
+    }
+
+    function formatTimezone(zone?: string | null): string {
+      if (!zone) return "—";
+      const key = ZONE_KEYS[zone];
+      return key ? t(key) : zone;
+    }
+
+    function formatMode(mode?: string | null): string {
+      return mode === "browser" ? t("format.browser") : t("format.http");
+    }
+
+    function fieldLabel(field: { name: string; semantic?: string | null }): string {
+      const semantic = (field.semantic ?? "").trim();
+      const head = semantic.split(/[，,。；;（(：:、\n]/)[0]?.trim() ?? "";
+      if (head && head.length <= 14) return head;
+      if (head) return `${head.slice(0, 12)}…`;
+      const key = FIELD_KEYS[field.name];
+      return key ? t(key) : field.name;
+    }
+
+    function fieldLabels(
+      fields: { name: string; semantic?: string | null }[],
+    ): Record<string, string> {
+      return Object.fromEntries(fields.map((field) => [field.name, fieldLabel(field)]));
+    }
+
+    function describeRule(rule: Rule, labels: Record<string, string> = {}): string {
+      const field = (rule.field && labels[rule.field]) || rule.field || t("format.field");
+      const value = rule.value ?? "";
+      const operatorKey = rule.operator ? OPERATOR_KEYS[rule.operator] : undefined;
+      const operator = operatorKey
+        ? t(operatorKey)
+        : t("format.change");
+      switch (rule.type) {
+        case "number_percent_change":
+          return t("format.rule.percent", { field, operator, value });
+        case "number_absolute_change":
+          return t("format.rule.absolute", { field, operator, value });
+        case "threshold":
+          return t("format.rule.threshold", {
+            field,
+            operator: operatorKey ? operator : t("format.reached"),
+            value,
+          });
+        case "text_changed":
+          return t("format.rule.text", { field });
+        case "keyword_present":
+          return t("format.rule.keywordPresent", { keyword: rule.keyword ?? "" });
+        case "keyword_absent":
+          return t("format.rule.keywordAbsent", { keyword: rule.keyword ?? "" });
+        case "list_added":
+          return t("format.rule.added", { field });
+        case "list_removed":
+          return t("format.rule.removed", { field });
+        case "list_updated":
+          return t("format.rule.updated", {
+            field,
+            fields: (rule.watch_fields ?? []).join(LIST_JOIN[locale]),
+          });
+        default:
+          return t("format.rule.changed", { field });
+      }
+    }
+
+    function describeRules(rules: Rule[], mode?: string, labels: Record<string, string> = {}): string {
+      if (rules.length === 0) return t("format.rule.default");
+      return rules
+        .map((rule) => describeRule(rule, labels))
+        .join(t(mode === "all" ? "format.rule.and" : "format.rule.or"));
+    }
+
+    return {
+      formatTime,
+      formatClock,
+      formatDateTime,
+      formatRelative,
+      dayLabel,
+      formatValue,
+      statusLabel,
+      eventLabel,
+      stepLabel,
+      errorText,
+      warningText,
+      formatInterval,
+      formatTimezone,
+      formatMode,
+      fieldLabel,
+      fieldLabels,
+      describeRule,
+      describeRules,
+    };
+  }, [locale, t]);
 }
 
 export function formatJson(value: unknown): string {
@@ -245,91 +386,4 @@ export function formatBytes(bytes: number): string {
   if (!Number.isFinite(bytes) || bytes <= 0) return "0 KB";
   if (bytes < 1024 * 1024) return `${Math.max(1, Math.round(bytes / 1024))} KB`;
   return `${(bytes / (1024 * 1024)).toFixed(1)} MB`;
-}
-
-type Rule = {
-  type?: string;
-  field?: string;
-  operator?: string;
-  value?: number | string;
-  keyword?: string;
-  watch_fields?: string[];
-};
-
-const OPERATORS: Record<string, string> = {
-  increase_gte: "上升",
-  decrease_gte: "下降",
-  change_gte: "变化",
-  gt: "高于",
-  gte: "不低于",
-  lt: "低于",
-  lte: "不高于",
-  eq: "等于",
-};
-
-const FIELD_NAMES: Record<string, string> = {
-  current_price: "当前价格",
-  previous_price: "原价",
-  price: "价格",
-  current_fee: "当前费用",
-  effective_date: "执行日期",
-  title: "标题",
-  name: "名称",
-  stock: "库存",
-  quantity: "数量",
-  status: "状态",
-  summary: "摘要",
-  content: "内容",
-  date: "日期",
-  time: "时间",
-};
-
-/**
- * Field semantics written by the model are full descriptions, not labels.
- * Take the leading noun phrase and fall back to a known-name mapping.
- */
-export function fieldLabel(field: { name: string; semantic?: string | null }): string {
-  const semantic = (field.semantic ?? "").trim();
-  const head = semantic.split(/[，,。；;（(：:、\n]/)[0]?.trim() ?? "";
-  if (head && head.length <= 14) return head;
-  if (head) return `${head.slice(0, 12)}…`;
-  return FIELD_NAMES[field.name] ?? field.name;
-}
-
-export function fieldLabels(
-  fields: { name: string; semantic?: string | null }[],
-): Record<string, string> {
-  return Object.fromEntries(fields.map((field) => [field.name, fieldLabel(field)]));
-}
-
-export function describeRule(rule: Rule, labels: Record<string, string> = {}): string {
-  const field = (rule.field && labels[rule.field]) || rule.field || "字段";
-  const value = rule.value ?? "";
-  switch (rule.type) {
-    case "number_percent_change":
-      return `${field} ${OPERATORS[rule.operator ?? ""] ?? "变化"} ${value}% 及以上`;
-    case "number_absolute_change":
-      return `${field} ${OPERATORS[rule.operator ?? ""] ?? "变化"} ${value} 及以上`;
-    case "threshold":
-      return `${field} ${OPERATORS[rule.operator ?? ""] ?? "达到"} ${value}`;
-    case "text_changed":
-      return `${field} 的文本有变化`;
-    case "keyword_present":
-      return `出现“${rule.keyword ?? ""}”`;
-    case "keyword_absent":
-      return `不再出现“${rule.keyword ?? ""}”`;
-    case "list_added":
-      return `${field} 中出现新条目`;
-    case "list_removed":
-      return `${field} 中有条目消失`;
-    case "list_updated":
-      return `${field} 中的 ${(rule.watch_fields ?? []).join("、")} 有变化`;
-    default:
-      return `${field} 发生变化`;
-  }
-}
-
-export function describeRules(rules: Rule[], mode?: string, labels: Record<string, string> = {}): string {
-  if (rules.length === 0) return "页面内容有变化";
-  return rules.map((rule) => describeRule(rule, labels)).join(mode === "all" ? "，并且 " : "，或 ");
 }

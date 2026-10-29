@@ -5,7 +5,6 @@ import { Suspense, useEffect, useState, type ReactNode } from "react";
 import {
   Activity,
   Bell,
-  ChevronRight,
   LogOut,
   Menu,
   Plus,
@@ -13,18 +12,17 @@ import {
   X,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
+import { LanguageSwitcher } from "@/components/language-switcher";
 import { useConversations, useMonitors } from "@/lib/api/hooks";
 import { useAuth } from "@/lib/providers";
-import { dayLabel, formatInterval, formatRelative } from "@/lib/format";
-
-const links = [
-  { href: "/app/events", label: "事件", icon: Activity },
-  { href: "/app/notifications", label: "通知", icon: Bell },
-];
+import { useI18n } from "@/lib/i18n";
+import { useFormat } from "@/lib/format";
 
 const CONVERSATION_PREVIEW = 8;
 
 function ConversationList() {
+  const { t } = useI18n();
+  const { dayLabel, formatRelative } = useFormat();
   const conversations = useConversations();
   const params = useSearchParams();
   const pathname = usePathname();
@@ -33,13 +31,13 @@ function ConversationList() {
   const [expanded, setExpanded] = useState(false);
 
   if (conversations.isPending) {
-    return <p className="px-2 py-1 text-xs text-muted-foreground">正在加载…</p>;
+    return <p className="px-2 py-1 text-xs text-muted-foreground">{t("common.loading")}</p>;
   }
   if (items.length === 0) {
-    return <p className="px-2 py-1 text-xs text-muted-foreground">还没有对话</p>;
+    return <p className="px-2 py-1 text-xs text-muted-foreground">{t("common.noConversations")}</p>;
   }
 
-  // Keep 监控 visible: show the newest few and keep the open one in view.
+  // Keep the open conversation visible: show the newest few and keep the current one in view.
   const preview = items.slice(0, CONVERSATION_PREVIEW);
   const current = items.find((conversation) => conversation.id === active);
   const visible =
@@ -75,7 +73,7 @@ function ConversationList() {
               }`}
             >
               <span className="truncate text-[13px] leading-5">
-                {conversation.title?.trim() || "未命名对话"}
+                {conversation.title?.trim() || t("common.untitledConversation")}
               </span>
               <span className="text-[11px] leading-4 text-muted-foreground">
                 {formatRelative(conversation.updated_at)}
@@ -92,7 +90,7 @@ function ConversationList() {
         className="mt-1 w-full rounded-lg px-2.5 py-1 text-left text-[11px] text-muted-foreground hover:bg-muted hover:text-foreground"
         onClick={() => setExpanded((value) => !value)}
       >
-        {expanded ? "收起" : `显示全部 ${items.length} 个对话`}
+        {expanded ? t("common.collapse") : t("common.allConversations", { count: items.length })}
       </button>
     )}
     </>
@@ -100,15 +98,17 @@ function ConversationList() {
 }
 
 function MonitorList({ onNavigate }: { onNavigate: () => void }) {
+  const { t } = useI18n();
+  const { formatInterval } = useFormat();
   const monitors = useMonitors();
   const pathname = usePathname();
   const items = monitors.data?.items ?? [];
 
   if (monitors.isPending) {
-    return <p className="px-2 py-1 text-xs text-muted-foreground">正在加载…</p>;
+    return <p className="px-2 py-1 text-xs text-muted-foreground">{t("common.loading")}</p>;
   }
   if (items.length === 0) {
-    return <p className="px-2 py-1 text-xs text-muted-foreground">确认第一个监控后会出现在这里</p>;
+    return <p className="px-2 py-1 text-xs text-muted-foreground">{t("common.noMonitors")}</p>;
   }
   return (
     <ul className="space-y-0.5">
@@ -133,7 +133,7 @@ function MonitorList({ onNavigate }: { onNavigate: () => void }) {
               <span className="min-w-0 flex-1">
                 <span className="block truncate text-[13px] leading-5">{monitor.name}</span>
                 <span className="block truncate text-[11px] leading-4 text-muted-foreground">
-                  {monitor.status === "active" ? formatInterval(monitor.interval_seconds) : "已暂停"}
+                  {monitor.status === "active" ? formatInterval(monitor.interval_seconds) : t("common.paused")}
                 </span>
               </span>
             </Link>
@@ -160,11 +160,17 @@ function SectionLabel({
 }
 
 export function WorkspaceShell({ children }: { children: ReactNode }) {
+  const { t } = useI18n();
   const { user, isPending, error, logout, refresh } = useAuth();
   const pathname = usePathname();
   const router = useRouter();
   const [open, setOpen] = useState(false);
   const monitors = useMonitors();
+
+  const links = [
+    { href: "/app/events", label: t("common.events"), icon: Activity },
+    { href: "/app/notifications", label: t("common.notifications"), icon: Bell },
+  ];
 
   useEffect(() => {
     if (!isPending && !user && !error) {
@@ -185,7 +191,7 @@ export function WorkspaceShell({ children }: { children: ReactNode }) {
   if (isPending) {
     return (
       <main className="grid min-h-dvh place-items-center text-sm text-muted-foreground" role="status">
-        正在打开工作台…
+        {t("common.opening")}
       </main>
     );
   }
@@ -194,15 +200,15 @@ export function WorkspaceShell({ children }: { children: ReactNode }) {
       <main className="grid min-h-dvh place-items-center p-6 text-center">
         {error ? (
           <div className="space-y-3">
-            <h1 className="text-lg font-semibold">工作台暂时打不开</h1>
+            <h1 className="text-lg font-semibold">{t("common.unavailable")}</h1>
             <p className="text-sm text-error" role="alert">
-              连接服务时出错，请检查网络后重试。
+              {t("common.connectionError")}
             </p>
-            <Button onClick={() => void refresh()}>重新连接</Button>
+            <Button onClick={() => void refresh()}>{t("common.reconnect")}</Button>
           </div>
         ) : (
           <p role="status" className="text-sm text-muted-foreground">
-            正在前往登录…
+            {t("common.redirecting")}
           </p>
         )}
       </main>
@@ -210,13 +216,20 @@ export function WorkspaceShell({ children }: { children: ReactNode }) {
   }
 
   const initial = (user.display_name || user.email).slice(0, 1).toUpperCase();
+  const section = pathname === "/app"
+    ? t("common.conversations")
+    : pathname.startsWith("/app/events")
+      ? t("common.events")
+      : pathname.startsWith("/app/notifications")
+        ? t("common.notifications")
+        : t("common.monitors");
 
   return (
     <div className="flex h-dvh overflow-hidden bg-background">
       {open && (
         <button
           className="fixed inset-0 z-30 bg-black/30 md:hidden"
-          aria-label="关闭导航"
+          aria-label={t("common.closeNavigation")}
           onClick={() => setOpen(false)}
         />
       )}
@@ -230,11 +243,12 @@ export function WorkspaceShell({ children }: { children: ReactNode }) {
             <Radar className="size-5 text-primary" />
             WebMonitor
           </Link>
+          <LanguageSwitcher />
           <Button
             variant="ghost"
             size="icon"
             className="size-8 md:hidden"
-            aria-label="关闭导航"
+            aria-label={t("common.closeNavigation")}
             onClick={() => setOpen(false)}
           >
             <X className="size-4" />
@@ -247,7 +261,7 @@ export function WorkspaceShell({ children }: { children: ReactNode }) {
             className="flex w-full items-center gap-2 rounded-lg px-2.5 py-1.5 text-left text-[13px] text-muted-foreground transition-colors hover:bg-muted hover:text-foreground"
           >
             <Plus className="size-4" />
-            新对话
+            {t("common.newConversation")}
           </button>
           {links.map(({ href, label, icon: Icon }) => {
             const current = pathname.startsWith(href);
@@ -270,9 +284,9 @@ export function WorkspaceShell({ children }: { children: ReactNode }) {
         </nav>
 
         <div className="min-h-0 flex-1 overflow-y-auto border-t px-3 pb-4">
-          <SectionLabel count={monitors.data?.total}>监控</SectionLabel>
+          <SectionLabel count={monitors.data?.total}>{t("common.monitors")}</SectionLabel>
           <MonitorList onNavigate={() => setOpen(false)} />
-          <SectionLabel>对话</SectionLabel>
+          <SectionLabel>{t("common.conversations")}</SectionLabel>
           <Suspense fallback={null}>
             <ConversationList />
           </Suspense>
@@ -288,14 +302,14 @@ export function WorkspaceShell({ children }: { children: ReactNode }) {
           <div className="min-w-0 flex-1 leading-tight">
             <p className="truncate text-[13px] font-medium">{user.display_name}</p>
             <p className="truncate text-[11px] text-muted-foreground">
-              {user.role === "admin" ? "管理员" : "成员"}
+              {user.role === "admin" ? t("common.admin") : t("common.member")}
             </p>
           </div>
           <Button
             variant="ghost"
             size="icon"
             className="size-8 text-muted-foreground"
-            aria-label="退出登录"
+            aria-label={t("common.logout")}
             onClick={() => void logout()}
           >
             <LogOut className="size-4" />
@@ -305,17 +319,17 @@ export function WorkspaceShell({ children }: { children: ReactNode }) {
 
       <div className="flex min-w-0 flex-1 flex-col">
         <header className="flex h-14 items-center gap-3 border-b bg-card px-4 md:hidden">
-          <Button variant="ghost" size="icon" aria-label="打开导航" onClick={() => setOpen(true)}>
+          <Button variant="ghost" size="icon" aria-label={t("common.openNavigation")} onClick={() => setOpen(true)}>
             <Menu className="size-4" />
           </Button>
           <span className="flex items-center gap-1.5 text-sm font-semibold">
             <Radar className="size-4 text-primary" />
             WebMonitor
           </span>
-          <ChevronRight className="size-3.5 text-muted-foreground" aria-hidden />
           <span className="truncate text-sm text-muted-foreground">
-            {pathname === "/app" ? "对话" : pathname.startsWith("/app/events") ? "事件" : pathname.startsWith("/app/notifications") ? "通知" : "监控"}
+            {section}
           </span>
+          <LanguageSwitcher className="ml-auto" />
         </header>
         <main className="min-h-0 flex-1 overflow-hidden">{children}</main>
       </div>

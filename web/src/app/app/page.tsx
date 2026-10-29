@@ -6,6 +6,7 @@ import { CreateMonitorCard } from "@/features/chat/create-monitor-card";
 import { MonitorSummary } from "@/features/monitors/monitor-summary";
 import { RecentEvents } from "@/features/events/recent-events";
 import { useConversation, useConversations } from "@/lib/api/hooks";
+import { useI18n } from "@/lib/i18n";
 
 function ContextPanel({
   conversationId,
@@ -16,6 +17,7 @@ function ContextPanel({
   pendingDraftId?: string;
   monitorId?: string;
 }) {
+  const { t } = useI18n();
   const conversation = useConversation(conversationId);
   const draft = conversation.data?.drafts.find((item) => item.id === pendingDraftId);
 
@@ -27,10 +29,8 @@ function ContextPanel({
         <MonitorSummary monitorId={monitorId} />
       ) : (
         <section className="surface-pad space-y-1.5">
-          <h2 className="text-[15px] font-semibold">还没有监控</h2>
-          <p className="meta">
-            描述你想盯住的内容。助手会先打开页面试采集一次，再由你确认是否开始定时监控。
-          </p>
+          <h2 className="text-[15px] font-semibold">{t("chat.context.emptyTitle")}</h2>
+          <p className="meta">{t("chat.context.emptyBody")}</p>
         </section>
       )}
       {monitorId && <RecentEvents monitorId={monitorId} />}
@@ -80,8 +80,9 @@ function WorkspaceView() {
 }
 
 export default function WorkspacePage() {
+  const { t } = useI18n();
   return (
-    <Suspense fallback={<p className="meta p-6">正在打开工作台…</p>}>
+    <Suspense fallback={<p className="meta p-6">{t("chat.workspace.loading")}</p>}>
       <WorkspaceView />
     </Suspense>
   );

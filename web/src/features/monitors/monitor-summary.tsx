@@ -4,14 +4,17 @@ import { ArrowUpRight } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
 import { useMonitor } from "@/lib/api/hooks";
 import { parseSpec } from "@/lib/api/preview";
-import { fieldLabels, formatInterval, formatTime, formatValue, statusLabel } from "@/lib/format";
+import { useFormat } from "@/lib/format";
+import { useI18n } from "@/lib/i18n";
 
 /** Right-hand context after the monitor exists: the result of the conversation. */
 export function MonitorSummary({ monitorId }: { monitorId: string }) {
+  const { t } = useI18n();
+  const { fieldLabels, formatInterval, formatTime, formatValue, statusLabel } = useFormat();
   const monitor = useMonitor(monitorId);
 
   if (monitor.isPending) {
-    return <div className="surface-pad meta">正在读取监控…</div>;
+    return <div className="surface-pad meta">{t("monitors.loading")}</div>;
   }
   if (!monitor.data) return null;
 
@@ -29,13 +32,15 @@ export function MonitorSummary({ monitorId }: { monitorId: string }) {
           href={`/app/monitors/${row.id}`}
           className="flex items-center gap-1 text-xs text-primary underline-offset-2 hover:underline"
         >
-          打开监控
+          {t("monitors.summary.open")}
           <ArrowUpRight className="size-3" />
         </Link>
       </div>
       <div className="space-y-0.5">
         <h2 className="truncate text-[15px] font-semibold">{row.name}</h2>
-        <p className="meta truncate">{formatInterval(row.interval_seconds)}检查</p>
+        <p className="meta truncate">
+          {t("monitors.summary.interval", { interval: formatInterval(row.interval_seconds) })}
+        </p>
       </div>
 
       {fields.length > 0 && row.baseline_status === "ready" && (
@@ -53,8 +58,8 @@ export function MonitorSummary({ monitorId }: { monitorId: string }) {
 
       <p className="meta border-t pt-3">
         {row.baseline_status === "ready"
-          ? `上次检查 ${formatTime(row.last_success_at)}`
-          : "正在等待第一次成功采集，完成后这里会显示当前内容。"}
+          ? t("monitors.summary.lastCheck", { time: formatTime(row.last_success_at) })
+          : t("monitors.summary.awaiting")}
       </p>
     </section>
   );

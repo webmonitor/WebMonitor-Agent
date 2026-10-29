@@ -1,11 +1,14 @@
 "use client";
 import Link from "next/link";
 import { useEvents } from "@/lib/api/hooks";
-import { eventLabel, formatTime } from "@/lib/format";
+import { useFormat } from "@/lib/format";
+import { useI18n } from "@/lib/i18n";
 import { ChangeRows } from "@/features/events/event-card";
 
 /** The three latest events for the monitor created in this conversation. */
 export function RecentEvents({ monitorId }: { monitorId: string }) {
+  const { t } = useI18n();
+  const { eventLabel, formatTime } = useFormat();
   const events = useEvents();
   const items = (events.data?.items ?? [])
     .filter((event) => event.monitor_id === monitorId)
@@ -14,13 +17,13 @@ export function RecentEvents({ monitorId }: { monitorId: string }) {
   return (
     <section className="space-y-2">
       <div className="flex items-baseline justify-between">
-        <h2 className="text-[11px] font-medium uppercase tracking-wide text-muted-foreground">最近事件</h2>
+        <h2 className="text-[11px] font-medium uppercase tracking-wide text-muted-foreground">{t("activity.recent.title")}</h2>
         <Link href="/app/events" className="text-xs text-primary underline-offset-2 hover:underline">
-          全部
+          {t("activity.recent.all")}
         </Link>
       </div>
       {items.length === 0 ? (
-        <p className="meta">还没有事件。发现变化时会出现在这里，并发送邮件。</p>
+        <p className="meta">{t("activity.recent.empty")}</p>
       ) : (
         <ul className="space-y-2">
           {items.map((event) => (

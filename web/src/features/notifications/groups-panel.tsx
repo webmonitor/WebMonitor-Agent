@@ -10,7 +10,8 @@ import { EmptyState } from "@/components/empty-state";
 import { ApiError } from "@/lib/api/client";
 import { useDeleteGroup, useGroups, useWriteGroup, type Group } from "@/lib/api/hooks";
 import { useAuth } from "@/lib/providers";
-import { errorText } from "@/lib/format";
+import { useFormat } from "@/lib/format";
+import { useI18n } from "@/lib/i18n";
 
 function memberText(members: Group["members"]): string {
   return members.map((member) => member.email).join("\n");
@@ -18,26 +19,28 @@ function memberText(members: Group["members"]): string {
 
 export function GroupsPanel() {
   const { user } = useAuth();
+  const { t } = useI18n();
+  const { errorText } = useFormat();
   const groups = useGroups();
   const write = useWriteGroup();
   const remove = useDeleteGroup();
   const [editing, setEditing] = useState<Group | "new" | null>(null);
   const [name, setName] = useState("");
   const [emails, setEmails] = useState("");
-  const [error, setError] = useState("");
+  const [error, setError] = useState<{ code: string | null } | null>(null);
 
   const admin = user?.role === "admin";
   const items = groups.data?.items ?? [];
 
   function openForm(group: Group | "new") {
     setEditing(group);
-    setError("");
+    setError(null);
     setName(group === "new" ? "" : group.name);
     setEmails(group === "new" ? "" : memberText(group.members));
   }
 
   async function save() {
-    setError("");
+    setError(null);
     const members = emails
       .split(/[\s,;]+/)
       .map((email) => email.trim().toLowerCase())
@@ -54,7 +57,7 @@ export function GroupsPanel() {
       });
       setEditing(null);
     } catch (failure) {
-      setError(failure instanceof ApiError ? errorText(failure.code) : "保存没有成功，请重试。");
+      setError({ code: failure instanceof ApiError ? failure.code : null });
     }
   }
 
@@ -62,8 +65,8 @@ export function GroupsPanel() {
     <section className="space-y-3">
       <header className="flex items-start justify-between gap-3">
         <div className="min-w-0">
-          <h2 className="text-sm font-semibold">通知组</h2>
-          <p className="meta mt-0.5">监控按通知组发送邮件。改动收件人后，需要重新确认一次监控。</p>
+          <h2 className="text-sm font-semibold">{t("activity.groups.title")}</h2>
+          <p className="meta mt-0.5">{t("activity.groups.description")}</p>
         </div>
         {admin && (
           <Button
@@ -73,17 +76,19 @@ export function GroupsPanel() {
             onClick={() => openForm("new")}
           >
             <Plus className="size-3.5" />
-            新建
+            {t("activity.groups.new")}
           </Button>
         )}
       </header>
 
-      {groups.isPending && <p className="meta">正在加载…</p>}
+      {groups.isPending && <p className="meta">{t("activity.groups.loading")}</p>}
 
       {!groups.isPending && items.length === 0 && (
         <EmptyState
-          title="还没有通知组"
-          description={admin ? "先建一个通知组，创建监控时就能选择收件人。" : "请联系管理员创建通知组。"}
+          title={t("activity.groups.emptyTitle")}
+          description={
+            admin ? t("activity.groups.emptyAdmin") : t("activity.groups.emptyMember")
+          }
         />
       )}
 
@@ -94,7 +99,7 @@ export function GroupsPanel() {
               <div className="flex min-w-0 items-center gap-2">
                 <Users className="size-4 text-muted-foreground" />
                 <span className="truncate text-[13px] font-medium">{group.name}</span>
-                {!group.enabled && <Badge tone="neutral">已停用</Badge>}
+                {!group.enabled && <Badge tone="neutral">{t("activity.groups.disabled")}</Badge>}
               </div>
               {admin && (
                 <div className="flex shrink-0 items-center gap-1">
@@ -104,7 +109,7 @@ export function GroupsPanel() {
                     className="h-7 px-2 text-xs text-muted-foreground"
                     onClick={() => openForm(group)}
                   >
-                    编辑
+                    {t("activity.groups.edit")}
                   </Button>
                   <Button
                     variant="ghost"
@@ -113,13 +118,13 @@ export function GroupsPanel() {
                     disabled={remove.isPending || !group.enabled}
                     onClick={() => void remove.mutateAsync(group.id)}
                   >
-                    停用
+                    {t("activity.groups.disable")}
                   </Button>
                 </div>
               )}
             </div>
             {group.members.length === 0 ? (
-              <p className="meta">没有收件人</p>
+              <p className="meta">{t("activity.groups.noMembers")}</p>
             ) : (
               <ul className="flex flex-wrap gap-1.5">
                 {group.members.map((member) => (
@@ -136,42 +141,46 @@ export function GroupsPanel() {
       <Dialog open={editing !== null} onOpenChange={(value) => !value && setEditing(null)}>
         <DialogContent className="max-w-md">
           <DialogHeader>
-            <DialogTitle>{editing === "new" ? "新建通知组" : "编辑通知组"}</DialogTitle>
+            <DialogTitle>
+              {editing === "new"
+                ? t("activity.groups.form.newTitle")
+                : t("activity.groups.form.editTitle")}
+            </DialogTitle>
           </DialogHeader>
           <div className="space-y-4">
             <div className="space-y-1.5">
-              <Label htmlFor="group-name">名称</Label>
+              <Label htmlFor="group-name">{t("activity.groups.form.name")}</Label>
               <Input
                 id="group-name"
                 value={name}
                 maxLength={200}
                 onChange={(event) => setName(event.target.value)}
-                placeholder="例如：运维值班"
+                placeholder={t("activity.groups.form.namePlaceholder")}
               />
             </div>
             <div className="space-y-1.5">
-              <Label htmlFor="group-emails">收件人</Label>
+              <Label htmlFor="group-emails">{t("activity.groups.form.recipients")}</Label>
               <textarea
                 id="group-emails"
                 value={emails}
                 rows={4}
                 onChange={(event) => setEmails(event.target.value)}
                 className="w-full rounded-lg border bg-card px-3 py-2 text-sm outline-none focus-visible:border-ring/60"
-                placeholder={"每行一个邮箱，例如：\nops@example.com\nowner@example.com"}
+                placeholder={t("activity.groups.form.recipientsPlaceholder")}
               />
-              <p className="meta">用换行、逗号或空格分隔。</p>
+              <p className="meta">{t("activity.groups.form.recipientsHint")}</p>
             </div>
             {error && (
               <p className="text-xs text-error" role="alert">
-                {error}
+                {error.code ? errorText(error.code) : t("activity.groups.saveFailed")}
               </p>
             )}
             <div className="flex justify-end gap-2">
               <Button variant="ghost" size="sm" onClick={() => setEditing(null)}>
-                取消
+                {t("activity.groups.form.cancel")}
               </Button>
               <Button size="sm" onClick={() => void save()} disabled={!name.trim() || write.isPending}>
-                {write.isPending ? "正在保存…" : "保存"}
+                {write.isPending ? t("activity.groups.form.saving") : t("activity.groups.form.save")}
               </Button>
             </div>
           </div>

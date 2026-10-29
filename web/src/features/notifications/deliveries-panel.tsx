@@ -6,7 +6,8 @@ import { Button } from "@/components/ui/button";
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { EmptyState } from "@/components/empty-state";
 import { useDeliveries, type Delivery } from "@/lib/api/hooks";
-import { errorText, formatDateTime, formatTime, statusLabel } from "@/lib/format";
+import { useFormat } from "@/lib/format";
+import { useI18n } from "@/lib/i18n";
 
 const TONES = { sent: "success", failed: "error", retrying: "warning", sending: "warning" } as const;
 
@@ -15,6 +16,8 @@ function tone(status: string) {
 }
 
 export function DeliveriesPanel() {
+  const { t } = useI18n();
+  const { statusLabel, errorText, formatDateTime, formatTime } = useFormat();
   const deliveries = useDeliveries();
   const [open, setOpen] = useState<Delivery | null>(null);
   const items = deliveries.data?.items ?? [];
@@ -22,14 +25,17 @@ export function DeliveriesPanel() {
   return (
     <section className="space-y-3">
       <header>
-        <h2 className="text-sm font-semibold">投递记录</h2>
-        <p className="meta mt-0.5">“已发送”表示邮件服务器已接收；邮件何时进入收件箱由收件方决定。</p>
+        <h2 className="text-sm font-semibold">{t("activity.deliveries.title")}</h2>
+        <p className="meta mt-0.5">{t("activity.deliveries.description")}</p>
       </header>
 
-      {deliveries.isPending && <p className="meta">正在加载…</p>}
+      {deliveries.isPending && <p className="meta">{t("activity.deliveries.loading")}</p>}
 
       {!deliveries.isPending && items.length === 0 && (
-        <EmptyState title="还没有投递记录" description="监控发现变化后，发往通知组的邮件会记录在这里。" />
+        <EmptyState
+          title={t("activity.deliveries.emptyTitle")}
+          description={t("activity.deliveries.emptyDescription")}
+        />
       )}
 
       <ul className="space-y-2">
@@ -66,33 +72,39 @@ export function DeliveriesPanel() {
             <div className="space-y-3">
               <dl className="grid grid-cols-2 gap-3 text-[13px]">
                 <div>
-                  <dt className="meta">收件人</dt>
+                  <dt className="meta">{t("activity.deliveries.recipient")}</dt>
                   <dd className="truncate">{open.recipient}</dd>
                 </div>
                 <div>
-                  <dt className="meta">状态</dt>
+                  <dt className="meta">{t("activity.deliveries.status")}</dt>
                   <dd>
                     {statusLabel(open.status)}
-                    {open.attempt_count > 1 ? ` · 尝试 ${open.attempt_count} 次` : ""}
+                    {open.attempt_count > 1
+                      ? ` · ${t("activity.deliveries.attempts", { count: open.attempt_count })}`
+                      : ""}
                   </dd>
                 </div>
                 <div>
-                  <dt className="meta">创建时间</dt>
+                  <dt className="meta">{t("activity.deliveries.createdAt")}</dt>
                   <dd>{formatDateTime(open.created_at)}</dd>
                 </div>
                 <div>
-                  <dt className="meta">发送时间</dt>
+                  <dt className="meta">{t("activity.deliveries.sentAt")}</dt>
                   <dd>{formatDateTime(open.sent_at)}</dd>
                 </div>
               </dl>
               {open.error_code && (
                 <p className="rounded-lg border border-error/25 bg-error/5 px-3 py-2 text-xs text-error">
-                  {errorText(open.error_code)}
-                  {open.error_message ? `：${open.error_message}` : ""}
+                  {open.error_message
+                    ? t("activity.deliveries.errorDetail", {
+                        code: errorText(open.error_code),
+                        message: open.error_message,
+                      })
+                    : errorText(open.error_code)}
                 </p>
               )}
               <div>
-                <h3 className="meta mb-1">正文</h3>
+                <h3 className="meta mb-1">{t("activity.deliveries.body")}</h3>
                 <pre className="max-h-72 overflow-auto rounded-lg border bg-muted/40 p-3 text-[12px] leading-relaxed text-foreground">
                   {open.body_text}
                 </pre>

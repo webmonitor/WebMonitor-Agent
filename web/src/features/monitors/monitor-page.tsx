@@ -19,19 +19,8 @@ import {
   useRunNow,
 } from "@/lib/api/hooks";
 import { parseSpec } from "@/lib/api/preview";
-import {
-  errorText,
-  eventLabel,
-  formatBytes,
-  formatClock,
-  formatDateTime,
-  formatInterval,
-  formatMode,
-  formatTime,
-  formatValue,
-  statusLabel,
-  fieldLabels,
-} from "@/lib/format";
+import { formatBytes, useFormat } from "@/lib/format";
+import { useI18n } from "@/lib/i18n";
 import { ChangeRows } from "@/features/events/event-card";
 
 function hostOf(url: string): string {
@@ -44,8 +33,10 @@ function hostOf(url: string): string {
 }
 
 function FieldValues({ values, labels }: { values: Record<string, unknown>; labels: Record<string, string> }) {
+  const { t } = useI18n();
+  const { formatValue } = useFormat();
   const entries = Object.entries(values);
-  if (entries.length === 0) return <p className="meta">没有采集到内容。</p>;
+  if (entries.length === 0) return <p className="meta">{t("monitors.content.noFields")}</p>;
   return (
     <ul className="space-y-2">
       {entries.map(([name, value]) => (
@@ -59,6 +50,18 @@ function FieldValues({ values, labels }: { values: Record<string, unknown>; labe
 }
 
 export function MonitorPage({ monitorId }: { monitorId: string }) {
+  const { t } = useI18n();
+  const {
+    errorText,
+    eventLabel,
+    fieldLabels,
+    formatClock,
+    formatDateTime,
+    formatInterval,
+    formatMode,
+    formatTime,
+    statusLabel,
+  } = useFormat();
   const monitor = useMonitor(monitorId);
   const jobs = useMonitorJobs(monitorId, 10);
   const events = useEvents();
@@ -73,7 +76,7 @@ export function MonitorPage({ monitorId }: { monitorId: string }) {
   if (monitor.isPending) {
     return (
       <div className="grid h-full place-items-center">
-        <p className="meta">正在读取监控…</p>
+        <p className="meta">{t("monitors.loading")}</p>
       </div>
     );
   }
@@ -81,10 +84,10 @@ export function MonitorPage({ monitorId }: { monitorId: string }) {
     return (
       <div className="grid h-full place-items-center px-6 text-center">
         <div className="space-y-2">
-          <p className="text-sm font-medium">找不到这个监控</p>
-          <p className="meta">请确认链接是否完整，或联系管理员检查你的查看权限。</p>
+          <p className="text-sm font-medium">{t("monitors.notFound.title")}</p>
+          <p className="meta">{t("monitors.notFound.body")}</p>
           <Link className="text-sm text-primary underline-offset-2 hover:underline" href="/app">
-            返回对话
+            {t("monitors.backToChat")}
           </Link>
         </div>
       </div>
@@ -101,10 +104,13 @@ export function MonitorPage({ monitorId }: { monitorId: string }) {
   const values = row.baseline?.extracted_data ?? {};
 
   const stats = [
-    { label: "上次检查", value: formatTime(row.last_success_at) },
-    { label: "下次检查", value: row.status === "active" ? formatTime(row.next_run_at) : "暂停中" },
-    { label: "检查频率", value: formatInterval(row.interval_seconds) },
-    { label: "采集方式", value: formatMode(row.collection_mode) },
+    { label: t("monitors.stat.lastCheck"), value: formatTime(row.last_success_at) },
+    {
+      label: t("monitors.stat.nextCheck"),
+      value: row.status === "active" ? formatTime(row.next_run_at) : t("monitors.paused"),
+    },
+    { label: t("monitors.stat.interval"), value: formatInterval(row.interval_seconds) },
+    { label: t("monitors.stat.mode"), value: formatMode(row.collection_mode) },
   ];
 
   return (
@@ -128,17 +134,17 @@ export function MonitorPage({ monitorId }: { monitorId: string }) {
               {row.status === "active" ? (
                 <Button variant="outline" size="sm" onClick={() => void pause.mutateAsync(row.id)} disabled={busy}>
                   <Pause className="size-3.5" />
-                  暂停
+                  {t("monitors.action.pause")}
                 </Button>
               ) : (
                 <Button variant="outline" size="sm" onClick={() => void resume.mutateAsync(row.id)} disabled={busy}>
                   <Play className="size-3.5" />
-                  恢复
+                  {t("monitors.action.resume")}
                 </Button>
               )}
               <Button size="sm" onClick={() => void run.mutateAsync(row.id)} disabled={busy}>
                 <Zap className="size-3.5" />
-                立即检查
+                {t("monitors.action.runNow")}
               </Button>
               <Button
                 variant="ghost"
@@ -151,15 +157,15 @@ export function MonitorPage({ monitorId }: { monitorId: string }) {
                 }}
               >
                 <Settings2 className="size-3.5" />
-                修改设置
+                {t("monitors.action.editSettings")}
               </Button>
             </>
           }
         >
           <div className="flex flex-wrap items-center gap-2 pt-1">
             <Badge tone={row.status === "active" ? "success" : "neutral"}>{statusLabel(row.status)}</Badge>
-            {row.health_status === "failed" && <Badge tone="error">最近一次采集失败</Badge>}
-            {row.baseline_status !== "ready" && <Badge tone="warning">正在建立基线</Badge>}
+            {row.health_status === "failed" && <Badge tone="error">{t("monitors.badge.lastCheckFailed")}</Badge>}
+            {row.baseline_status !== "ready" && <Badge tone="warning">{t("monitors.badge.baselinePending")}</Badge>}
           </div>
         </PageHeader>
 
@@ -174,12 +180,12 @@ export function MonitorPage({ monitorId }: { monitorId: string }) {
 
         <div className="grid gap-6 lg:grid-cols-[minmax(0,1fr)_20rem]">
           <section className="space-y-2">
-            <h2 className="section-title">最近检查</h2>
-            {jobs.isPending && <p className="meta">正在加载…</p>}
+            <h2 className="section-title">{t("monitors.jobs.title")}</h2>
+            {jobs.isPending && <p className="meta">{t("monitors.loadingShort")}</p>}
             {!jobs.isPending && (jobs.data?.items.length ?? 0) === 0 && (
               <EmptyState
-                title="还没有检查记录"
-                description="等到下一个检查周期，或者点右上角「立即检查」。"
+                title={t("monitors.jobs.emptyTitle")}
+                description={t("monitors.jobs.emptyBody")}
               />
             )}
             <ul className="space-y-1.5">
@@ -199,13 +205,15 @@ export function MonitorPage({ monitorId }: { monitorId: string }) {
                       {job.error_code
                         ? errorText(job.error_code)
                         : eventByJob.has(job.id)
-                          ? `发现${eventLabel(eventByJob.get(job.id))}`
+                          ? t("monitors.job.detected", { event: eventLabel(eventByJob.get(job.id)) })
                           : job.status === "succeeded"
-                            ? "内容已保存"
+                            ? t("monitors.job.saved")
                             : ""}
                     </span>
                     {job.attempt_count > 1 && (
-                      <span className="meta shrink-0 tabular-nums">尝试 {job.attempt_count} 次</span>
+                      <span className="meta shrink-0 tabular-nums">
+                        {t("monitors.job.attempts", { count: job.attempt_count })}
+                      </span>
                     )}
                   </button>
                 </li>
@@ -216,13 +224,13 @@ export function MonitorPage({ monitorId }: { monitorId: string }) {
           <aside className="space-y-4">
             <section className="surface-pad space-y-3">
               <div className="flex items-baseline justify-between">
-                <h2 className="section-title">当前内容</h2>
+                <h2 className="section-title">{t("monitors.content.title")}</h2>
                 <span className="meta">{row.baseline ? formatTime(row.baseline.collected_at) : "—"}</span>
               </div>
               {row.baseline ? (
                 <FieldValues values={values} labels={labels} />
               ) : (
-                <p className="meta">第一次采集成功后，这里会显示页面上的当前内容。</p>
+                <p className="meta">{t("monitors.content.empty")}</p>
               )}
               {row.baseline && row.baseline.evidence_refs.length > 0 && (
                 <div className="flex flex-wrap gap-1.5 border-t pt-3">
@@ -234,7 +242,9 @@ export function MonitorPage({ monitorId }: { monitorId: string }) {
                       target="_blank"
                       rel="noreferrer"
                     >
-                      {reference.kind === "screenshot" ? "截图" : "页面存档"}
+                      {reference.kind === "screenshot"
+                        ? t("monitors.evidence.screenshot")
+                        : t("monitors.evidence.archive")}
                       <span className="tabular-nums">{formatBytes(reference.size_bytes)}</span>
                     </a>
                   ))}
@@ -244,13 +254,13 @@ export function MonitorPage({ monitorId }: { monitorId: string }) {
 
             <section className="space-y-2">
               <div className="flex items-baseline justify-between">
-                <h2 className="section-title">最近事件</h2>
+                <h2 className="section-title">{t("monitors.events.title")}</h2>
                 <Link href="/app/events" className="text-xs text-primary underline-offset-2 hover:underline">
-                  全部
+                  {t("monitors.events.all")}
                 </Link>
               </div>
               {monitorEvents.length === 0 ? (
-                <p className="meta">这个监控还没有产生过事件。</p>
+                <p className="meta">{t("monitors.events.empty")}</p>
               ) : (
                 <ul className="space-y-2">
                   {monitorEvents.slice(0, 3).map((event) => (
@@ -273,26 +283,26 @@ export function MonitorPage({ monitorId }: { monitorId: string }) {
       <Dialog open={Boolean(openJob)} onOpenChange={(value) => !value && setOpenJob(null)}>
         <DialogContent className="max-w-xl">
           <DialogHeader>
-            <DialogTitle className="text-base">检查详情</DialogTitle>
+            <DialogTitle className="text-base">{t("monitors.dialog.title")}</DialogTitle>
           </DialogHeader>
-          {detail.isPending && <p className="meta">正在加载…</p>}
+          {detail.isPending && <p className="meta">{t("monitors.loadingShort")}</p>}
           {detail.data && (
             <div className="space-y-4 text-[13px]">
               <dl className="grid grid-cols-2 gap-3">
                 <div>
-                  <dt className="meta">状态</dt>
+                  <dt className="meta">{t("monitors.dialog.status")}</dt>
                   <dd>{statusLabel(detail.data.status)}</dd>
                 </div>
                 <div>
-                  <dt className="meta">开始时间</dt>
+                  <dt className="meta">{t("monitors.dialog.startedAt")}</dt>
                   <dd>{formatDateTime(detail.data.created_at)}</dd>
                 </div>
                 <div>
-                  <dt className="meta">尝试次数</dt>
+                  <dt className="meta">{t("monitors.dialog.attempts")}</dt>
                   <dd className="tabular-nums">{detail.data.attempt_count}</dd>
                 </div>
                 <div>
-                  <dt className="meta">结束时间</dt>
+                  <dt className="meta">{t("monitors.dialog.finishedAt")}</dt>
                   <dd>{formatDateTime(detail.data.finished_at)}</dd>
                 </div>
               </dl>
@@ -306,7 +316,7 @@ export function MonitorPage({ monitorId }: { monitorId: string }) {
 
               {detail.data.snapshot && (
                 <div className="space-y-2">
-                  <h3 className="meta">采集到的内容</h3>
+                  <h3 className="meta">{t("monitors.dialog.captured")}</h3>
                   <FieldValues values={detail.data.snapshot.extracted_data} labels={labels} />
                   {detail.data.snapshot.evidence_refs.length > 0 && (
                     <div className="flex flex-wrap gap-1.5">
@@ -318,7 +328,9 @@ export function MonitorPage({ monitorId }: { monitorId: string }) {
                           target="_blank"
                           rel="noreferrer"
                         >
-                          {reference.kind === "screenshot" ? "页面截图" : "页面存档"}
+                          {reference.kind === "screenshot"
+                            ? t("monitors.evidence.screenshotFull")
+                            : t("monitors.evidence.archive")}
                           <span className="tabular-nums">{formatBytes(reference.size_bytes)}</span>
                         </a>
                       ))}
@@ -329,12 +341,15 @@ export function MonitorPage({ monitorId }: { monitorId: string }) {
 
               {detail.data.attempts.length > 1 && (
                 <div className="space-y-1.5">
-                  <h3 className="meta">尝试记录</h3>
+                  <h3 className="meta">{t("monitors.dialog.attemptLog")}</h3>
                   <ul className="divide-y rounded-lg border">
                     {detail.data.attempts.map((attempt) => (
                       <li key={attempt.number} className="flex items-center justify-between gap-2 px-3 py-1.5 text-xs">
                         <span>
-                          第 {attempt.number} 次 · {statusLabel(attempt.status)}
+                          {t("monitors.dialog.attemptRow", {
+                            number: attempt.number,
+                            status: statusLabel(attempt.status),
+                          })}
                         </span>
                         <span className="text-muted-foreground tabular-nums">
                           {attempt.error_code ? errorText(attempt.error_code) : formatTime(attempt.finished_at)}

@@ -6,24 +6,37 @@ import { useEffect, useRef, useState, type FormEvent } from "react";
 import { ArrowRight, Radar } from "lucide-react";
 import { api, ApiError, safeReturnTo } from "@/lib/api/client";
 import { useAuth } from "@/lib/providers";
+import { useI18n } from "@/lib/i18n";
+import { useFormat } from "@/lib/format";
+import { LanguageSwitcher } from "@/components/language-switcher";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 
-const MESSAGES: Record<string, string> = {
-  invalid_credentials: "邮箱或密码不正确。",
-  registration_failed: "邀请无效、已过期或与邮箱不匹配，请联系管理员。",
-  rate_limited: "尝试次数过多，请稍后再试。",
-  forbidden: "请求未获授权，刷新页面后再试。",
-};
+const AUTH_ERROR_KEYS = {
+  invalid_credentials: "public.auth.error.invalidCredentials",
+  registration_failed: "public.auth.error.registrationFailed",
+  rate_limited: "public.auth.error.rateLimited",
+  forbidden: "public.auth.error.forbidden",
+} as const;
+
+type FormError = { code?: string; message?: string };
+
+function errorKeyFor(code: string | undefined) {
+  return code && code in AUTH_ERROR_KEYS
+    ? AUTH_ERROR_KEYS[code as keyof typeof AUTH_ERROR_KEYS]
+    : undefined;
+}
 
 export function AuthForm({ register = false }: { register?: boolean }) {
   const router = useRouter();
   const { refresh } = useAuth();
+  const { t } = useI18n();
+  const { errorText: describeError } = useFormat();
   const [invitation, setInvitation] = useState("");
   const [returnTo, setReturnTo] = useState("/app");
   const [pending, setPending] = useState(false);
-  const [error, setError] = useState("");
+  const [error, setError] = useState<FormError | null>(null);
   const captured = useRef(false);
 
   useEffect(() => {
@@ -44,7 +57,7 @@ export function AuthForm({ register = false }: { register?: boolean }) {
 
   async function submit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
-    setError("");
+    setError(null);
     setPending(true);
     const form = new FormData(event.currentTarget);
     try {
@@ -63,41 +76,53 @@ export function AuthForm({ register = false }: { register?: boolean }) {
     } catch (failure) {
       setError(
         failure instanceof ApiError
-          ? (MESSAGES[failure.code] ?? failure.message)
-          : "无法连接服务，请稍后重试。",
+          ? { code: failure.code, message: failure.message }
+          : {},
       );
     } finally {
       setPending(false);
     }
   }
 
+  const errorKey = errorKeyFor(error?.code);
+  const errorText = error
+    ? errorKey
+      ? t(errorKey)
+      : error.code
+        ? describeError(error.code)
+        : t("public.auth.error.network")
+    : "";
+
   return (
     <main className="mx-auto flex min-h-dvh w-full max-w-sm flex-col justify-center px-5 py-12">
-      <Link className="flex items-center gap-2 self-center text-[15px] font-semibold" href="/">
+      <div className="flex justify-end">
+        <LanguageSwitcher />
+      </div>
+      <Link className="mt-2 flex items-center gap-2 self-center text-[15px] font-semibold" href="/">
         <Radar className="size-5 text-primary" />
         WebMonitor
       </Link>
       <section className="surface-pad mt-8 space-y-1">
-        <h1 className="text-xl font-semibold">{register ? "接受邀请" : "登录"}</h1>
+        <h1 className="text-xl font-semibold">
+          {t(register ? "public.auth.register.title" : "public.auth.login.title")}
+        </h1>
         <p className="meta">
-          {register
-            ? "请使用收到邀请的邮箱注册，每个邀请链接对应一次注册。"
-            : "登录以管理监控和查看通知。"}
+          {t(register ? "public.auth.register.description" : "public.auth.login.description")}
         </p>
 
         <form onSubmit={submit} className="mt-6 flex flex-col gap-3.5">
           {register && (
             <div>
-              <Label htmlFor="display_name">显示名称</Label>
+              <Label htmlFor="display_name">{t("public.auth.field.displayName")}</Label>
               <Input id="display_name" name="display_name" autoComplete="name" required maxLength={100} />
             </div>
           )}
           <div>
-            <Label htmlFor="email">邮箱</Label>
+            <Label htmlFor="email">{t("public.auth.field.email")}</Label>
             <Input id="email" name="email" type="email" autoComplete="email" required />
           </div>
           <div>
-            <Label htmlFor="password">密码</Label>
+            <Label htmlFor="password">{t("public.auth.field.password")}</Label>
             <Input
               id="password"
               name="password"
@@ -107,20 +132,22 @@ export function AuthForm({ register = false }: { register?: boolean }) {
               maxLength={128}
               required
             />
-            {register && <p className="meta mt-1">密码长度为 12–128 个字符，建议为本账户单独设置密码。</p>}
+            {register && <p className="meta mt-1">{t("public.auth.passwordHint")}</p>}
           </div>
           {register && !invitation && (
             <p className="rounded-lg border border-warning/40 bg-warning/5 px-3 py-2 text-xs text-warning">
-              缺少邀请信息，请使用管理员提供的完整邀请链接。
+              {t("public.auth.missingInvitation")}
             </p>
           )}
-          {error && (
+          {errorText && (
             <p className="text-sm text-error" role="alert">
-              {error}
+              {errorText}
             </p>
           )}
           <Button type="submit" className="mt-1" disabled={pending || (register && !invitation)}>
-            {pending ? "正在提交…" : register ? "创建账户" : "登录"}
+            {pending
+              ? t("public.auth.submitting")
+              : t(register ? "public.auth.submitRegister" : "public.auth.submit")}
             <ArrowRight />
           </Button>
         </form>
@@ -128,10 +155,10 @@ export function AuthForm({ register = false }: { register?: boolean }) {
         <p className="mt-5 text-center text-xs text-muted-foreground">
           {register ? (
             <Link className="text-primary underline-offset-2 hover:underline" href="/login">
-              已有账户？前往登录
+              {t("public.auth.hasAccount")}
             </Link>
           ) : (
-            "注册账户请联系管理员获取邀请链接。"
+            t("public.auth.noAccount")
           )}
         </p>
       </section>
