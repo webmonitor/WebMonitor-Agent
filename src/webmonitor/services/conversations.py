@@ -121,6 +121,10 @@ async def post_message(session: AsyncSession, user: CurrentUser, conversation_id
         Job.kind == "agent", Job.status.in_(ACTIVE)))
     if active is not None:
         raise DomainError("run_in_progress", 409, details={"job_id": str(active.id)})
+    if not conversation.title:
+        # The first message names the conversation; the UI truncates for display.
+        line = " ".join(content.split())
+        conversation.title = line[:60].rstrip(" ，,、。;；") + ("…" if len(line) > 60 else "")
     job = await jobs.enqueue(session, user_id=user.user_id, kind="agent",
                              conversation_id=conversation.id)
     session.add(Message(conversation_id=conversation.id, job_id=job.id, user_id=user.user_id,

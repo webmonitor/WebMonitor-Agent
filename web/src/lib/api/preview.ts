@@ -32,8 +32,31 @@ export const draftPreviewSchema = z.object({
   expires_at: z.string(),
 });
 
+const ruleSchema = z.object({
+  type: z.string(),
+  field: z.string().optional(),
+  operator: z.string().optional(),
+  value: z.union([z.number(), z.string()]).optional(),
+  keyword: z.string().optional(),
+  watch_fields: z.array(z.string()).optional(),
+});
+
 export const draftSpecSchema = z.object({
-  fields: z.array(z.object({ name: z.string(), type: z.string(), semantic: z.string().optional() })),
+  name: z.string().optional(),
+  url: z.string().optional(),
+  collection_mode: z.string().optional(),
+  fields: z.array(
+    z.object({
+      name: z.string(),
+      type: z.string(),
+      semantic: z.string().optional(),
+      selector: z.string().optional(),
+    }),
+  ),
+  change_rules: z
+    .object({ mode: z.string().optional(), rules: z.array(ruleSchema) })
+    .optional(),
+  schedule: z.object({ interval_seconds: z.number(), timezone: z.string().optional() }).optional(),
 });
 
 export type DraftPreview = z.infer<typeof draftPreviewSchema>;

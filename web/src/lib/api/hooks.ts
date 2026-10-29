@@ -64,10 +64,10 @@ export function useMonitor(id: string) {
   });
 }
 
-export function useMonitorJobs(id: string) {
+export function useMonitorJobs(id: string, limit = 10) {
   return useQuery({
-    queryKey: ["monitor-jobs", id],
-    queryFn: () => page<JobView>(`/monitors/${id}/jobs`),
+    queryKey: ["monitor-jobs", id, limit],
+    queryFn: () => page<JobView>(`/monitors/${id}/jobs`, limit),
     refetchInterval: 5000,
   });
 }

@@ -71,7 +71,7 @@ async def draft_from_monitor(session: AsyncSession, user: CurrentUser,
                              monitor_id: UUID) -> tuple[Conversation, Draft]:
     monitor = require_owner(user, await session.get(Monitor, monitor_id))
     conversation = Conversation(user_id=user.user_id,
-        title=f"修改通知：{monitor.name}"[:200])
+        title=f"修改监控：{monitor.name}"[:200])
     session.add(conversation)
     await session.flush()
     draft = Draft(user_id=user.user_id, conversation_id=conversation.id,

@@ -58,7 +58,7 @@ docker compose exec api webmonitor invite-create --email <允许名单中的邮�
 
 ### 创建与审批
 
-工作台是对话优先的三栏视图（对话列表 / 对话 / 上下文面板），不要求用户手填 CSS。模型只能基于实际分析提出字段、规则、覆盖范围和采集方式；现价与原价不明确时需要澄清。
+工作台是对话优先的三栏视图（导航与对话/监控列表 / 对话 / 上下文面板）；上下文面板显示待确认的创建卡片或监控摘要，窄屏下创建卡片并入对话流。不要求用户手填 CSS。模型只能基于实际分析提出字段、规则、覆盖范围和采集方式；现价与原价不明确时需要澄清。
 
 - 保存草稿产生新 revision，并作废旧预览与在途预览 job。
 - `preview_monitor` 真实执行采集、证据上传、规则模拟、收件人去重与包内模板渲染；预览有效期由 `PREVIEW_TTL_MINUTES` 决定。
@@ -195,6 +195,6 @@ curl -sS -X PATCH -H "Authorization: Bearer $TOKEN" -H 'Content-Type: applicatio
 curl -sS -X POST -H "Authorization: Bearer $TOKEN" http://127.0.0.1:9001/_admin/reset
 ```
 
-联调闭环（本仓库实测过的顺序）：对话里让助手分析 `http://site:9000/static/notice` → 保存草稿 → 真实预览（含 `current_price` money/CNY 与 `effective_date`）→ 在工作台点“确认创建” → 首次成功只建基线 → 用 `_admin/state` 把 `current_fee` 改小 → 下一个周期产生一个 `price_changed` 事件并按通知组投递邮件。
+联调闭环（本仓库实测过的顺序）：对话里让助手分析 `http://site:9000/static/notice` → 保存草稿 → 真实预览（含 `current_price` money/CNY 与 `effective_date`）→ 在上下文面板点「创建监控」 → 首次成功只建基线 → 用 `_admin/state` 把 `current_fee` 改小 → 下一个周期产生一个 `price_changed` 事件并按通知组投递邮件。
 
 注意金额字段的命名约定：价格邮件模板要求字段名为 `current_price`，其他名字的 money 字段不会生成价格邮件；预览现在会以 `template_contract_failed:price_changed` 警告提示，而不是等投递时才失败。

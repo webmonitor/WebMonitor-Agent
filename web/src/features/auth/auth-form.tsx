@@ -3,7 +3,7 @@
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { useEffect, useRef, useState, type FormEvent } from "react";
-import { ArrowRight, Radio } from "lucide-react";
+import { ArrowRight, Radar } from "lucide-react";
 import { api, ApiError, safeReturnTo } from "@/lib/api/client";
 import { useAuth } from "@/lib/providers";
 import { Button } from "@/components/ui/button";
@@ -13,8 +13,8 @@ import { Label } from "@/components/ui/label";
 const MESSAGES: Record<string, string> = {
   invalid_credentials: "邮箱或密码不正确。",
   registration_failed: "邀请无效、已过期或与邮箱不匹配，请联系管理员。",
-  rate_limited: "尝试次数过多，请稍后重试。",
-  forbidden: "请求未获授权，请刷新页面后再试。",
+  rate_limited: "尝试次数过多，请稍后再试。",
+  forbidden: "请求未获授权，刷新页面后再试。",
 };
 
 export function AuthForm({ register = false }: { register?: boolean }) {
@@ -72,23 +72,20 @@ export function AuthForm({ register = false }: { register?: boolean }) {
   }
 
   return (
-    <main className="mx-auto flex min-h-dvh w-full max-w-md flex-col justify-center px-5 py-10">
-      <Link className="flex items-center gap-2 self-center font-semibold" href="/">
-        <Radio className="size-5 text-primary" />
-        观测 · WebMonitor
+    <main className="mx-auto flex min-h-dvh w-full max-w-sm flex-col justify-center px-5 py-12">
+      <Link className="flex items-center gap-2 self-center text-[15px] font-semibold" href="/">
+        <Radar className="size-5 text-primary" />
+        WebMonitor
       </Link>
-      <section className="mt-6 rounded-xl border bg-card p-6">
-        <p className="text-xs font-medium tracking-[0.15em] text-primary">
-          {register ? "受邀加入" : "欢迎回来"}
-        </p>
-        <h1 className="mt-2 text-2xl">{register ? "创建账户" : "继续你的观测。"}</h1>
-        <p className="mt-2 text-sm text-muted-foreground">
+      <section className="surface-pad mt-8 space-y-1">
+        <h1 className="text-xl font-semibold">{register ? "接受邀请" : "登录"}</h1>
+        <p className="meta">
           {register
-            ? "使用邀请对应的邮箱创建账户。邀请只在本页内存中保留，刷新后请重新打开邀请链接。"
-            : "登录后管理监控、查看证据与通知记录。"}
+            ? "用收到邀请的那个邮箱创建账户，邀请链接只能使用一次。"
+            : "登录后管理监控、查看事件与通知记录。"}
         </p>
 
-        <form onSubmit={submit} className="mt-6 flex flex-col gap-4">
+        <form onSubmit={submit} className="mt-6 flex flex-col gap-3.5">
           {register && (
             <div>
               <Label htmlFor="display_name">你的名字</Label>
@@ -110,15 +107,11 @@ export function AuthForm({ register = false }: { register?: boolean }) {
               maxLength={128}
               required
             />
-            {register && (
-              <p className="mt-1 text-xs text-muted-foreground">
-                12–128 个字符。请勿复用其他账户的密码。
-              </p>
-            )}
+            {register && <p className="meta mt-1">12–128 个字符，不要与其他账户共用。</p>}
           </div>
           {register && !invitation && (
-            <p className="rounded-lg border border-warning/40 bg-card px-3 py-2 text-xs text-warning">
-              未找到邀请凭证。请通过管理员提供的完整邀请链接进入。
+            <p className="rounded-lg border border-warning/40 bg-warning/5 px-3 py-2 text-xs text-warning">
+              这个地址里没有邀请信息，请从管理员发来的完整链接打开本页。
             </p>
           )}
           {error && (
@@ -126,23 +119,22 @@ export function AuthForm({ register = false }: { register?: boolean }) {
               {error}
             </p>
           )}
-          <Button type="submit" disabled={pending || (register && !invitation)}>
+          <Button type="submit" className="mt-1" disabled={pending || (register && !invitation)}>
             {pending ? "正在提交…" : register ? "创建账户" : "登录"}
             <ArrowRight />
           </Button>
         </form>
 
-        <p className="mt-5 text-center text-sm text-muted-foreground">
+        <p className="mt-5 text-center text-xs text-muted-foreground">
           {register ? (
-            <Link className="underline" href="/login">已有账户？前往登录</Link>
+            <Link className="text-primary underline-offset-2 hover:underline" href="/login">
+              已有账户？前往登录
+            </Link>
           ) : (
-            "首次使用？请向管理员申请邀请。"
+            "第一次使用？向管理员要一个邀请链接。"
           )}
         </p>
       </section>
-      <p className="mt-4 text-center text-xs text-muted-foreground">
-        真实采集 · 明确确认 · 可追溯证据
-      </p>
     </main>
   );
 }

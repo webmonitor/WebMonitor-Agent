@@ -108,6 +108,28 @@ async def test_conversation_round_trip_and_every_list(client, session):
 
 
 @pytest.mark.asyncio
+async def test_first_message_names_the_conversation(client, session):
+    await ensure_admin(session)
+    headers = await sign_in(client)
+    conversation = (await client.post("/api/v1/conversations", json={"title": None},
+        headers=headers)).json()
+    assert conversation["title"] is None
+
+    await client.post(f"/api/v1/conversations/{conversation['id']}/messages",
+        json={"content": "监控 https://example.com/ 的当前价格，下降 10% 时通知我",
+              "client_message_id": str(uuid4())}, headers=headers)
+    snapshot = (await client.get(f"/api/v1/conversations/{conversation['id']}")).json()
+    assert snapshot["conversation"]["title"] == "监控 https://example.com/ 的当前价格，下降 10% 时通知我"
+
+    named = (await client.post("/api/v1/conversations", json={"title": "我自己命名"},
+        headers=headers)).json()
+    await client.post(f"/api/v1/conversations/{named['id']}/messages",
+        json={"content": "另一段描述", "client_message_id": str(uuid4())}, headers=headers)
+    again = (await client.get(f"/api/v1/conversations/{named['id']}")).json()
+    assert again["conversation"]["title"] == "我自己命名"
+
+
+@pytest.mark.asyncio
 async def test_draft_view_and_missing_evidence_index(client, session):
     user = await ensure_admin(session)
     await sign_in(client)

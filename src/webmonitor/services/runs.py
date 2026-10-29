@@ -63,13 +63,34 @@ def _stale(monitor: Monitor | None, job: Job) -> bool:
             or job.revision != monitor.spec_version)
 
 
+def _field_labels(monitor: Monitor) -> dict[str, str]:
+    """The readable name of each field travels with the event it explains."""
+    try:
+        spec = DraftSpec.model_validate(monitor.spec or {})
+    except ValueError:
+        return {}
+    return {field.name: field.semantic for field in spec.fields}
+
+
+ERROR_SUMMARIES = {
+    "url_forbidden": "目标地址不在允许范围内",
+    "target_unavailable": "目标页面无法访问",
+    "target_http_error": "目标页面返回错误",
+    "collection_timeout": "采集超时",
+    "browser_unavailable": "浏览器环境不可用",
+    "storage_unavailable": "证据存储暂时不可用",
+    "lease_expired": "本次执行超时",
+}
+
+
 async def _event(session: AsyncSession, monitor: Monitor, job: Job, event_type: str, *,
                  before, after, summary: str, fields: dict,
                  snapshot_id: UUID | None = None, differences: list | None = None,
                  fingerprint: str | None = None) -> Event | None:
     event = Event(monitor_id=monitor.id, job_id=job.id, snapshot_id=snapshot_id,
         type=event_type, change={"before": before, "after": after, "summary": summary,
-                                 "differences": differences or []},
+                                 "differences": differences or [],
+                                 "labels": _field_labels(monitor)},
         failure_fingerprint=fingerprint)
     session.add(event)
     await session.flush()
@@ -116,7 +137,7 @@ async def commit_success(session: AsyncSession, job: Job, result: dict) -> bool:
     if not first_success:
         if monitor.health_status == "failed":
             await _event(session, monitor, job, "recovered", before=previous, after=fields,
-                summary="Collection recovered", fields=fields, snapshot_id=snapshot.id,
+                summary="采集已恢复", fields=fields, snapshot_id=snapshot.id,
                 fingerprint=monitor.failure_fingerprint)
         if diff["triggered"]:
             summary = "; ".join(
@@ -159,7 +180,7 @@ async def fail_run(session: AsyncSession, job: Job, *, error_code: str,
             if monitor.baseline_snapshot_id else None
         fields = baseline.extracted_data if baseline else {}
         await _event(session, monitor, job, "run_failed", before=fields or None,
-            after=fields, summary=f"Collection failed: {error_code}", fields=fields,
+            after=fields, summary=f"采集失败：{ERROR_SUMMARIES.get(error_code, error_code)}", fields=fields,
             fingerprint=fingerprint)
     monitor.health_status, monitor.failure_fingerprint = "failed", fingerprint
     monitor.last_failure_at = now

@@ -9,7 +9,7 @@ from webmonitor.schemas.notifications import EVENT_TYPES, NotificationPayload
 
 _html = Environment(undefined=StrictUndefined, autoescape=True)
 _text = Environment(undefined=StrictUndefined, autoescape=False)
-_SUBJECTS = {"price_changed":"Price changed", "list_changed":"List changed", "content_changed":"Content changed", "run_failed":"Collection failed", "recovered":"Collection recovered"}
+_SUBJECTS = {"price_changed": "价格变化", "list_changed": "列表变化", "content_changed": "内容变化", "run_failed": "采集失败", "recovered": "采集已恢复"}
 
 
 def render_email(event_type: str, payload: dict) -> dict:
@@ -25,7 +25,7 @@ def render_email(event_type: str, payload: dict) -> dict:
         plain = _text.from_string(resources.joinpath(event_type+".txt").read_text()).render(**data)
     except (TemplateError,TypeError,ValueError):
         raise DomainError("template_contract_failed",422) from None
-    subject = f"{_SUBJECTS[event_type]}: {data['monitor']['name']}".replace("\r", " ").replace("\n", " ")
+    subject = f"{data['monitor']['name']}：{_SUBJECTS[event_type]}".replace("\r", " ").replace("\n", " ")
     return {"subject": subject, "html": html, "text": plain}
 
 
