@@ -81,14 +81,14 @@ export function AuthForm({ register = false }: { register?: boolean }) {
         <h1 className="text-xl font-semibold">{register ? "接受邀请" : "登录"}</h1>
         <p className="meta">
           {register
-            ? "用收到邀请的那个邮箱创建账户，邀请链接只能使用一次。"
-            : "登录后管理监控、查看事件与通知记录。"}
+            ? "请使用受邀邮箱注册。邀请链接仅可使用一次。"
+            : "登录以管理监控和查看通知。"}
         </p>
 
         <form onSubmit={submit} className="mt-6 flex flex-col gap-3.5">
           {register && (
             <div>
-              <Label htmlFor="display_name">你的名字</Label>
+              <Label htmlFor="display_name">显示名称</Label>
               <Input id="display_name" name="display_name" autoComplete="name" required maxLength={100} />
             </div>
           )}
@@ -107,11 +107,11 @@ export function AuthForm({ register = false }: { register?: boolean }) {
               maxLength={128}
               required
             />
-            {register && <p className="meta mt-1">12–128 个字符，不要与其他账户共用。</p>}
+            {register && <p className="meta mt-1">密码长度为 12–128 个字符，请勿重复使用其他账户的密码。</p>}
           </div>
           {register && !invitation && (
             <p className="rounded-lg border border-warning/40 bg-warning/5 px-3 py-2 text-xs text-warning">
-              这个地址里没有邀请信息，请从管理员发来的完整链接打开本页。
+              缺少邀请信息，请使用管理员提供的完整邀请链接。
             </p>
           )}
           {error && (
@@ -131,7 +131,7 @@ export function AuthForm({ register = false }: { register?: boolean }) {
               已有账户？前往登录
             </Link>
           ) : (
-            "第一次使用？向管理员要一个邀请链接。"
+            "注册账户请联系管理员获取邀请链接。"
           )}
         </p>
       </section>

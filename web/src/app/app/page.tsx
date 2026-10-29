@@ -45,20 +45,29 @@ function WorkspaceView() {
   const conversations = useConversations();
   const conversation = useConversation(conversationId);
 
-  const first = conversations.data?.items[0];
+  const items = conversations.data?.items ?? [];
+  const first = items[0];
+  // `new=1` opens an unsaved draft; an empty account starts in it directly.
+  const drafting =
+    !conversationId && (params.get("new") === "1" || (conversations.isSuccess && items.length === 0));
+
   useEffect(() => {
-    if (!conversationId && first) {
+    if (!conversationId && !drafting && first) {
       router.replace(`/app?conversation=${first.id}`);
     }
-  }, [conversationId, first, router]);
+  }, [conversationId, drafting, first, router]);
 
   const drafts = conversation.data?.drafts ?? [];
   const pending = drafts.filter((draft) => draft.status === "draft").at(-1);
   const monitorId = drafts.filter((draft) => draft.monitor_id).at(-1)?.monitor_id ?? undefined;
 
   return (
-    <div className="grid h-full min-h-0 grid-cols-1 grid-rows-[minmax(0,1fr)] xl:grid-cols-[minmax(0,1fr)_21rem]">
-      <ChatPanel conversationId={conversationId} pendingDraft={pending} />
+    <div
+      className={`grid h-full min-h-0 grid-cols-1 grid-rows-[minmax(0,1fr)] ${
+        conversationId ? "xl:grid-cols-[minmax(0,1fr)_21rem]" : ""
+      }`}
+    >
+      <ChatPanel conversationId={conversationId} drafting={drafting} pendingDraft={pending} />
       {conversationId && (
         <ContextPanel
           conversationId={conversationId}

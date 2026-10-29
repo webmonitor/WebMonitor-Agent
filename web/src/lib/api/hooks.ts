@@ -104,13 +104,15 @@ export function useDeliveries() {
   });
 }
 
-export function useCreateConversation() {
+export function useStartConversation() {
   const cache = useQueryClient();
   return useMutation({
-    mutationFn: (title?: string) =>
+    mutationFn: (content: string) =>
       api<ConversationView>("/conversations", {
         method: "POST",
-        body: JSON.stringify({ title: title ?? null }),
+        body: JSON.stringify({
+          message: { content, client_message_id: newClientMessageId() },
+        }),
       }),
     onSuccess: () => void cache.invalidateQueries({ queryKey: ["conversations"] }),
   });

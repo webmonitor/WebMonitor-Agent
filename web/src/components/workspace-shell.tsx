@@ -8,13 +8,13 @@ import {
   ChevronRight,
   LogOut,
   Menu,
-  MessageSquarePlus,
   MessagesSquare,
+  Plus,
   Radar,
   X,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
-import { useConversations, useCreateConversation, useMonitors } from "@/lib/api/hooks";
+import { useConversations, useMonitors } from "@/lib/api/hooks";
 import { useAuth } from "@/lib/providers";
 import { dayLabel, formatInterval, formatRelative } from "@/lib/format";
 
@@ -146,12 +146,20 @@ function MonitorList({ onNavigate }: { onNavigate: () => void }) {
   );
 }
 
-function SectionLabel({ children, count }: { children: ReactNode; count?: number }) {
+function SectionLabel({
+  children,
+  count,
+  action,
+}: {
+  children: ReactNode;
+  count?: number;
+  action?: ReactNode;
+}) {
   return (
-    <p className="flex items-center justify-between px-2 pb-1 pt-2 text-[11px] font-medium uppercase tracking-wide text-muted-foreground">
+    <div className="flex items-center justify-between gap-2 px-2 pb-1 pt-2 text-[11px] font-medium tracking-wide text-muted-foreground">
       <span>{children}</span>
-      {typeof count === "number" && <span className="tabular-nums">{count}</span>}
-    </p>
+      {action ?? (typeof count === "number" && <span className="tabular-nums">{count}</span>)}
+    </div>
   );
 }
 
@@ -159,7 +167,6 @@ export function WorkspaceShell({ children }: { children: ReactNode }) {
   const { user, isPending, error, logout, refresh } = useAuth();
   const pathname = usePathname();
   const router = useRouter();
-  const create = useCreateConversation();
   const [open, setOpen] = useState(false);
   const monitors = useMonitors();
 
@@ -174,9 +181,9 @@ export function WorkspaceShell({ children }: { children: ReactNode }) {
   }, [pathname]);
 
   async function startConversation() {
-    const conversation = await create.mutateAsync(undefined);
     setOpen(false);
-    router.push(`/app?conversation=${conversation.id}`);
+    // A draft only becomes a conversation once its first message is sent.
+    router.push("/app?new=1");
   }
 
   if (isPending) {
@@ -238,17 +245,6 @@ export function WorkspaceShell({ children }: { children: ReactNode }) {
           </Button>
         </div>
 
-        <div className="px-3 pb-2">
-          <Button
-            className="w-full justify-start"
-            onClick={() => void startConversation()}
-            disabled={create.isPending}
-          >
-            <MessageSquarePlus />
-            新对话
-          </Button>
-        </div>
-
         <nav className="space-y-0.5 px-3 pb-2">
           {links.map(({ href, label, icon: Icon }) => {
             const current = href === "/app" ? pathname === href : pathname.startsWith(href);
@@ -271,7 +267,19 @@ export function WorkspaceShell({ children }: { children: ReactNode }) {
         </nav>
 
         <div className="min-h-0 flex-1 overflow-y-auto border-t px-3 pb-4">
-          <SectionLabel>对话</SectionLabel>
+          <SectionLabel
+            action={
+              <button
+                className="flex items-center gap-0.5 rounded-md px-1 py-0.5 text-[11px] text-muted-foreground transition-colors hover:bg-muted hover:text-foreground"
+                onClick={() => void startConversation()}
+              >
+                <Plus className="size-3" />
+                新对话
+              </button>
+            }
+          >
+            对话
+          </SectionLabel>
           <Suspense fallback={null}>
             <ConversationList />
           </Suspense>

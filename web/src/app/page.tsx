@@ -1,26 +1,24 @@
 import Link from "next/link";
-import { ArrowRight, Check, FileSearch, History, MailCheck, Radar, ShieldCheck } from "lucide-react";
+import { ArrowRight, History, MailCheck, Radar, Settings2, Users } from "lucide-react";
+
+const examples = [
+  { title: "价格变动", detail: "关注商品调价，按降价幅度或目标价格设置提醒。" },
+  { title: "商品补货", detail: "关注库存状态，在缺货商品恢复有货时接收通知。" },
+  { title: "公告发布", detail: "跟踪公告列表，发现新增条目时发送邮件。" },
+  { title: "日期调整", detail: "监控报名、缴费等截止日期，变更后接收通知。" },
+];
 
 const steps = [
-  {
-    title: "说清楚要看什么",
-    body: "价格、库存、公告，还是某个列表里有没有出现新条目。用平常的话描述就够了。",
-  },
-  {
-    title: "先看一眼真实结果",
-    body: "助手打开页面、试采集一次，把取到的内容、收件人和邮件样式摆在你面前。",
-  },
-  {
-    title: "确认后开始定时检查",
-    body: "监控按你设定的节奏运行，发现变化时发邮件，并在工作台留下前后对照。",
-  },
+  { title: "提供网页地址", body: "在对话中粘贴链接，说明关注的内容、检查频率和通知条件。" },
+  { title: "检查预览结果", body: "查看提取到的内容和邮件预览，核对收件人后确认创建。" },
+  { title: "接收变化通知", body: "监控按设置运行。符合条件的变化会生成记录，并通过邮件通知。" },
 ];
 
 const features = [
-  { icon: FileSearch, title: "确认前就有真实结果", body: "创建监控之前就能看到这次采集到的内容，不是猜测，也不会创建了才发现取不到。" },
-  { icon: History, title: "变化有前后对照", body: "每个事件都记录改动前后的值和当时的页面存档，回看时不用凭记忆。" },
-  { icon: MailCheck, title: "邮件有据可查", body: "谁收到了、什么时候发的、失败原因是什么，都留在投递记录里。" },
-  { icon: ShieldCheck, title: "采集范围受控", body: "只有被允许的站点会被访问，内网地址和元数据端点一律拒绝。" },
+  { icon: History, title: "查看变化详情", body: "对比更新前后的内容，查看该次检查保存的页面存档。" },
+  { icon: MailCheck, title: "检查邮件发送情况", body: "查看收件人、邮件正文和发送结果，了解发送失败的原因。" },
+  { icon: Users, title: "设置通知对象", body: "从管理员配置的通知组中选择收件人，一项监控可通知多个邮箱。" },
+  { icon: Settings2, title: "调整运行状态", body: "可暂停或恢复监控，也可以立即执行一次检查，获取当前内容。" },
 ];
 
 export default function LandingPage() {
@@ -39,22 +37,23 @@ export default function LandingPage() {
             className="flex items-center gap-1.5 rounded-lg bg-primary px-3.5 py-1.5 font-medium text-primary-foreground hover:opacity-90"
             href="/app"
           >
-            打开工作台
+            进入工作台
             <ArrowRight className="size-3.5" />
           </Link>
         </div>
       </nav>
 
-      <section className="grid gap-10 py-14 lg:grid-cols-[minmax(0,1fr)_22rem] lg:items-center lg:py-20">
+      <section className="grid gap-10 py-14 lg:grid-cols-[minmax(0,1fr)_21rem] lg:items-center lg:py-20">
         <div>
-          <h1 className="max-w-xl text-[2.1rem] font-semibold leading-[1.2] tracking-tight sm:text-[2.6rem]">
-            网页一有变化，
+          <p className="text-xs font-medium tracking-wide text-primary">网页变化监控</p>
+          <h1 className="mt-2 max-w-xl text-[2.1rem] font-semibold leading-[1.25] tracking-tight sm:text-[2.5rem]">
+            你关心的变化，
             <br />
-            邮件先到。
+            值得被认真看见。
           </h1>
-          <p className="mt-5 max-w-lg text-[15px] leading-relaxed text-muted-foreground">
-            用一句话说清要看的内容。WebMonitor 会先真实打开页面、确认能读到它，再由你决定是否开始定时监控。
-            第一次采集只建立基准，所以你不会收到一封误报的邮件。
+          <p className="mt-5 max-w-xl text-[15px] leading-relaxed text-muted-foreground">
+            价格、库存、公告、截止日期——告诉 WebMonitor 要看什么。它按时打开页面，
+            把变化前后的内容发到你的邮箱。
           </p>
           <div className="mt-7 flex flex-wrap items-center gap-3">
             <Link
@@ -64,42 +63,53 @@ export default function LandingPage() {
               开始使用
               <ArrowRight className="size-4" />
             </Link>
-            <Link className="rounded-lg border bg-card px-4 py-2.5 text-sm hover:bg-muted" href="/login">
-              我已有账户
+            <Link className="rounded-lg border bg-card px-4 py-2.5 text-sm hover:bg-muted" href="#how-it-works">
+              查看使用方式
             </Link>
           </div>
-          <p className="mt-4 text-xs text-muted-foreground">加入需要管理员发出的邀请链接。</p>
+          <p className="mt-4 text-xs text-muted-foreground">新用户请联系管理员获取邀请链接。</p>
         </div>
 
-        <div className="relative">
-          <div className="surface-pad space-y-3 shadow-sm">
-            <p className="text-xs text-muted-foreground">你说的</p>
-            <p className="rounded-lg bg-accent px-3 py-2 text-[13px] text-accent-foreground">
-              盯着这个页面的停车费，降价就发邮件给我。
-            </p>
-            <p className="text-xs text-muted-foreground">它先确认的</p>
-            <ul className="space-y-1.5 text-[13px]">
-              {[
-                ["当前价格", "¥128.50"],
-                ["执行日期", "10/31 16:00"],
-                ["收件人", "2 人"],
-              ].map(([label, value]) => (
-                <li key={label} className="flex items-baseline justify-between gap-3">
-                  <span className="text-muted-foreground">{label}</span>
-                  <span className="font-medium tabular-nums">{value}</span>
-                </li>
-              ))}
-            </ul>
-            <div className="flex items-center gap-1.5 rounded-lg border border-success/25 bg-success/10 px-3 py-2 text-xs text-success">
-              <Check className="size-3.5" />
-              预览通过，等你确认创建
-            </div>
+        <div className="surface-pad space-y-5 shadow-sm">
+          <div className="flex items-center justify-between gap-2">
+            <p className="text-xs text-muted-foreground">通知示例</p>
+            <span className="chip border-success/30 bg-success/10 text-success">价格下降</span>
           </div>
+          <div>
+            <p className="text-[15px] font-medium">商品价格更新</p>
+            <p className="mt-1 text-xs text-muted-foreground">shop.example.com/product</p>
+          </div>
+          <dl className="grid grid-cols-2 gap-4">
+            {[
+              ["上次价格", "¥128.50"],
+              ["当前价格", "¥99.00"],
+            ].map(([label, value]) => (
+              <div key={label}>
+                <dt className="text-xs text-muted-foreground">{label}</dt>
+                <dd className="mt-1 text-xl font-semibold tabular-nums">{value}</dd>
+              </div>
+            ))}
+          </dl>
+          <p className="border-t pt-3 text-xs leading-relaxed text-muted-foreground">
+            每 10 分钟检查一次，价格下降时通知。
+          </p>
         </div>
       </section>
 
       <section className="border-t py-10">
-        <h2 className="text-sm font-semibold text-muted-foreground">三步开始</h2>
+        <h2 className="text-xl font-semibold">常见用途</h2>
+        <ul className="mt-4 grid gap-4 sm:grid-cols-2">
+          {examples.map((example) => (
+            <li key={example.title} className="surface space-y-2 p-5">
+              <h3 className="text-[15px] font-medium">{example.title}</h3>
+              <p className="text-sm leading-relaxed text-muted-foreground">{example.detail}</p>
+            </li>
+          ))}
+        </ul>
+      </section>
+
+      <section id="how-it-works" className="scroll-mt-6 border-t py-10">
+        <h2 className="text-xl font-semibold">通过对话创建监控</h2>
         <ol className="mt-4 grid gap-6 sm:grid-cols-3">
           {steps.map((step, index) => (
             <li key={step.title} className="space-y-1.5">
@@ -113,19 +123,23 @@ export default function LandingPage() {
         </ol>
       </section>
 
-      <section className="grid gap-4 border-t py-10 sm:grid-cols-2">
-        {features.map(({ icon: Icon, title, body }) => (
-          <div key={title} className="surface-pad">
-            <Icon className="size-4 text-primary" />
-            <p className="mt-2 text-[15px] font-medium">{title}</p>
-            <p className="mt-1 text-sm leading-relaxed text-muted-foreground">{body}</p>
-          </div>
-        ))}
+      <section className="border-t py-10">
+        <h2 className="text-xl font-semibold">在工作台管理监控与通知</h2>
+        <div className="mt-5 grid gap-6 sm:grid-cols-2">
+          {features.map(({ icon: Icon, title, body }) => (
+            <div key={title} className="flex gap-3">
+              <Icon className="mt-0.5 size-4 shrink-0 text-primary" />
+              <div>
+                <h3 className="text-[15px] font-medium">{title}</h3>
+                <p className="mt-0.5 text-sm leading-relaxed text-muted-foreground">{body}</p>
+              </div>
+            </div>
+          ))}
+        </div>
       </section>
 
       <footer className="mt-auto flex flex-wrap items-center justify-between gap-2 border-t py-4 text-xs text-muted-foreground">
         <span>WebMonitor · 网页变化监控</span>
-        <span>私密部署 · 采集经由受控出口</span>
       </footer>
     </main>
   );

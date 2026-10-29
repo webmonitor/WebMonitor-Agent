@@ -1,13 +1,21 @@
 "use client";
 import { useEffect, useRef, useState } from "react";
 import Link from "next/link";
+import { useRouter } from "next/navigation";
 import Markdown from "react-markdown";
 import remarkGfm from "remark-gfm";
 import { ArrowUp, Loader2, Radar, Square } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { ApiError } from "@/lib/api/client";
-import { useCancelRun, useConversation, useSendMessage, type DraftView, type JobView } from "@/lib/api/hooks";
+import {
+  useCancelRun,
+  useConversation,
+  useSendMessage,
+  useStartConversation,
+  type DraftView,
+  type JobView,
+} from "@/lib/api/hooks";
 import { CreateMonitorCard } from "@/features/chat/create-monitor-card";
 import { errorText, stepLabel } from "@/lib/format";
 
@@ -65,13 +73,17 @@ function AssistantText({ content }: { content: string }) {
 
 export function ChatPanel({
   conversationId,
+  drafting = false,
   pendingDraft,
 }: {
   conversationId: string | null;
+  drafting?: boolean;
   pendingDraft?: DraftView;
 }) {
+  const router = useRouter();
   const conversation = useConversation(conversationId);
   const send = useSendMessage(conversationId ?? "");
+  const start = useStartConversation();
   const cancel = useCancelRun(conversationId ?? "");
   const [draft, setDraft] = useState("");
   const [error, setError] = useState("");
@@ -83,6 +95,7 @@ export function ChatPanel({
   const running = snapshot?.jobs.filter((job) => ACTIVE.includes(job.status)).at(-1);
   const lastJob = snapshot?.jobs.at(-1);
   const failed = lastJob?.status === "failed" ? lastJob : undefined;
+  const stopped = lastJob?.status === "cancelled" ? lastJob : undefined;
   const limit = snapshot?.limits.message_max_chars ?? 32000;
   const messages = snapshot?.messages ?? [];
 
@@ -106,9 +119,18 @@ export function ChatPanel({
 
   async function submit() {
     const content = draft.trim();
-    if (!content || !conversationId || send.isPending || running) return;
+    if (!content || send.isPending || start.isPending || running) return;
+    if (!conversationId && !drafting) return;
     setError("");
     try {
+      if (!conversationId) {
+        // The conversation is created together with its first message, so an
+        // abandoned draft never leaves an empty conversation behind.
+        const conversation = await start.mutateAsync(content);
+        setDraft("");
+        router.replace(`/app?conversation=${conversation.id}`);
+        return;
+      }
       await send.mutateAsync(content);
       setDraft("");
       // Your own message always brings the conversation back to the latest turn.
@@ -119,12 +141,12 @@ export function ChatPanel({
     }
   }
 
-  if (!conversationId) {
+  if (!conversationId && !drafting) {
     return (
       <section className="grid h-full place-items-center px-6">
         <div className="max-w-sm space-y-2 text-center">
           <h2 className="text-lg font-semibold">先选一个对话</h2>
-          <p className="meta">左侧「新对话」会打开一个新会话，你可以直接描述想监控的网页。</p>
+          <p className="meta">在左侧选择已有对话，或点击「对话」右侧的「新对话」开始。</p>
         </div>
       </section>
     );
@@ -174,7 +196,7 @@ export function ChatPanel({
             messages.length === 0 && !running ? "flex min-h-full flex-col justify-center" : ""
           }`}
         >
-          {conversation.isPending && <p className="meta">正在加载对话…</p>}
+          {conversationId && conversation.isPending && <p className="meta">正在加载对话…</p>}
           {conversation.error && (
             <p className="text-sm text-error" role="alert">
               对话加载失败，请刷新页面。
@@ -252,6 +274,12 @@ export function ChatPanel({
               </li>
             )}
 
+            {!running && stopped && (
+              <li className="flex items-center gap-2 text-[13px] text-muted-foreground">
+                <Square className="size-3" />
+                这次检查已停止。
+              </li>
+            )}
             {!running && failed && (
               <li className="rounded-xl border border-error/25 bg-error/5 px-4 py-3">
                 <p className="text-[13px] font-medium text-error">这次没有完成</p>
@@ -261,7 +289,7 @@ export function ChatPanel({
                 <WorkLog job={failed} />
               </li>
             )}
-            {pendingDraft && (
+            {pendingDraft && conversationId && (
               <li className="xl:hidden">
                 <CreateMonitorCard conversationId={conversationId} draft={pendingDraft} />
               </li>
@@ -271,9 +299,9 @@ export function ChatPanel({
         </div>
       </div>
 
-      <div className="shrink-0 border-t bg-card px-5 py-3">
+      <div className="shrink-0 border-t px-5 py-3">
         <div className="mx-auto w-full max-w-3xl">
-          <div className="rounded-xl border bg-background p-2 transition-colors focus-within:border-ring/60">
+          <div className="rounded-xl border border-transparent bg-transparent p-2 transition-colors focus-within:border-border/60">
             <textarea
               ref={composer}
               value={draft}
@@ -299,9 +327,9 @@ export function ChatPanel({
                 size="sm"
                 className="h-8"
                 onClick={() => void submit()}
-                disabled={Boolean(running) || !draft.trim() || send.isPending}
+                disabled={Boolean(running) || !draft.trim() || send.isPending || start.isPending}
               >
-                {send.isPending ? <Loader2 className="animate-spin" /> : <ArrowUp />}
+                {send.isPending || start.isPending ? <Loader2 className="animate-spin" /> : <ArrowUp />}
                 发送
               </Button>
             </div>
