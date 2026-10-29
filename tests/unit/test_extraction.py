@@ -3,11 +3,10 @@ from uuid import uuid4
 
 import pytest
 
-from webmonitor.api.errors import DomainError
 from webmonitor.collection.extraction import extract_fields
 from webmonitor.collection.validation import validate_collection
+from webmonitor.errors import DomainError
 from webmonitor.schemas.monitors import DraftSpec
-from webmonitor.schemas.notifications import EVENT_TYPES
 
 
 def spec_for(field, *, rules=None, key=None, coverage='full'):
@@ -18,7 +17,6 @@ def spec_for(field, *, rules=None, key=None, coverage='full'):
             {'type': 'text_changed', 'field': field['name']}]},
         'schedule': {'interval_seconds': 60, 'timezone': 'UTC'},
         'notification_group_ids': [str(uuid4())],
-        'template_bindings': {event: {'template_id': str(uuid4()), 'version': 1} for event in EVENT_TYPES},
         'coverage': {'scope': coverage, 'description': 'Visible product rows'},
     })
 

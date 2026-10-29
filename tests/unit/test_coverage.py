@@ -1,5 +1,6 @@
 from bs4 import BeautifulSoup
-from webmonitor.collection.coverage import rows_complete,full_list_evidence
+
+from webmonitor.collection.coverage import full_list_evidence, rows_complete
 from webmonitor.collection.types import analyze_html
 
 

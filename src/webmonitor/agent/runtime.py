@@ -1,12 +1,13 @@
-"""Trusted execution context; approval secrets never enter tool arguments/history."""
+"""Trusted execution context for agent tools."""
 from dataclasses import dataclass
 from uuid import UUID
-from webmonitor.schemas.identity import Principal
 
-@dataclass
+from webmonitor.security.auth import CurrentUser
+
+
+@dataclass(frozen=True)
 class RuntimeContext:
-    principal: Principal
+    user: CurrentUser
     conversation_id: UUID
-    agent_run_id: UUID
-    generation: int
-    confirmation_token: str | None = None
+    job_id: UUID
+    worker_id: str

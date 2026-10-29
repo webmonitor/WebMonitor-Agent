@@ -3,7 +3,6 @@ from uuid import uuid4
 
 from webmonitor.collection.diff import evaluate_rules
 from webmonitor.schemas.monitors import DraftSpec
-from webmonitor.schemas.notifications import EVENT_TYPES
 
 
 def make_spec(fields, rules, *, business_key=None, mode='any'):
@@ -13,7 +12,6 @@ def make_spec(fields, rules, *, business_key=None, mode='any'):
         'change_rules': {'mode': mode, 'rules': rules},
         'schedule': {'interval_seconds': 60, 'timezone': 'UTC'},
         'notification_group_ids': [str(uuid4())],
-        'template_bindings': {event: {'template_id': str(uuid4()), 'version': 1} for event in EVENT_TYPES},
         'coverage': {'scope': 'full', 'description': 'Complete product list'},
     })
 

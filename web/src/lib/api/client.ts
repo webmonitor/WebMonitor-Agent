@@ -20,7 +20,6 @@ async function csrfToken(): Promise<string> {
 }
 export function clearSessionClient() {
   csrf = undefined;
-  localStorage.removeItem("wm_conversation");
   window.dispatchEvent(new Event("wm:session-ended"));
 }
 export async function api<T>(path: string, options: RequestInit = {}): Promise<T> {

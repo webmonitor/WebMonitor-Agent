@@ -2,6 +2,7 @@ import pytest
 from agents.exceptions import ModelBehaviorError
 from agents.models.chatcmpl_stream_handler import ChatCmplStreamHandler
 from openai.types.chat import ChatCompletionChunk
+
 from webmonitor.agent.model import CompleteToolStream
 
 

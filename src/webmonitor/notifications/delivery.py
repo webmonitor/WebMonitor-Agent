@@ -11,12 +11,16 @@ from email.utils import format_datetime, parseaddr
 
 import aiosmtplib
 from aiosmtplib.errors import (
-    SMTPConnectError, SMTPException, SMTPRecipientsRefused,
-    SMTPResponseException, SMTPServerDisconnected, SMTPTimeoutError,
+    SMTPConnectError,
+    SMTPException,
+    SMTPRecipientsRefused,
+    SMTPResponseException,
+    SMTPServerDisconnected,
+    SMTPTimeoutError,
 )
 
 from webmonitor.config import get_settings
-from webmonitor.db.base import utc_now
+from webmonitor.models import utc_now
 
 
 @dataclass

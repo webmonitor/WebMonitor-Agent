@@ -1,7 +1,8 @@
 """Decode HTML with the output limit applied inside zlib, before expansion allocation."""
 import zlib
-from webmonitor.api.errors import DomainError
+
 from webmonitor.collection.types import MAX_HTML_BYTES
+from webmonitor.errors import DomainError
 
 
 class BoundedHTMLDecoder:

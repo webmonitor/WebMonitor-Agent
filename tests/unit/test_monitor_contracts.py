@@ -1,6 +1,6 @@
 """Reject ambiguous extraction contracts before any preview or approval."""
 import json
-from datetime import datetime, timedelta, timezone
+from datetime import UTC, datetime, timedelta, timezone
 from decimal import Decimal
 
 import pytest
@@ -51,7 +51,7 @@ def test_unknown_code_and_scalar_list_options_rejected():
 
 
 def test_canonical_hash_normalizes_timezone_and_object_order():
-    utc = datetime(2026, 10, 2, 12, tzinfo=timezone.utc)
+    utc = datetime(2026, 10, 2, 12, tzinfo=UTC)
     offset = utc.astimezone(timezone(timedelta(hours=8)))
     first = {'at': utc, 'value': Decimal('12.50')}
     second = {'value': Decimal('12.50'), 'at': offset}

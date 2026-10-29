@@ -2,11 +2,11 @@
 from fastapi import APIRouter, Request, Response
 from pydantic import BaseModel, ConfigDict, Field
 
-from webmonitor.api.dependencies import AuthenticatedPrincipal, DatabaseSession, SESSION_COOKIE
-from webmonitor.api.errors import DomainError
+from webmonitor.api.dependencies import SESSION_COOKIE, AuthenticatedUser, DatabaseSession
 from webmonitor.config import get_settings
-from webmonitor.db.models.accounts import User
-from webmonitor.schemas.identity import Principal
+from webmonitor.errors import DomainError
+from webmonitor.models import User
+from webmonitor.schemas.api import Member
 from webmonitor.security.csrf import CSRF_COOKIE, cookie_secure, issue_csrf_token
 from webmonitor.services import accounts
 
@@ -14,7 +14,7 @@ router = APIRouter(prefix="/api/v1/auth", tags=["auth"])
 
 
 class RegisterRequest(BaseModel):
-    model_config = ConfigDict(extra="forbid", strict=True)
+    model_config = ConfigDict(extra="forbid")
     display_name: str
     email: str
     password: str = Field(repr=False)
@@ -22,14 +22,9 @@ class RegisterRequest(BaseModel):
 
 
 class LoginRequest(BaseModel):
-    model_config = ConfigDict(extra="forbid", strict=True)
+    model_config = ConfigDict(extra="forbid")
     email: str
     password: str = Field(repr=False)
-
-
-class AuthProfile(Principal):
-    email: str
-    display_name: str
 
 
 class CSRFResponse(BaseModel):
@@ -38,11 +33,12 @@ class CSRFResponse(BaseModel):
     expires_at: int
 
 
-async def _profile(session: DatabaseSession, principal: Principal) -> AuthProfile:
-    user = await session.get(User, principal.user_id)
+async def _profile(session: DatabaseSession, user_id) -> Member:
+    user = await session.get(User, user_id)
     if user is None or not user.active:
         raise DomainError("unauthenticated", status=401)
-    return AuthProfile(**principal.model_dump(), email=user.email, display_name=user.display_name)
+    return Member(id=user.id, email=user.email, display_name=user.display_name,
+                  role=user.role, active=user.active, created_at=user.created_at)
 
 
 def _session_cookie(response: Response, token: str) -> None:
@@ -57,42 +53,42 @@ async def csrf(request: Request, response: Response):
     return issue_csrf_token(request, response)
 
 
-@router.post("/register", response_model=AuthProfile, status_code=201)
+@router.post("/register", response_model=Member, status_code=201)
 async def register(payload: RegisterRequest, response: Response, session: DatabaseSession):
-    principal, token = await accounts.register(
+    user, token = await accounts.register(
         session, display_name=payload.display_name, email=payload.email,
-        password=payload.password, invitation_token=payload.invitation_token,
-    )
-    profile = await _profile(session, principal)
+        password=payload.password, invitation_token=payload.invitation_token)
+    profile = await _profile(session, user.user_id)
     _session_cookie(response, token)
     return profile
 
 
-@router.post("/login", response_model=AuthProfile)
-async def login(payload: LoginRequest, request: Request, response: Response, session: DatabaseSession):
+@router.post("/login", response_model=Member)
+async def login(payload: LoginRequest, request: Request, response: Response,
+                session: DatabaseSession):
     # Proxy forwarding headers are deliberately ignored. Configure a trusted proxy
     # at the ASGI server boundary, never infer trust from a client-supplied header.
     if request.client is None:
         raise DomainError("invalid_credentials", status=401)
-    principal, token = await accounts.login(
-        session, email=payload.email, password=payload.password,
-        source_ip=request.client.host,
-    )
-    profile = await _profile(session, principal)
+    user, token = await accounts.login(session, email=payload.email,
+        password=payload.password, source_ip=request.client.host)
+    profile = await _profile(session, user.user_id)
     _session_cookie(response, token)
     return profile
 
 
-@router.get("/me", response_model=AuthProfile)
-async def me(response: Response, session: DatabaseSession, principal: AuthenticatedPrincipal):
+@router.get("/me", response_model=Member)
+async def me(response: Response, session: DatabaseSession, user: AuthenticatedUser):
     response.headers["Cache-Control"] = "no-store"
-    return await _profile(session, principal)
+    return await _profile(session, user.user_id)
 
 
 @router.post("/logout", status_code=204)
 async def logout(request: Request, response: Response, session: DatabaseSession,
-                 principal: AuthenticatedPrincipal):
-    await accounts.logout(session, request.cookies[SESSION_COOKIE])
+                 user: AuthenticatedUser):
+    token = request.cookies.get(SESSION_COOKIE)
+    if token:
+        await accounts.logout(session, token)
     response.delete_cookie(SESSION_COOKIE, path="/", secure=cookie_secure(), httponly=True, samesite="lax")
     response.delete_cookie(CSRF_COOKIE, path="/", secure=cookie_secure(), httponly=True, samesite="lax")
     response.headers["Cache-Control"] = "no-store"

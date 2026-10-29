@@ -1,14 +1,17 @@
 """Public URL admission never replaces the connection-level proxy ACL."""
 import pytest
-from webmonitor.api.errors import DomainError
+
 from webmonitor.config import get_settings
+from webmonitor.errors import DomainError
 from webmonitor.security.egress import public_address, validate_url
 
 
 @pytest.fixture(autouse=True)
 def development_config(monkeypatch):
     monkeypatch.setenv("DEVELOPMENT_MODE", "true")
-    monkeypatch.delenv("SMOKE_FIXTURE_ORIGIN", raising=False)
+    monkeypatch.setenv("SECRET_KEY", "x" * 40)
+    monkeypatch.delenv("TARGET_POLICY", raising=False)
+    monkeypatch.delenv("TARGET_ALLOWED_ORIGINS", raising=False)
     get_settings.cache_clear()
     yield
     get_settings.cache_clear()
@@ -29,15 +32,22 @@ def test_forbidden_targets(url):
     assert exc.value.code == "url_forbidden"
 
 
-def test_smoke_exception_is_exact(monkeypatch):
-    monkeypatch.setenv("SMOKE_FIXTURE_ORIGIN", "http://fixture:8000")
-    get_settings.cache_clear()
-    assert validate_url("http://fixture:8000/static/product") == "http://fixture:8000/static/product"
-    for url in ("http://127.0.0.1:8000/", "http://fixture:8001/", "https://fixture:8000/", "http://fixture.:8000/"):
-        with pytest.raises(DomainError):
-            validate_url(url)
+def test_public_targets_pass_with_fragment_removed():
+    assert validate_url("https://example.com/pricing#top") == "https://example.com/pricing"
 
 
 def test_mapped_ipv6_private_address_rejected():
     assert not public_address("::ffff:192.168.1.1")
     assert public_address("2606:4700:4700::1111")
+
+
+def test_allowlist_exact_origin_allows_internal_fixture(monkeypatch):
+    monkeypatch.setenv("TARGET_POLICY", "allowlist")
+    monkeypatch.setenv("TARGET_ALLOWED_ORIGINS", "http://fixture:8000,http://mocksite:9000")
+    get_settings.cache_clear()
+    assert validate_url("http://fixture:8000/static/product") == "http://fixture:8000/static/product"
+    assert validate_url("http://mocksite:9000/items") == "http://mocksite:9000/items"
+    for url in ("http://fixture:8001/", "https://fixture:8000/", "http://127.0.0.1:8000/"):
+        with pytest.raises(DomainError) as exc:
+            validate_url(url)
+        assert exc.value.code == "url_forbidden"

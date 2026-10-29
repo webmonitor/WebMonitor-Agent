@@ -1,109 +1,190 @@
-"""Explicit notification membership; all domain writes flush, never commit."""
-from uuid import UUID
+"""Notification groups, recipient resolution and leased email delivery."""
+from datetime import timedelta
+from typing import Any
+from uuid import UUID, uuid4
 
-from sqlalchemy import select
+from sqlalchemy import and_, func, or_, select
 from sqlalchemy.exc import IntegrityError
+from sqlalchemy.ext.asyncio import AsyncSession
 
-from webmonitor.api.errors import DomainError
-from webmonitor.db.base import utc_now
-from webmonitor.db.models.accounts import AuditLog
-from webmonitor.db.models.notifications import EmailTemplate, NotificationGroup, NotificationGroupMember
-from webmonitor.schemas.notification_api import Group, GroupMember
-from webmonitor.security.authorization import require_admin, require_admin_write, require_workspace
-from webmonitor.services.drafts import revalidate_principal
-from webmonitor.services.group_locks import lock_notification_groups
+from webmonitor.config import get_settings
+from webmonitor.errors import DomainError
+from webmonitor.models import EmailDelivery, Event, Monitor, NotificationGroup, utc_now
+from webmonitor.notifications.rendering import render_email
+from webmonitor.schemas.api import Group, MemberSpec, Page
+from webmonitor.security.auth import CurrentUser, require_admin
+from webmonitor.services.jobs import LEASE_SECONDS
 
-
-async def group_view(session, group):
-    members = (await session.scalars(select(NotificationGroupMember).where(
-        NotificationGroupMember.workspace_id == group.workspace_id,
-        NotificationGroupMember.group_id == group.id,
-    ).order_by(NotificationGroupMember.email))).all()
-    return Group(**{key: getattr(group, key) for key in (
-        "id", "name", "enabled", "deleted_at", "created_at", "updated_at")},
-        members=[GroupMember.model_validate(member) for member in members])
+MAX_ATTEMPTS = 3
 
 
-async def get_group(session, principal, group_id: UUID, *, lock=False):
+def group_view(group: NotificationGroup) -> Group:
+    return Group(id=group.id, name=group.name, enabled=group.enabled,
+        members=[MemberSpec(email=item["email"], active=item.get("active", True))
+                 for item in group.members or []],
+        created_at=group.created_at, updated_at=group.updated_at)
+
+
+async def list_groups(session: AsyncSession, limit: int, offset: int) -> Page[Group]:
+    query = select(NotificationGroup).where(NotificationGroup.deleted_at.is_(None))
+    rows = (await session.scalars(query.order_by(NotificationGroup.name)
+        .limit(limit).offset(offset))).all()
+    total = await session.scalar(select(func.count()).select_from(query.subquery()))
+    return Page[Group](items=[group_view(row) for row in rows], total=total or 0)
+
+
+async def get_group(session: AsyncSession, group_id: UUID, *, lock: bool = False) -> NotificationGroup:
     query = select(NotificationGroup).where(NotificationGroup.id == group_id,
-        NotificationGroup.workspace_id == principal.workspace_id)
+                                            NotificationGroup.deleted_at.is_(None))
     if lock:
-        await lock_notification_groups(session, [group_id], exclusive=True)
-        query = query.with_for_update().execution_options(populate_existing=True)
-    return require_workspace(principal, await session.scalar(query))
-
-
-async def _replace_members(session, group, members):
-    # The caller holds the group write lock even for new member insertion. This
-    # excludes routing's group shared lock, including the empty-members case.
-    existing = (await session.scalars(select(NotificationGroupMember).where(
-        NotificationGroupMember.workspace_id == group.workspace_id,
-        NotificationGroupMember.group_id == group.id,
-    ).order_by(NotificationGroupMember.id).with_for_update()
-        .execution_options(populate_existing=True))).all()
-    selected = {str(member.email).strip().casefold(): member.active for member in members}
-    for member in existing:
-        member.active = selected.pop(member.email, False)
-    for email, active in selected.items():
-        session.add(NotificationGroupMember(workspace_id=group.workspace_id,
-            group_id=group.id, email=email, active=active))
-
-
-async def write_group(session, principal, body, *, group_id=None):
-    principal = await revalidate_principal(session, principal)
-    if group_id is None:
-        require_admin(principal)
-    async with session.begin_nested():
-        try:
-            if group_id is None:
-                group = NotificationGroup(workspace_id=principal.workspace_id,
-                    created_by_user_id=principal.user_id, name=body.name.strip(), enabled=body.enabled)
-                if not group.name:
-                    raise DomainError("validation_failed", 422)
-                session.add(group)
-                await session.flush()
-                # Newly inserted group is transaction-private; lock it explicitly
-                # so every membership writer follows the same lock contract.
-                group = await get_group(session, principal, group.id, lock=True)
-            else:
-                group = require_admin_write(principal, await get_group(session, principal, group_id, lock=True))
-                if group.deleted_at is not None:
-                    raise DomainError("group_disabled", 409)
-                if body.name is not None:
-                    group.name = body.name.strip()
-                    if not group.name:
-                        raise DomainError("validation_failed", 422)
-                if body.enabled is not None:
-                    group.enabled = body.enabled
-            if body.members is not None:
-                await _replace_members(session, group, body.members)
-            session.add(AuditLog(workspace_id=principal.workspace_id, actor_user_id=principal.user_id,
-                action="notification_group.updated" if group_id else "notification_group.created",
-                resource_type="notification_group", resource_id=group.id,
-                details={"name": group.name, "enabled": group.enabled}))
-            await session.flush()
-        except IntegrityError as exc:
-            if getattr(exc.orig, "sqlstate", None) == "23505":
-                raise DomainError("group_name_conflict", 409) from None
-            raise
+        query = query.with_for_update()
+    group = await session.scalar(query.execution_options(populate_existing=True))
+    if group is None:
+        raise DomainError("not_found", 404)
     return group
 
 
-async def disable_group(session, principal, group_id):
-    principal = await revalidate_principal(session, principal)
-    group = require_admin_write(principal, await get_group(session, principal, group_id, lock=True))
+def _members(members: list[MemberSpec]) -> list[dict[str, Any]]:
+    return [{"email": str(member.email), "active": member.active} for member in members]
+
+
+async def write_group(session: AsyncSession, user: CurrentUser, body, *,
+                      group_id: UUID | None = None) -> NotificationGroup:
+    require_admin(user)
+    try:
+        async with session.begin_nested():
+            if group_id is None:
+                group = NotificationGroup(name=body.name.strip(), enabled=getattr(body, "enabled", True),
+                    members=_members(getattr(body, "members", [])), created_by_user_id=user.user_id)
+                session.add(group)
+                await session.flush()
+            else:
+                group = await get_group(session, group_id, lock=True)
+                group.name = (body.name or group.name).strip()
+                if getattr(body, "enabled", None) is not None:
+                    group.enabled = body.enabled
+                if getattr(body, "members", None) is not None:
+                    group.members = _members(body.members)
+                await session.flush()
+    except IntegrityError as exc:
+        if getattr(exc.orig, "sqlstate", None) == "23505":
+            raise DomainError("group_name_conflict", 409) from None
+        raise
+    return group
+
+
+async def disable_group(session: AsyncSession, user: CurrentUser, group_id: UUID) -> NotificationGroup:
+    require_admin(user)
+    group = await get_group(session, group_id, lock=True)
     group.enabled = False
-    group.deleted_at = group.deleted_at or utc_now()
-    await _replace_members(session, group, [])
-    session.add(AuditLog(workspace_id=principal.workspace_id, actor_user_id=principal.user_id,
-        action="notification_group.disabled", resource_type="notification_group", resource_id=group.id, details={}))
+    group.deleted_at = utc_now()
+    group.members = []
     await session.flush()
     return group
 
 
-async def get_template(session, template_id):
-    template = await session.scalar(select(EmailTemplate).where(EmailTemplate.id == template_id,
-        EmailTemplate.is_default.is_(True)))
-    if template is None:
-        raise DomainError("not_found", 404)
-    return template
+async def load_recipients(session: AsyncSession, group_ids: list[UUID] | list[str]) -> list[dict]:
+    """Deduplicated recipients of the enabled groups a monitor references."""
+    ids = [UUID(str(item)) for item in group_ids]
+    groups = (await session.scalars(select(NotificationGroup).where(
+        NotificationGroup.id.in_(ids), NotificationGroup.enabled.is_(True),
+        NotificationGroup.deleted_at.is_(None)))).all()
+    if len(groups) != len(set(ids)):
+        raise DomainError("notification_routes_invalid", 409)
+    recipients = {item["email"]: {"email": item["email"], "group_id": str(group.id)}
+                  for group in groups for item in group.members or []
+                  if item.get("active", True)}
+    if not recipients:
+        raise DomainError("notification_recipients_empty", 409)
+    return [recipients[email] for email in sorted(recipients)]
+
+
+def recipients_emails(recipients: list[dict]) -> list[str]:
+    return sorted({item["email"] for item in recipients})
+
+
+def _payload(monitor: Monitor, event: Event, fields: dict) -> dict:
+    return {
+        "monitor": {"id": str(monitor.id), "name": monitor.name, "url": monitor.url},
+        "event": {"id": str(event.id), "type": event.type,
+                  "detected_at": event.created_at.isoformat()},
+        "change": {"before": event.change.get("before"),
+                   "after": event.change.get("after", {}),
+                   "summary": event.change.get("summary", "")},
+        "fields": fields,
+        "evidence_url": f"{get_settings().app_origin}/app/monitors/{monitor.id}",
+    }
+
+
+async def enqueue_event_deliveries(session: AsyncSession, monitor: Monitor, event: Event,
+                                   fields: dict) -> None:
+    """Flush only. Disabled or empty routes never undo a valid snapshot."""
+    recipients = await load_recipients(session, monitor.notification_group_ids or [])
+    payload = _payload(monitor, event, fields)
+    event.payload = payload
+    rendered = render_email(event.type, payload)
+    for recipient in recipients:
+        delivery_id = uuid4()
+        session.add(EmailDelivery(id=delivery_id, user_id=monitor.user_id,
+            monitor_id=monitor.id, event_id=event.id, recipient=recipient["email"],
+            subject=rendered["subject"], html=rendered["html"], body_text=rendered["text"],
+            payload=payload, status="queued", attempt_count=0,
+            available_at=event.created_at, message_id=f"<{delivery_id}@webmonitor.local>"))
+    await session.flush()
+
+
+async def claim_delivery(session: AsyncSession, worker_id: str) -> EmailDelivery | None:
+    now = utc_now()
+    delivery = await session.scalar(select(EmailDelivery).where(
+        EmailDelivery.available_at <= now,
+        or_(EmailDelivery.status.in_(("queued", "retrying")),
+            and_(EmailDelivery.status == "sending",
+                 EmailDelivery.lease_expires_at <= now)),
+    ).order_by(EmailDelivery.available_at, EmailDelivery.created_at)
+        .with_for_update(skip_locked=True).limit(1).execution_options(populate_existing=True))
+    if delivery is None:
+        return None
+    delivery.status = "sending"
+    delivery.attempt_count += 1
+    delivery.lease_owner = worker_id
+    delivery.lease_expires_at = now + timedelta(seconds=LEASE_SECONDS)
+    await session.flush()
+    return delivery
+
+
+async def authorized(session: AsyncSession, delivery: EmailDelivery) -> bool:
+    """The recipient must still be active in some enabled group."""
+    found = await session.scalar(select(NotificationGroup.id).where(
+        NotificationGroup.enabled.is_(True), NotificationGroup.deleted_at.is_(None),
+        NotificationGroup.members.contains([{"email": delivery.recipient, "active": True}]),
+    ).limit(1))
+    return found is not None
+
+
+async def finish_delivery(session: AsyncSession, delivery: EmailDelivery, *, worker_id: str,
+                          failure=None, response_code: int | None = None) -> None:
+    if delivery.lease_owner != worker_id or delivery.status != "sending":
+        return
+    now = utc_now()
+    delivery.lease_owner = delivery.lease_expires_at = None
+    delivery.smtp_response_code = getattr(failure, "response_code", None) if failure else response_code
+    delivery.error_code = failure.code if failure else None
+    delivery.error_message = failure.message if failure else None
+    if failure is None:
+        delivery.status, delivery.sent_at = "sent", now
+    elif getattr(failure, "retryable", False) and delivery.attempt_count < MAX_ATTEMPTS:
+        delivery.status = "retrying"
+        delivery.available_at = now + timedelta(seconds=60 if delivery.attempt_count == 1 else 300)
+    else:
+        delivery.status, delivery.failed_at = "failed", now
+    await session.flush()
+
+
+async def cancel_delivery(session: AsyncSession, delivery: EmailDelivery, *,
+                          worker_id: str, code: str, message: str) -> None:
+    if delivery.lease_owner != worker_id or delivery.status != "sending":
+        return
+    delivery.status, delivery.cancelled_at = "cancelled", utc_now()
+    delivery.lease_owner = delivery.lease_expires_at = None
+    delivery.error_code, delivery.error_message = code, message
+    await session.flush()

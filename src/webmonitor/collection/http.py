@@ -5,12 +5,17 @@ from urllib.parse import urljoin
 
 import httpx
 
-from webmonitor.api.errors import DomainError
-from webmonitor.collection.extraction import extract_fields
 from webmonitor.collection.decoding import BoundedHTMLDecoder
+from webmonitor.collection.extraction import extract_fields
+from webmonitor.collection.types import (
+    MAX_HTML_BYTES,
+    CollectionResult,
+    analyze_html,
+    collection_coverage,
+)
 from webmonitor.collection.validation import validate_collection
-from webmonitor.collection.types import CollectionResult, MAX_HTML_BYTES, analyze_html, collection_coverage
 from webmonitor.config import get_settings
+from webmonitor.errors import DomainError
 from webmonitor.schemas.monitors import DraftSpec
 from webmonitor.security.egress import validate_target
 

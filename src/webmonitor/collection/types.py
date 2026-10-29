@@ -3,6 +3,7 @@ from dataclasses import dataclass, field
 from html import escape
 
 from bs4 import BeautifulSoup
+
 from webmonitor.collection.coverage import contract_lists_complete, full_list_evidence
 
 MAX_HTML_BYTES = 5 * 1024 * 1024

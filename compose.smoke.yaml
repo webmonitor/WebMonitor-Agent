@@ -1,4 +1,4 @@
-# Exact fixture-only exception; never enable this overlay for normal targets.
+# Explicit allowlist overlay: only http://fixture:8000 becomes reachable through egress.
 services:
   fixture:
     image: webmonitor-fixture:local
@@ -18,12 +18,8 @@ services:
       - ./deploy/egress/squid.smoke.conf:/etc/squid/squid.conf:ro
       - ./deploy/egress/unbound.smoke.conf:/etc/unbound/webmonitor.conf:ro
     depends_on:
-      fixture: {condition: service_healthy}
+      fixture: {condition: service_started}
   api:
-    environment: {SMOKE_FIXTURE_ORIGIN: "http://fixture:8000"}
-  agent-worker:
-    environment: {SMOKE_FIXTURE_ORIGIN: "http://fixture:8000"}
-  http-worker:
-    environment: {SMOKE_FIXTURE_ORIGIN: "http://fixture:8000"}
-  browser-worker:
-    environment: {SMOKE_FIXTURE_ORIGIN: "http://fixture:8000"}
+    environment:
+      TARGET_POLICY: allowlist
+      TARGET_ALLOWED_ORIGINS: http://fixture:8000

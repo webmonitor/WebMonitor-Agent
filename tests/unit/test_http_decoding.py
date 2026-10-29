@@ -1,8 +1,10 @@
 import gzip
 import zlib
+
 import pytest
-from webmonitor.api.errors import DomainError
+
 from webmonitor.collection.decoding import BoundedHTMLDecoder
+from webmonitor.errors import DomainError
 
 
 def test_compressed_expansion_rejected_before_full_allocation():

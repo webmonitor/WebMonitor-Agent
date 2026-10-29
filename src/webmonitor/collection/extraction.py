@@ -1,13 +1,13 @@
 """Deterministic CSS extraction; missing optional values remain absent."""
 import re
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 from decimal import Decimal, InvalidOperation
 from urllib.parse import urljoin
 from zoneinfo import ZoneInfo
 
 from bs4 import BeautifulSoup, Tag
 
-from webmonitor.api.errors import DomainError
+from webmonitor.errors import DomainError
 from webmonitor.schemas.monitors import DraftSpec, FieldSpec, Normalization
 from webmonitor.security.egress import validate_url
 
@@ -85,13 +85,13 @@ def _date(value: str, field: FieldSpec, path: str) -> str:
             candidates = set()
             for fold in (0, 1):
                 local = parsed.replace(tzinfo=zone, fold=fold)
-                utc = local.astimezone(timezone.utc)
+                utc = local.astimezone(UTC)
                 if utc.astimezone(zone).replace(tzinfo=None) == parsed:
                     candidates.add(utc)
             if len(candidates) != 1:
                 invalid(path, 'ambiguous_or_nonexistent_date')
             parsed = candidates.pop()
-        return parsed.astimezone(timezone.utc).isoformat().replace('+00:00', 'Z')
+        return parsed.astimezone(UTC).isoformat().replace('+00:00', 'Z')
     except (ValueError, OverflowError):
         invalid(path, 'invalid_date')
 

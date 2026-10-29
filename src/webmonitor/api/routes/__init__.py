@@ -1,1 +1,1 @@
-"""HTTP routes backed by shared transactional domain services."""
+"""HTTP route modules registered by the application factory."""

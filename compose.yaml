@@ -9,40 +9,56 @@ x-runtime: &runtime
   tmpfs: ["/tmp:rw,nosuid,nodev,size=128m,uid=10001,gid=10001,mode=1777"]
   restart: unless-stopped
 
-x-backend-build: &backend-build
-  context: .
-  dockerfile: deploy/backend.Dockerfile
-  additional_contexts:
-    minio: service:s3
-
 x-app-env: &app-env
   PGHOST: postgres
   PGPORT: "5432"
   PGDATABASE: webmonitor
+  PGUSER: webmonitor
+  POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?Set POSTGRES_PASSWORD in .env}
   APP_ORIGIN: ${APP_ORIGIN:-http://localhost:8080}
-  DEVELOPMENT_MODE: "true"
+  DEVELOPMENT_MODE: ${DEVELOPMENT_MODE:-true}
   CONTAINER_RUNTIME: "true"
+  SECRET_KEY: ${SECRET_KEY:?Set SECRET_KEY (>=32 characters) in .env}
   SESSION_TTL_HOURS: ${SESSION_TTL_HOURS:-168}
+  ADMIN_EMAIL: ${ADMIN_EMAIL:-}
+  ADMIN_PASSWORD: ${ADMIN_PASSWORD:-}
+  REGISTRATION_ALLOWED_EMAILS: ${REGISTRATION_ALLOWED_EMAILS:-}
+  OPENAI_API_KEY: ${OPENAI_API_KEY:-}
+  OPENAI_BASE_URL: ${OPENAI_BASE_URL:-https://api.openai.com/v1}
+  OPENAI_CONTAINER_BASE_URL: ${OPENAI_CONTAINER_BASE_URL:-}
+  OPENAI_MODEL: ${OPENAI_MODEL:-}
   S3_ENDPOINT_URL: http://s3:9000
   S3_BUCKET: ${S3_BUCKET:-webmonitor-evidence}
+  S3_ACCESS_KEY_ID: ${S3_ROOT_USER:-webmonitor-admin}
+  S3_SECRET_ACCESS_KEY: ${S3_ROOT_PASSWORD:-${POSTGRES_PASSWORD:?Set POSTGRES_PASSWORD in .env}}
   EGRESS_PROXY_URL: http://egress:3128
+  SMTP_HOST: ${SMTP_HOST:-}
+  SMTP_PORT: ${SMTP_PORT:-465}
+  SMTP_USERNAME: ${SMTP_USERNAME:-}
+  SMTP_PASSWORD: ${SMTP_PASSWORD:-}
+  SMTP_USE_SSL: ${SMTP_USE_SSL:-true}
+  SMTP_STARTTLS: ${SMTP_STARTTLS:-false}
+  MAIL_FROM: ${MAIL_FROM:-}
+  TARGET_POLICY: ${TARGET_POLICY:-public}
+  TARGET_ALLOWED_ORIGINS: ${TARGET_ALLOWED_ORIGINS:-}
+  TRUSTED_PROXY_IP: 172.30.80.10
+  WORKERS_ENABLED: "true"
 
 x-started: &started
   postgres: {condition: service_healthy}
   s3: {condition: service_healthy}
-  init-db: {condition: service_completed_successfully}
 
 services:
   postgres:
     image: postgres:16
     environment:
-      POSTGRES_USER: postgres
+      POSTGRES_USER: webmonitor
       POSTGRES_DB: webmonitor
       POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?Set POSTGRES_PASSWORD in .env}
     tmpfs: ["/var/lib/postgresql/data:rw,nosuid,nodev,size=512m,mode=0700"]
     networks: [control]
     healthcheck:
-      test: [CMD-SHELL, "pg_isready -U postgres -d webmonitor"]
+      test: [CMD-SHELL, "pg_isready -U webmonitor -d webmonitor"]
       interval: 3s
       timeout: 3s
       retries: 30
@@ -66,116 +82,18 @@ services:
       timeout: 3s
       retries: 30
 
-  init-db:
+  egress:
     <<: *runtime
-    image: webmonitor-backend:local
-    build: *backend-build
-    command: [init-db]
-    restart: "no"
-    environment:
-      <<: *app-env
-      PGUSER: postgres
-      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?Set POSTGRES_PASSWORD in .env}
-      BOOTSTRAP_RUNTIME: "true"
-      ADMIN_EMAIL: ${ADMIN_EMAIL:?Set ADMIN_EMAIL in .env}
-      ADMIN_PASSWORD: ${ADMIN_PASSWORD:?Set a strong ADMIN_PASSWORD in .env}
-      MINIO_ROOT_USER: ${S3_ROOT_USER:-webmonitor-admin}
-      MINIO_ROOT_PASSWORD: ${S3_ROOT_PASSWORD:-${POSTGRES_PASSWORD:?Set POSTGRES_PASSWORD in .env}}
-      SECRET_FILE: /run/webmonitor/secrets/signing.key
-    volumes:
-      - db-api:/run/webmonitor/db/api
-      - db-agent:/run/webmonitor/db/agent
-      - db-scheduler:/run/webmonitor/db/scheduler
-      - db-collector:/run/webmonitor/db/collector
-      - db-mailer:/run/webmonitor/db/mailer
-      - evidence-credentials:/run/webmonitor/evidence
-      - signing-key:/run/webmonitor/secrets
-    networks: [control]
-    depends_on:
-      postgres: {condition: service_healthy}
-      s3: {condition: service_healthy}
+    image: webmonitor-egress:local
+    build: {context: ., dockerfile: deploy/egress.Dockerfile}
+    sysctls: {net.ipv4.ip_unprivileged_port_start: "0"}
+    networks: [control, outbound]
 
   api:
     <<: *runtime
-    image: webmonitor-backend:local
-    build: *backend-build
-    command: [api]
-    environment:
-      <<: *app-env
-      PGCREDENTIALS_FILE: /run/webmonitor/db/api/credentials.json
-      S3_CREDENTIALS_FILE: /run/webmonitor/evidence/credentials.json
-      SECRET_FILE: /run/webmonitor/secrets/signing.key
-      REQUIRE_RUNTIME_BOOTSTRAP: "true"
-      REGISTRATION_ALLOWED_EMAILS: ${REGISTRATION_ALLOWED_EMAILS:-}
-      TRUSTED_PROXY_IP: 172.30.80.10
-    volumes:
-      - db-api:/run/webmonitor/db/api:ro
-      - evidence-credentials:/run/webmonitor/evidence:ro
-      - signing-key:/run/webmonitor/secrets:ro
-    networks: [control, frontend, trusted]
-    depends_on: *started
-    healthcheck:
-      test: [CMD, python, -c, "import urllib.request; urllib.request.urlopen('http://127.0.0.1:8000/api/v1/health/ready', timeout=2).read()"]
-      interval: 5s
-      timeout: 3s
-      retries: 30
-
-  agent-worker:
-    <<: *runtime
-    image: webmonitor-backend:local
-    build: *backend-build
-    command: [agent-worker]
-    environment:
-      <<: *app-env
-      PGCREDENTIALS_FILE: /run/webmonitor/db/agent/credentials.json
-      SECRET_FILE: /run/webmonitor/secrets/signing.key
-      OPENAI_API_KEY: ${OPENAI_API_KEY:-}
-      OPENAI_BASE_URL: ${OPENAI_BASE_URL:-https://api.openai.com/v1}
-      OPENAI_CONTAINER_BASE_URL: ${OPENAI_CONTAINER_BASE_URL:-}
-      OPENAI_MODEL: ${OPENAI_MODEL:-}
-      OPENAI_AGENTS_DISABLE_TRACING: "1"
-    extra_hosts: ["host.docker.internal:host-gateway"]
-    volumes:
-      - db-agent:/run/webmonitor/db/agent:ro
-      - signing-key:/run/webmonitor/secrets:ro
-    networks: [control, trusted]
-    depends_on: *started
-
-  scheduler:
-    <<: *runtime
-    image: webmonitor-backend:local
-    build: *backend-build
-    command: [scheduler]
-    environment:
-      <<: *app-env
-      PGCREDENTIALS_FILE: /run/webmonitor/db/scheduler/credentials.json
-    volumes: ["db-scheduler:/run/webmonitor/db/scheduler:ro"]
-    networks: [control]
-    depends_on: *started
-
-  http-worker:
-    <<: *runtime
-    image: webmonitor-backend:local
-    build: *backend-build
-    command: [http-worker]
-    mem_limit: 512m
-    environment:
-      <<: *app-env
-      PGCREDENTIALS_FILE: /run/webmonitor/db/collector/credentials.json
-      S3_CREDENTIALS_FILE: /run/webmonitor/evidence/credentials.json
-    volumes:
-      - db-collector:/run/webmonitor/db/collector:ro
-      - evidence-credentials:/run/webmonitor/evidence:ro
-    networks: [control]
-    depends_on:
-      <<: *started
-      egress: {condition: service_started}
-
-  browser-worker:
-    <<: *runtime
-    image: webmonitor-browser:local
-    build: {context: ., dockerfile: deploy/browser.Dockerfile}
-    command: [browser-worker]
+    image: webmonitor-agent:local
+    build: {context: ., dockerfile: deploy/Dockerfile}
+    command: [serve]
     cpus: 2
     mem_limit: 2g
     pids_limit: 256
@@ -183,43 +101,17 @@ services:
     security_opt:
       - no-new-privileges:true
       - seccomp=./deploy/browser-seccomp.json
-    environment:
-      <<: *app-env
-      PGCREDENTIALS_FILE: /run/webmonitor/db/collector/credentials.json
-      S3_CREDENTIALS_FILE: /run/webmonitor/evidence/credentials.json
-    volumes:
-      - db-collector:/run/webmonitor/db/collector:ro
-      - evidence-credentials:/run/webmonitor/evidence:ro
-    networks: [control]
+    environment: *app-env
+    extra_hosts: ["host.docker.internal:host-gateway"]
+    networks: [control, frontend, outbound]
     depends_on:
       <<: *started
       egress: {condition: service_started}
-
-  mailer:
-    <<: *runtime
-    image: webmonitor-backend:local
-    build: *backend-build
-    command: [mailer]
-    environment:
-      <<: *app-env
-      PGCREDENTIALS_FILE: /run/webmonitor/db/mailer/credentials.json
-      SMTP_HOST: ${SMTP_HOST:-}
-      SMTP_PORT: ${SMTP_PORT:-465}
-      SMTP_USERNAME: ${SMTP_USERNAME:-}
-      SMTP_PASSWORD: ${SMTP_PASSWORD:-}
-      SMTP_USE_SSL: ${SMTP_USE_SSL:-true}
-      SMTP_STARTTLS: ${SMTP_STARTTLS:-false}
-      MAIL_FROM: ${MAIL_FROM:-}
-    volumes: ["db-mailer:/run/webmonitor/db/mailer:ro"]
-    networks: [control, trusted]
-    depends_on: *started
-
-  egress:
-    <<: *runtime
-    image: webmonitor-egress:local
-    build: {context: ., dockerfile: deploy/egress.Dockerfile}
-    sysctls: {net.ipv4.ip_unprivileged_port_start: "0"}
-    networks: [control, outbound]
+    healthcheck:
+      test: [CMD, python, -c, "import urllib.request; urllib.request.urlopen('http://127.0.0.1:8000/api/v1/health/ready', timeout=2).read()"]
+      interval: 5s
+      timeout: 3s
+      retries: 60
 
   web:
     <<: *runtime
@@ -255,53 +147,34 @@ services:
       timeout: 3s
       retries: 30
 
-  dev:
-    profiles: [dev]
-    image: ${WEBMONITOR_DEV_IMAGE:-webmonitor-agent-dev:local}
-    build: {context: ., dockerfile: deploy/Dockerfile}
-    user: "10001:10001"
-    init: true
-    stdin_open: true
-    tty: true
-    cap_drop: [ALL]
-    security_opt: [no-new-privileges:true]
-    shm_size: 1g
-    working_dir: /workspace
-    environment:
-      <<: *app-env
-      PYTHONPATH: /workspace/src
-      PGUSER: postgres
-      PGPASSWORD: ${POSTGRES_PASSWORD:?Set POSTGRES_PASSWORD in .env}
-      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?Set POSTGRES_PASSWORD in .env}
-    volumes: [".:/workspace"]
-    networks: [control, trusted]
-    depends_on:
-      postgres: {condition: service_healthy}
-
-  # Explicit trusted acceptance controller, never a page-collection worker.
+  # Explicit trusted acceptance controller, never a collection worker.
   # Docker socket access is equivalent to host Docker administrator access.
   smoke-runner:
     profiles: [smoke]
-    image: ${WEBMONITOR_DEV_IMAGE:-webmonitor-agent-dev:local}
-    build: {context: ., dockerfile: deploy/Dockerfile}
+    image: webmonitor-smoke:local
+    build:
+      context: .
+      dockerfile: deploy/smoke.Dockerfile
+      additional_contexts:
+        backend: service:api
     user: "0:0"
     init: true
     stdin_open: true
     tty: true
-    working_dir: ${PWD:-/workspace}
+    working_dir: /workspace
     network_mode: service:proxy
+    entrypoint: [python]
     environment:
       CONTAINER_RUNTIME: "true"
-      PYTHONPATH: ${PWD:-/workspace}/src
       SMOKE_TOKEN: ${SMOKE_TOKEN:-}
     volumes:
       - type: bind
         source: .
-        target: ${PWD:-/workspace}
+        target: /workspace
       - /var/run/docker.sock:/var/run/docker.sock
     depends_on:
       proxy: {condition: service_healthy}
-    command: [python, scripts/smoke_mvp.py, --base-url, "http://localhost:8080"]
+    command: [scripts/smoke_mvp.py, --base-url, "http://localhost:8080"]
 
 networks:
   control:
@@ -310,15 +183,5 @@ networks:
     internal: true
     ipam:
       config: [{subnet: 172.30.80.0/24}]
-  trusted: {}
   outbound: {}
   edge: {}
-
-volumes:
-  db-api:
-  db-agent:
-  db-scheduler:
-  db-collector:
-  db-mailer:
-  evidence-credentials:
-  signing-key:

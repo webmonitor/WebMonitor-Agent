@@ -1,5 +1,6 @@
 """SDK-compatible transport gate: truncated responses never release tool arguments."""
 import json
+
 from agents.exceptions import ModelBehaviorError
 from agents.models.openai_chatcompletions import OpenAIChatCompletionsModel
 

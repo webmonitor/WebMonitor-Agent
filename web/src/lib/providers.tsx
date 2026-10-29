@@ -4,7 +4,7 @@ import { QueryClient, QueryClientProvider, useQuery, useQueryClient } from "@tan
 import { api, ApiError, clearSessionClient } from "@/lib/api/client";
 import type { components } from "@/lib/api/schema";
 
-type AuthProfile = components["schemas"]["AuthProfile"];
+type AuthProfile = components["schemas"]["Member"];
 const AuthContext = React.createContext<{user: AuthProfile | undefined; isPending: boolean; error: Error | null; refresh: () => Promise<unknown>; logout: () => Promise<void>} | null>(null);
 function AuthProvider({children}: {children: React.ReactNode}) {
   const cache = useQueryClient();

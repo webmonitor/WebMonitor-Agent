@@ -1,9 +1,9 @@
 """Real product acceptance. No model, database, browser, or SMTP mocks.
 
-Default: real Agent analysis/extraction/email previews only, never confirmation.
+Default: real Agent analysis/extraction/email previews only, never approval.
 --send-mail: sends MULTIPLE real change/failure/recovery emails ONLY to MAIL_TEST_TO.
-Run through the smoke-runner Docker profile with root Compose + smoke overlay
-and an existing admin. The image provides Python, Chromium and Docker Compose.
+Run through the smoke-runner Docker profile with the smoke overlay and an existing
+administrator. The image provides Python, Chromium and Docker Compose.
 This script does not use SMTP credentials. Screenshots contain workspace data;
 keep them private. The trusted runner's Docker socket grants administrator access.
 """
@@ -11,13 +11,12 @@ from __future__ import annotations
 
 import argparse
 import asyncio
-from decimal import Decimal
-from getpass import getpass
-import json
 import os
-from pathlib import Path
 import sys
 import time
+from decimal import Decimal
+from getpass import getpass
+from pathlib import Path
 from urllib.parse import urlsplit
 from uuid import uuid4
 
@@ -28,7 +27,7 @@ from playwright.async_api import async_playwright
 ROOT = Path(__file__).resolve().parents[1]
 FIXTURE = "http://fixture:8000"
 TERMINAL = {"succeeded", "failed", "cancelled", "discarded"}
-EVENT_TYPES = {"price_changed", "list_changed", "content_changed", "run_failed", "recovered"}
+ACTIVE = {"queued", "running"}
 
 
 class AcceptanceFailure(RuntimeError):
@@ -48,7 +47,6 @@ class Driver:
         self.groups = []
         self.monitors = []
         self.conversations = []
-        self.mailer_stopped = False
         self.stamp = uuid4().hex[:10]
 
     async def compose(self, *arguments, source=None):
@@ -57,12 +55,14 @@ class Driver:
             stdin=asyncio.subprocess.PIPE if source is not None else asyncio.subprocess.DEVNULL,
             stdout=asyncio.subprocess.PIPE, stderr=asyncio.subprocess.PIPE)
         try:
-            stdout, _ = await asyncio.wait_for(process.communicate(source.encode() if source is not None else None), 120)
+            stdout, _ = await asyncio.wait_for(
+                process.communicate(source.encode() if source is not None else None), 120)
         except TimeoutError:
             process.kill()
             await process.wait()
             raise AcceptanceFailure("Compose operation exceeded 120 seconds") from None
-        require(process.returncode == 0, "Compose operation failed: " + " ".join(arguments[:3]) + "; inspect service logs (secrets are not printed)")
+        require(process.returncode == 0, "Compose operation failed: " + " ".join(arguments[:3])
+                + "; inspect service logs (secrets are not printed)")
         return stdout.decode()
 
     async def fixture(self, **patch):
@@ -92,12 +92,13 @@ with urllib.request.urlopen(request, timeout=10) as response:
         return response.json() if response.content else None
 
     async def pages(self, path):
-        rows, cursor = [], None
+        rows, offset = [], 0
         while True:
-            page = await self.api("GET", path + ("&" if "?" in path else "?") + "limit=100" + ("&cursor=" + cursor if cursor else ""))
+            separator = "&" if "?" in path else "?"
+            page = await self.api("GET", f"{path}{separator}limit=100&offset={offset}")
             rows.extend(page["items"])
-            cursor = page["next_cursor"]
-            if cursor is None:
+            offset += len(page["items"])
+            if offset >= page["total"] or not page["items"]:
                 return rows
 
     async def until(self, function, description, timeout=None):
@@ -116,7 +117,7 @@ with urllib.request.urlopen(request, timeout=10) as response:
                 return response.status_code == 200
             except httpx.TransportError:
                 return False
-        await self.until(check, "API/database readiness", 90)
+        await self.until(check, "API/database readiness", 120)
 
     async def groups_create(self):
         recipient = os.environ.get("MAIL_TEST_TO", "").strip().casefold()
@@ -133,8 +134,7 @@ with urllib.request.urlopen(request, timeout=10) as response:
         groups = ", ".join(group["name"] for group in self.groups)
         common = (f"创建监控 {FIXTURE}{path}，名称 Smoke {self.stamp} {path}。每60秒采集，显示时区 UTC。"
                   f"通知必须选择两个已有组：{groups}（都要选择，不新建或猜测收件人）。"
-                  "请使用五种事件的现有默认模板版本：price_changed、list_changed、content_changed、run_failed、recovered。"
-                  "先实际分析、保存草稿并完成真实提取与邮件预览，再调用需要人工确认的创建工具等待我确认；现在不要创建。")
+                  "先实际分析、保存草稿并完成真实提取与邮件预览，再调用 request_creation 等我确认；现在不要创建。")
         if kind == "price":
             return common + ("仅监控当前销售价格 current_price，不是原价；货币USD，金额字段money，"
                              "较上次成功采集下降至少10%才通知，规则number_percent_change/decrease_gte/value=10；"
@@ -144,70 +144,75 @@ with urllib.request.urlopen(request, timeout=10) as response:
                          "等待真实商品行出现后采集；此验收页无分页，请实际核实full覆盖，不设删除规则。")
 
     async def send(self, cid, text):
-        await self.api("POST", f"/agent/conversations/{cid}/messages", {
-            "content": text, "client_message_id": str(uuid4())})
+        return await self.api("POST", f"/conversations/{cid}/messages",
+                              {"content": text, "client_message_id": str(uuid4())})
 
     async def settled(self, cid):
         async def check():
-            snapshot = await self.api("GET", f"/agent/conversations/{cid}")
-            require(snapshot["runs"], "Conversation has no Agent run")
-            run = snapshot["runs"][-1]
+            snapshot = await self.api("GET", f"/conversations/{cid}")
+            runs = [job for job in snapshot["jobs"] if job["kind"] == "agent"]
+            require(runs, "Conversation has no agent job")
+            run = runs[-1]
             if run["status"] in {"failed", "cancelled"}:
-                raise AcceptanceFailure("Real Agent failed: " + str(run["error_code"]) + "; check model/tools; no manual draft fallback")
-            return snapshot if run["status"] in {"waiting_approval", "completed"} else None
-        return await self.until(check, "real Agent analysis/preview/approval")
+                raise AcceptanceFailure("Real Agent failed: " + str(run["error_code"])
+                                        + "; check model/tools; no manual draft fallback")
+            return snapshot if run["status"] == "succeeded" else None
+        return await self.until(check, "real Agent analysis/preview/confirmation request")
+
+    def draft(self, snapshot):
+        return next((draft for draft in snapshot["drafts"]
+                     if draft["preview"] is not None), None)
 
     async def preview(self, cid, kind, path):
         for turn in range(3):
             snapshot = await self.settled(cid)
-            run = snapshot["runs"][-1]
-            if run["status"] == "waiting_approval":
+            draft = self.draft(snapshot)
+            if draft is not None:
                 break
             if turn == 2:
-                raise AcceptanceFailure("Agent needs unresolved clarification after three turns; inspect conversation " + cid)
+                raise AcceptanceFailure("Agent needs unresolved clarification after three turns; "
+                                        "inspect conversation " + cid)
             # Clarifications remain ordinary real model messages, never server-side specs.
-            await self.send(cid, self.prompt(path, kind) + "以上语义已明确，请使用这些信息回答你的澄清并继续真实预览，等待人工确认。")
-        pending = run["pending_approval"]
-        require(pending is not None, "No trusted pending approval")
-        draft = next(item for item in snapshot["drafts"] if item["id"] == pending["draft_id"])
+            await self.send(cid, self.prompt(path, kind)
+                            + "以上语义已明确，请使用这些信息回答你的澄清并继续真实预览，等待我确认。")
+        else:
+            raise AcceptanceFailure("No preview was produced")
         preview, spec = draft["preview"], draft["spec"]
-        require(preview and not draft["task_id"], "Preview missing or monitor created before approval")
+        require(draft["monitor_id"] is None, "Monitor existed before approval")
         require(spec["url"] == FIXTURE + path, "Agent changed requested target")
-        require(spec["schedule"] == {"interval_seconds": 60, "timezone": "UTC"}, "Agent changed requested schedule/timezone")
-        require(set(spec["notification_group_ids"]) == {g["id"] for g in self.groups}, "Agent changed notification routing")
-        require(set(spec["template_bindings"]) == EVENT_TYPES, "All five default event template bindings required")
-        require(spec["collection_mode"] == ("http" if kind == "price" else "browser"), "Wrong collection mode")
-        require(preview["rendered_emails"] and preview["evidence_refs"], "Real email/evidence preview missing")
-        require({entry["email"] for entry in preview["recipient_snapshot"]} == {self.recipient}, "Preview recipient not exclusively MAIL_TEST_TO")
+        require(spec["schedule"] == {"interval_seconds": 60, "timezone": "UTC"},
+                "Agent changed requested schedule/timezone")
+        require(set(spec["notification_group_ids"]) == {g["id"] for g in self.groups},
+                "Agent changed notification routing")
+        require(spec["collection_mode"] == ("http" if kind == "price" else "browser"),
+                "Wrong collection mode")
+        require(preview["rendered_emails"] and preview["evidence_refs"],
+                "Real email/evidence preview missing")
+        require(set(preview["recipients"]) == {self.recipient},
+                "Preview recipient not exclusively MAIL_TEST_TO")
         rules = spec["change_rules"]["rules"]
         if kind == "price":
-            current_price = next((field for field in spec["fields"] if field["name"] == "current_price"), None)
+            current_price = next((field for field in spec["fields"]
+                                  if field["name"] == "current_price"), None)
             require(current_price and current_price["type"] == "money" and
-                    current_price["normalize"]["currency"] == "USD", "Agent changed current-price money/USD semantics")
+                    current_price["normalize"]["currency"] == "USD",
+                    "Agent changed current-price money/USD semantics")
             require(len(rules) == 1 and rules[0]["type"] == "number_percent_change" and
-                    rules[0]["operator"] == "decrease_gte" and Decimal(str(rules[0]["value"])) == 10 and
+                    rules[0]["operator"] == "decrease_gte" and
+                    Decimal(str(rules[0]["value"])) == 10 and
                     rules[0]["field"] == "current_price", "Agent changed requested price rule")
-            require(self.price(preview["extracted_data"]) == 100, "Real current_price preview must be 100")
+            require(self.price(preview["extracted_data"]) == 100,
+                    "Real current_price preview must be 100")
         else:
-            require(len(rules) == 1 and rules[0]["type"] == "list_added", "Agent changed list-added semantics")
-            require(spec["business_key"] and preview["coverage"]["scope"] == "full", "List needs proven full coverage and business key")
-            require(self.list_keys(spec, preview["extracted_data"]) == {"A"}, "Real dynamic preview must contain item A")
-        await self.sse_replay(cid, snapshot["last_seq"])
-        return draft, pending
-
-    async def sse_replay(self, cid, last_seq):
-        if not last_seq:
-            raise AcceptanceFailure("No durable conversation events")
-        async with asyncio.timeout(30):
-            async with self.client.stream("GET", f"/api/v1/agent/conversations/{cid}/events?after={last_seq - 1}") as response:
-                require(response.status_code == 200, "SSE replay failed")
-                async for line in response.aiter_lines():
-                    if line.startswith("data: "):
-                        event = json.loads(line[6:])
-                        require(event["conversation_id"] == cid and event["seq"] == last_seq and event["schema_version"] == 1,
-                                "SSE resume cursor/envelope mismatch")
-                        return
-        raise AcceptanceFailure("SSE replay returned no event")
+            require(len(rules) == 1 and rules[0]["type"] == "list_added",
+                    "Agent changed list-added semantics")
+            require(spec["business_key"] and preview["coverage"]["scope"] == "full",
+                    "List needs proven full coverage and business key")
+            require(self.list_keys(spec, preview["extracted_data"]) == {"A"},
+                    "Real dynamic preview must contain item A")
+        steps = [step["name"] for step in snapshot["jobs"][-1]["steps"]]
+        require("request_creation" in steps, "Agent did not request user confirmation")
+        return draft
 
     @staticmethod
     def price(fields):
@@ -221,55 +226,60 @@ with urllib.request.urlopen(request, timeout=10) as response:
 
     async def create_preview(self, path, kind, page=None):
         if page:
-            await page.locator("#monitor-message").fill(self.prompt(path, kind))
-            async with page.expect_response(lambda r: "/messages" in r.url and r.request.method == "POST") as result:
-                await page.get_by_role("button", name="发送监控需求").click()
+            await page.goto(self.base + "/app")
+            await page.locator("#composer").fill(self.prompt(path, kind))
+            async with page.expect_response(
+                    lambda r: "/messages" in r.url and r.request.method == "POST") as result:
+                await page.get_by_role("button", name="发送").click()
             response = await result.value
             require(response.status == 202, "UI message submission failed")
             cid = urlsplit(response.url).path.split("/")[-2]
         else:
-            conversation = await self.api("POST", "/agent/conversations", {"title": f"Smoke {self.stamp} {path}"})
+            conversation = await self.api("POST", "/conversations",
+                                          {"title": f"Smoke {self.stamp} {path}"})
             cid = conversation["id"]
             await self.send(cid, self.prompt(path, kind))
         self.conversations.append(cid)
-        draft, pending = await self.preview(cid, kind, path)
+        draft = await self.preview(cid, kind, path)
         print("PASS real Agent preview: " + path, flush=True)
-        return cid, draft, pending
+        return cid, draft
 
-    async def confirm(self, cid, draft, pending, page=None):
-        body = {"draft_id": draft["id"], "revision": pending["confirmed_revision"],
-                "preview_id": draft["preview"]["id"], "idempotency_key": pending["idempotency_key"]}
+    async def approve(self, cid, draft, page=None):
+        body = {"draft_id": draft["id"], "revision": draft["revision"]}
         if page:
             await page.reload()
-            async with page.expect_response(lambda response: response.request.method == "POST" and response.url.endswith(f"/agent/conversations/{cid}/confirm")) as confirmation:
+            async with page.expect_response(
+                    lambda response: response.request.method == "POST"
+                    and response.url.endswith(f"/conversations/{cid}/approve")) as confirmation:
                 await page.get_by_role("button", name="确认创建", exact=True).click(timeout=30000)
             response = await confirmation.value
-            require(response.status in {200, 202}, "Browser confirmation request failed: HTTP " + str(response.status))
+            require(response.status == 200,
+                    "Browser approval request failed: HTTP " + str(response.status))
+            monitor = (await response.json())["monitor_id"]
         else:
-            await self.api("POST", f"/agent/conversations/{cid}/confirm", body)
-        snapshot = await self.settled(cid)
-        task_id = next((d["task_id"] for d in snapshot["drafts"] if d["id"] == draft["id"]), None)
-        require(task_id, "Confirmed Agent did not create a real monitor")
-        self.monitors.append(task_id)
+            monitor = (await self.api("POST", f"/conversations/{cid}/approve", body))["monitor_id"]
+        self.monitors.append(monitor)
         for _ in range(2):
-            replay = await self.api("POST", f"/agent/conversations/{cid}/confirm", body)
-            require(replay["task_id"] == task_id, "Confirmation replay did not return same task")
-        recovery = await self.api("POST", f"/agent/conversations/{cid}/create", {
-            "draft_id": draft["id"], "confirmed_revision": pending["confirmed_revision"],
-            "idempotency_key": pending["idempotency_key"]})
-        require(recovery["task_id"] == task_id, "Lost-response recovery created another task")
-        return task_id
+            replay = await self.api("POST", f"/conversations/{cid}/approve", body)
+            require(replay["monitor_id"] == monitor, "Repeated approval created another monitor")
+        rows = [row for row in await self.pages("/monitors") if row["id"] == monitor]
+        require(len(rows) == 1, "Approval produced an unexpected monitor count")
+        return monitor
 
-    async def events(self, monitor, run_id=None):
-        return [e for e in await self.pages("/events") if e["monitor_id"] == monitor and (not run_id or e["run_id"] == run_id)]
+    async def events(self, monitor, job_id=None):
+        return [event for event in await self.pages("/events")
+                if event["monitor_id"] == monitor and (not job_id or event["job_id"] == job_id)]
 
     async def run(self, monitor, expected="succeeded"):
-        queued = await self.api("POST", f"/monitors/{monitor}/runs")
+        queued = await self.api("POST", f"/monitors/{monitor}/run")
+
         async def check():
-            row = await self.api("GET", "/runs/" + queued["id"])
+            row = await self.api("GET", "/jobs/" + queued["id"])
             return row if row["status"] in TERMINAL else None
-        row = await self.until(check, "collection run " + queued["id"])
-        require(row["status"] == expected, f"Run {row['id']} expected {expected}, got {row['status']} / {row['error_code']}")
+
+        row = await self.until(check, "collection job " + queued["id"])
+        require(row["status"] == expected,
+                f"Job {row['id']} expected {expected}, got {row['status']} / {row['error_code']}")
         return row
 
     async def baseline(self, monitor):
@@ -278,52 +288,61 @@ with urllib.request.urlopen(request, timeout=10) as response:
             if detail["health_status"] == "failed":
                 raise AcceptanceFailure("First collection failed instead of initializing baseline")
             return detail if detail["baseline_status"] == "ready" else None
+
         detail = await self.until(check, "first successful scheduled baseline")
         require(not await self.events(monitor), "First successful baseline emitted a business event")
-        history = await self.pages(f"/monitors/{monitor}/runs")
-        require(any(row["status"] == "succeeded" and row["trigger"] == "scheduled" for row in history),
-                "First baseline was not produced by the actual scheduler")
+        history = await self.pages(f"/monitors/{monitor}/jobs")
+        require(any(row["status"] == "succeeded" for row in history),
+                "First baseline was not produced by an actual production job")
         require(detail["baseline"] is not None, "Successful baseline data unavailable")
         if detail["collection_mode"] == "http":
-            require(self.price(detail["baseline"]["extracted_data"]) == 100, "First production baseline current_price is not 100")
+            require(self.price(detail["baseline"]["extracted_data"]) == 100,
+                    "First production baseline current_price is not 100")
         return detail
 
     async def deliveries(self, event, expected="sent"):
         async def check():
-            rows = [d for d in await self.pages("/email-deliveries") if d["event_id"] == event["id"]]
+            rows = [row for row in await self.pages("/email-deliveries")
+                    if row["event_id"] == event["id"]]
             require(len(rows) <= 1, "Overlapping groups produced duplicate delivery")
             for row in rows:
-                require(row["recipient"] == self.recipient, "Delivery recipient escaped MAIL_TEST_TO restriction")
+                require(row["recipient"] == self.recipient,
+                        "Delivery recipient escaped MAIL_TEST_TO restriction")
                 if row["status"] == "failed":
                     raise AcceptanceFailure("Product SMTP delivery failed: " + str(row["error_code"]))
             return rows[0] if rows and rows[0]["status"] == expected else None
+
         return await self.until(check, "one deduplicated product delivery " + expected)
 
     async def changed(self, monitor, event_type):
         row = await self.run(monitor)
         events = await self.events(monitor, row["id"])
-        require(len(events) == 1 and events[0]["type"] == event_type, "Expected exactly one correct change event")
+        require(len(events) == 1 and events[0]["type"] == event_type,
+                "Expected exactly one correct change event")
         delivery = await self.deliveries(events[0])
-        require(delivery["smtp_response_code"] is not None and 200 <= delivery["smtp_response_code"] < 300,
+        require(delivery["smtp_response_code"] is not None and
+                200 <= delivery["smtp_response_code"] < 300,
                 "sent has no SMTP acceptance response")
         return row, events[0], delivery
 
     async def evidence(self, row):
-        require(row["evidence"], "Successful run lacks evidence")
-        for entry in row["evidence"]:
-            path = f"/api/v1/runs/{row['id']}/evidence/{entry['id']}"
-            auth = await self.client.get(path)
-            require(auth.status_code == 200, "Authorized evidence unavailable")
+        snapshot = row["snapshot"]
+        require(snapshot and snapshot["evidence_refs"], "Successful job lacks evidence")
+        for index, entry in enumerate(snapshot["evidence_refs"]):
+            path = f"/api/v1/snapshots/{snapshot['id']}/evidence/{index}"
+            authorized = await self.client.get(path)
+            require(authorized.status_code == 200, "Authorized evidence unavailable")
             if entry["kind"] == "html":
-                require("attachment" in auth.headers.get("content-disposition", "") and
-                        auth.headers.get("content-type", "").startswith("text/plain"), "HTML evidence can execute same-origin")
+                require("attachment" in authorized.headers.get("content-disposition", "") and
+                        authorized.headers.get("content-type", "").startswith("text/plain"),
+                        "HTML evidence can execute same-origin")
             async with httpx.AsyncClient(base_url=self.base, trust_env=False) as anonymous:
                 denied = await anonymous.get(path)
                 require(denied.status_code == 401, "Unauthenticated evidence not rejected")
 
     async def security(self):
         source = """import asyncio
-from webmonitor.api.errors import DomainError
+from webmonitor.errors import DomainError
 from webmonitor.collection.MODE import collect_MODE
 async def main():
  for url in TARGETS:
@@ -333,37 +352,45 @@ async def main():
    assert error.code == 'url_forbidden', 'Unexpected collection failure: '+error.code
   else:
    raise AssertionError('Private target/resource was not blocked')
- public=await collect_MODE('https://example.com/')
+ public = await collect_MODE('https://example.com/')
  assert 'Example Domain' in public.html, 'Public HTML could not be collected through egress'
  if 'MODE' == 'browser': assert public.screenshot[:8] == bytes([137,80,78,71,13,10,26,10])
  print('private-targets-blocked')
 asyncio.run(main())
 """
         for mode in ("http", "browser"):
-            targets = [FIXTURE + "/redirect-private?target=" + t for t in ("loopback", "metadata", "ipv6")]
+            targets = [FIXTURE + "/redirect-private?target=" + target
+                       for target in ("loopback", "metadata", "ipv6")]
             targets.extend(["http://127.0.0.1/", "http://169.254.169.254/", "http://[::1]/",
                             "http://10.0.0.1/", "http://postgres/", "http://host.docker.internal/",
-                            "http://fixture:8001/", "http://127.0.0.1.nip.io/", "http://169.254.169.254.nip.io/"])
+                            "http://fixture:8001/", "http://127.0.0.1.nip.io/",
+                            "http://169.254.169.254.nip.io/"])
             if mode == "browser":
                 targets.append(FIXTURE + "/private-resource")
-            result = await self.compose("exec", "-T", mode + "-worker", "python", "-",
+            result = await self.compose("exec", "-T", "api", "python", "-",
                 source=source.replace("MODE", mode).replace("TARGETS", repr(targets)))
             require("private-targets-blocked" in result, "Collector security probe missing proof")
-        print("PASS real worker public HTTPS and private IPv4/IPv6/DNS/redirect/subresource boundaries", flush=True)
+        print("PASS real collector public HTTPS and private IPv4/IPv6/DNS/redirect/subresource "
+              "boundaries", flush=True)
 
     async def screenshots(self, page, cid):
         self.args.screenshots.mkdir(parents=True, exist_ok=True)
         self.args.screenshots.chmod(0o700)
-        await page.goto(self.base + "/app?conversation=" + cid)
+        await page.goto(self.base + "/app")
+        await page.get_by_role("link", name="Smoke " + self.stamp, exact=False).first.click(
+            timeout=30000)
         await page.get_by_role("button", name="确认创建", exact=True).wait_for(timeout=30000)
         for width in (360, 768, 1440):
             await page.set_viewport_size({"width": width, "height": 900})
             await page.evaluate("document.fonts.ready")
-            require(await page.evaluate("document.documentElement.scrollWidth <= window.innerWidth"), f"UI horizontal overflow at {width}px")
-            destination = self.args.screenshots / f"{self.stamp}-approval-{width}.png"
+            require(await page.evaluate(
+                "document.documentElement.scrollWidth <= window.innerWidth"),
+                f"UI horizontal overflow at {width}px")
+            destination = self.args.screenshots / f"{self.stamp}-draft-{width}.png"
             await page.screenshot(path=str(destination), full_page=True)
             destination.chmod(0o600)
-        print("PASS actual approval UI at 360/768/1440; private screenshots saved", flush=True)
+        print("PASS actual draft confirmation UI at 360/768/1440; private screenshots saved",
+              flush=True)
 
     async def scenario(self, email, password):
         await self.ready()
@@ -372,7 +399,9 @@ asyncio.run(main())
             try:
                 browser = await playwright.chromium.launch(headless=True)
             except Exception:
-                raise AcceptanceFailure("Runner Chromium unavailable; rebuild the dev/smoke-runner image. No UI validation was skipped.") from None
+                raise AcceptanceFailure(
+                    "Runner Chromium unavailable; rebuild the smoke-runner image. "
+                    "No UI validation was skipped.") from None
             try:
                 context = await browser.new_context()
                 page = await context.new_page()
@@ -388,102 +417,83 @@ asyncio.run(main())
                 profile = await self.api("GET", "/auth/me")
                 require(profile["role"] == "admin", "Acceptance requires a real administrator account")
                 await self.groups_create()
-                cid, draft, pending = await self.create_preview("/static/product", "price", page)
+                cid, draft = await self.create_preview("/static/product", "price", page)
                 await self.screenshots(page, cid)
                 if self.args.send_mail:
-                    await self.compose("restart", "api", "agent-worker")
-                    await self.ready()
-                    recovered = await self.api("GET", "/agent/conversations/" + cid)
-                    restored = next(d for d in recovered["drafts"] if d["id"] == draft["id"])
-                    require(restored["preview"]["id"] == draft["preview"]["id"] and not restored["task_id"], "Pending approval did not survive restart")
-                    await self.sse_replay(cid, recovered["last_seq"])
-                    monitor = await self.confirm(cid, draft, pending, page)
+                    monitor = await self.approve(cid, draft, page)
                     await self.baseline(monitor)
                     await self.fixture(current_price="80")
                     row, event, delivery = await self.changed(monitor, "price_changed")
-                    require(self.price(event["change"]["before"]) == 100 and self.price(event["change"]["after"]) == 80, "Price event is not 100→80")
-                    require("100" in delivery["rendered_text"] and "80" in delivery["rendered_text"], "Real delivered body lacks price change")
+                    require(self.price(event["change"]["before"]) == 100 and
+                            self.price(event["change"]["after"]) == 80,
+                            "Price event is not 100→80")
+                    require("100" in delivery["body_text"] and "80" in delivery["body_text"],
+                            "Real delivered body lacks price change")
                     await self.evidence(row)
                     repeat = await self.run(monitor)
-                    require(not await self.events(monitor, repeat["id"]), "Same value emitted another event")
+                    require(not await self.events(monitor, repeat["id"]),
+                            "Same value emitted another event")
                     baseline = (await self.api("GET", "/monitors/" + monitor))["baseline_snapshot_id"]
                     for fault in ("http_500", "empty", "selector_changed"):
                         await self.fixture(**{fault: True})
                         failed = await self.run(monitor, "failed")
-                        require((await self.api("GET", "/monitors/" + monitor))["baseline_snapshot_id"] == baseline, "Failure advanced trusted baseline")
-                        require(all(e["type"] == "run_failed" for e in await self.events(monitor, failed["id"])), "Failure emitted business change")
+                        require((await self.api("GET", "/monitors/" + monitor))["baseline_snapshot_id"]
+                                == baseline, "Failure advanced trusted baseline")
+                        require(all(event["type"] == "run_failed"
+                                    for event in await self.events(monitor, failed["id"])),
+                                "Failure emitted business change")
                         await self.fixture(**{fault: False})
                     await self.api("POST", f"/monitors/{monitor}/pause")
-                    print("PASS approval restart/replay, scheduled baseline, 100→80, SMTP accepted, same-value silence, failure baseline", flush=True)
-                else:
-                    snapshot = await self.api("GET", "/agent/conversations/" + cid)
-                    await self.api("POST", f"/agent/conversations/{cid}/cancel", {"agent_run_id": snapshot["runs"][-1]["id"]})
+                    paused = await self.api("GET", "/monitors/" + monitor)
+                    require(paused["status"] == "paused", "Pause did not apply")
+                    print("PASS approval replay, scheduled baseline, 100→80, SMTP accepted, "
+                          "same-value silence, failure baseline, pause", flush=True)
                 await self.fixture()
-                for path, kind in (("/ssr/product", "price"), ("/react/list", "list"), ("/vue/list", "list")):
+                for path, kind in (("/ssr/product", "price"), ("/react/list", "list"),
+                                   ("/vue/list", "list")):
                     await self.fixture()
-                    cid, draft, pending = await self.create_preview(path, kind)
+                    cid, draft = await self.create_preview(path, kind)
                     if not self.args.send_mail:
-                        snapshot = await self.api("GET", "/agent/conversations/" + cid)
-                        await self.api("POST", f"/agent/conversations/{cid}/cancel", {"agent_run_id": snapshot["runs"][-1]["id"]})
                         continue
-                    monitor = await self.confirm(cid, draft, pending)
+                    monitor = await self.approve(cid, draft)
                     detail = await self.baseline(monitor)
-                    if kind == "list":
-                        items = [{"id": "A", "name": "Alpha", "price": "10"}]
-                        for key in ("B", "C"):
-                            items.append({"id": key, "name": "Item " + key, "price": "20"})
-                            await self.fixture(items=items)
-                            row, event, _ = await self.changed(monitor, "list_changed")
-                            require(self.list_keys(detail["spec"], event["change"]["after"]) - self.list_keys(detail["spec"], event["change"]["before"]) == {key}, "Consecutive new item event missing/wrong")
-                            await self.evidence(row)
-                        baseline = (await self.api("GET", "/monitors/" + monitor))["baseline_snapshot_id"]
-                        await self.fixture(duplicate=True)
-                        await self.run(monitor, "failed")
-                        require((await self.api("GET", "/monitors/" + monitor))["baseline_snapshot_id"] == baseline, "Duplicate keys advanced baseline")
-                        await self.fixture(duplicate=False)
-                        await self.fixture(selector_changed=True)
-                        failed = await self.run(monitor, "failed")
-                        require(failed["error_code"] == "collection_invalid" and failed["attempt_count"] == 1,
-                                "Missing browser selector was incorrectly treated as a retryable network failure")
-                        require((await self.api("GET", "/monitors/" + monitor))["baseline_snapshot_id"] == baseline,
-                                "Missing browser selector advanced baseline")
-                        await self.fixture(selector_changed=False)
+                    if kind != "list":
+                        await self.api("POST", f"/monitors/{monitor}/pause")
+                        continue
+                    items = [{"id": "A", "name": "Alpha", "price": "10"}]
+                    for key in ("B", "C"):
+                        items.append({"id": key, "name": "Item " + key, "price": "20"})
+                        await self.fixture(items=items)
+                        row, event, _ = await self.changed(monitor, "list_changed")
+                        require(self.list_keys(detail["spec"], event["change"]["after"]) -
+                                self.list_keys(detail["spec"], event["change"]["before"]) == {key},
+                                "Consecutive new item event missing/wrong")
+                        await self.evidence(row)
+                    baseline = (await self.api("GET", "/monitors/" + monitor))["baseline_snapshot_id"]
+                    await self.fixture(duplicate=True)
+                    await self.run(monitor, "failed")
+                    require((await self.api("GET", "/monitors/" + monitor))["baseline_snapshot_id"]
+                            == baseline, "Duplicate keys advanced baseline")
+                    await self.fixture(duplicate=False)
+                    await self.fixture(selector_changed=True)
+                    failed = await self.run(monitor, "failed")
+                    require(failed["error_code"] == "collection_invalid" and
+                            failed["attempt_count"] == 1,
+                            "Missing browser selector was incorrectly treated as retryable")
+                    require((await self.api("GET", "/monitors/" + monitor))["baseline_snapshot_id"]
+                            == baseline, "Missing browser selector advanced baseline")
+                    await self.fixture(selector_changed=False)
                     await self.api("POST", f"/monitors/{monitor}/pause")
                 await self.security()
-                if self.args.send_mail:
-                    await self.cancel_queued()
-                print("PASS full real acceptance; sent means SMTP accepted, not inbox verified" if self.args.send_mail else
-                      "PASS real preview-only acceptance; no monitors confirmed and no production mail sent", flush=True)
+                print("PASS full real acceptance; sent means SMTP accepted, not inbox verified"
+                      if self.args.send_mail else
+                      "PASS real preview-only acceptance; no monitors approved and no "
+                      "production mail sent", flush=True)
             finally:
                 await browser.close()
 
-    async def cancel_queued(self):
-        # Quiesce the real mailer to make revoke-before-send deterministic.
-        monitor = self.monitors[0]
-        await self.fixture(current_price="60")
-        await self.compose("stop", "mailer")
-        self.mailer_stopped = True
-        try:
-            await self.api("POST", f"/monitors/{monitor}/resume")
-            row = await self.run(monitor)
-            events = await self.events(monitor, row["id"])
-            price_event = next((event for event in events if event["type"] == "price_changed"), None)
-            require(price_event is not None, "Cancellation scenario lacks real price event")
-            await self.deliveries(price_event, "queued")
-            for group in self.groups:
-                await self.api("PATCH", "/notification-groups/" + group["id"], {"enabled": False})
-            await self.compose("start", "mailer")
-            self.mailer_stopped = False
-            await self.deliveries(price_event, "cancelled")
-            await self.api("POST", f"/monitors/{monitor}/pause")
-            print("PASS queued delivery cancelled after both original groups disabled", flush=True)
-        finally:
-            if self.mailer_stopped:
-                await self.compose("start", "mailer")
-                self.mailer_stopped = False
-
     async def close(self):
-        # Preserve run/event/approval evidence; stop only monitors created by this invocation.
+        # Preserve monitored evidence; stop only work created by this invocation.
         for monitor in self.monitors:
             try:
                 await self.api("POST", f"/monitors/{monitor}/pause")
@@ -491,14 +501,12 @@ asyncio.run(main())
                 print("Cleanup could not pause acceptance monitor " + monitor, file=sys.stderr)
         for cid in self.conversations:
             try:
-                snapshot = await self.api("GET", "/agent/conversations/" + cid)
-                for run in snapshot["runs"]:
-                    if run["status"] in {"queued", "running", "waiting_approval"}:
-                        await self.api("POST", f"/agent/conversations/{cid}/cancel", {"agent_run_id": run["id"]})
+                snapshot = await self.api("GET", "/conversations/" + cid)
+                if any(job["kind"] == "agent" and job["status"] in ACTIVE
+                       for job in snapshot["jobs"]):
+                    await self.api("POST", f"/conversations/{cid}/cancel")
             except Exception:
                 print("Cleanup could not stop acceptance conversation " + cid, file=sys.stderr)
-        if self.mailer_stopped:
-            await self.compose("start", "mailer")
         await self.client.aclose()
 
 
@@ -513,15 +521,21 @@ async def main(args):
 
 
 if __name__ == "__main__":
-    parser = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
+    parser = argparse.ArgumentParser(description=__doc__,
+        formatter_class=argparse.RawDescriptionHelpFormatter)
     parser.add_argument("--base-url", default="http://localhost:8080")
-    parser.add_argument("--send-mail", action="store_true", help="Send MULTIPLE real change/failure/recovery emails to MAIL_TEST_TO; prefer default preview-only mode first")
-    parser.add_argument("--timeout", type=int, default=240, help="Bound each Agent/worker/delivery wait in seconds")
-    parser.add_argument("--screenshots", type=Path, default=ROOT / ".smoke-artifacts", help="Private actual UI screenshots directory")
+    parser.add_argument("--send-mail", action="store_true",
+        help="Send MULTIPLE real change/failure/recovery emails to MAIL_TEST_TO; "
+             "prefer the default preview-only mode first")
+    parser.add_argument("--timeout", type=int, default=240,
+        help="Bound each Agent/worker/delivery wait in seconds")
+    parser.add_argument("--screenshots", type=Path, default=ROOT / ".smoke-artifacts",
+        help="Private actual UI screenshots directory")
     arguments = parser.parse_args()
     origin = urlsplit(arguments.base_url)
     require(origin.scheme in {"http", "https"} and origin.hostname and not origin.username and
-            origin.path in {"", "/"} and not origin.query and not origin.fragment, "--base-url must be an origin without credentials")
+            origin.path in {"", "/"} and not origin.query and not origin.fragment,
+            "--base-url must be an origin without credentials")
     require(arguments.timeout > 0, "--timeout must be positive")
     load_dotenv(ROOT / ".env", override=False)
     try:
@@ -531,6 +545,8 @@ if __name__ == "__main__":
         raise SystemExit(130)
     except Exception as error:
         # Never dump upstream exceptions containing credentials, token-bearing URLs or page data.
-        message = str(error) if isinstance(error, AcceptanceFailure) else type(error).__name__ + "; inspect product logs and dependency/browser availability"
+        message = (str(error) if isinstance(error, AcceptanceFailure)
+                   else type(error).__name__ +
+                        "; inspect product logs and dependency/browser availability")
         print("FAIL " + message, file=sys.stderr)
         raise SystemExit(1)

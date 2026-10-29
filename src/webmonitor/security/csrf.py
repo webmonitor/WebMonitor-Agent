@@ -10,8 +10,8 @@ from urllib.parse import urlsplit
 from fastapi import Request, Response
 from starlette.types import ASGIApp, Receive, Scope, Send
 
-from webmonitor.api.errors import DomainError, domain_error_handler
 from webmonitor.config import get_settings
+from webmonitor.errors import DomainError, domain_error_handler
 
 CSRF_COOKIE = "wm_csrf_nonce"
 CSRF_TTL_SECONDS = 30 * 60
@@ -26,18 +26,9 @@ def cookie_secure() -> bool:
 
 
 def derive_signing_key(purpose: str) -> bytes:
-    """Derive domain-separated keys; approval callers must use purpose='approval'."""
-    if purpose not in {"csrf", "approval"}:
+    if purpose != "csrf":
         raise ValueError("Unknown signing purpose")
-    try:
-        path = get_settings().secret_file
-        if path.stat().st_mode & 0o077:
-            raise ValueError("Secret file permissions")
-        root = path.read_bytes()
-        if len(root) < 32:
-            raise ValueError("Secret file length")
-    except (OSError, ValueError) as exc:
-        raise DomainError("signing_unavailable", status=503) from exc
+    root = get_settings().secret_key.get_secret_value().encode("utf-8")
     return hmac.digest(root, b"webmonitor/signing/v1/" + purpose.encode("ascii"), "sha256")
 
 

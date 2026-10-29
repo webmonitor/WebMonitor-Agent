@@ -1,29 +1,58 @@
-"""Evidence is authorized per workspace and never executed as same-origin HTML."""
+"""Evidence streams resolved by index into a stored reference list."""
 from uuid import UUID
+
 from fastapi import APIRouter
 from fastapi.responses import StreamingResponse
-from sqlalchemy import select
-from webmonitor.api.dependencies import AuthenticatedPrincipal, DatabaseSession
-from webmonitor.api.errors import DomainError
-from webmonitor.db.models.monitoring import Evidence
+
+from webmonitor.api.dependencies import AuthenticatedUser, DatabaseSession
+from webmonitor.errors import DomainError
+from webmonitor.models import Monitor, Snapshot
+from webmonitor.security.auth import require_owner
+from webmonitor.services import drafts
 from webmonitor.storage.evidence import stream_evidence
 
-router=APIRouter(prefix="/api/v1",tags=["evidence"])
+router = APIRouter(prefix="/api/v1", tags=["evidence"])
 
-async def response_for(evidence):
-    is_image=evidence.kind=="screenshot"
-    return StreamingResponse(await stream_evidence(evidence.bucket,evidence.object_key),media_type="image/png" if is_image else "text/plain; charset=utf-8",headers={"Content-Disposition":f"{'inline' if is_image else 'attachment'}; filename=\"{evidence.id}.{'png' if is_image else 'txt'}\"","X-Content-Type-Options":"nosniff","Cache-Control":"private, no-store","Content-Security-Policy":"default-src 'none'; sandbox"})
 
-@router.get("/runs/{run_id}/evidence/{evidence_id}")
-async def run_evidence(run_id:UUID,evidence_id:UUID,session:DatabaseSession,principal:AuthenticatedPrincipal):
-    evidence=await session.scalar(select(Evidence).where(Evidence.id==evidence_id,Evidence.run_id==run_id,Evidence.workspace_id==principal.workspace_id))
-    if evidence is None:
-        raise DomainError("not_found",404)
-    return await response_for(evidence)
+async def _response(reference: dict) -> StreamingResponse:
+    is_image = reference.get("kind") == "screenshot"
+    content_type = reference.get("content_type") or (
+        "image/png" if is_image else "text/plain; charset=utf-8")
+    suffix = "png" if is_image else "txt"
+    return StreamingResponse(
+        await stream_evidence(reference["bucket"], reference["object_key"]),
+        media_type=content_type,
+        headers={
+            "Content-Disposition": f"{'inline' if is_image else 'attachment'}; "
+                                   f"filename=\"{reference.get('sha256', 'evidence')[:16]}.{suffix}\"",
+            "X-Content-Type-Options": "nosniff",
+            "Cache-Control": "private, no-store",
+            "Content-Security-Policy": "default-src 'none'; sandbox",
+        })
 
-@router.get("/previews/{preview_id}/evidence/{evidence_id}")
-async def preview_evidence(preview_id:UUID,evidence_id:UUID,session:DatabaseSession,principal:AuthenticatedPrincipal):
-    evidence=await session.scalar(select(Evidence).where(Evidence.id==evidence_id,Evidence.preview_id==preview_id,Evidence.workspace_id==principal.workspace_id))
-    if evidence is None:
-        raise DomainError("not_found",404)
-    return await response_for(evidence)
+
+def _pick(references: list[dict], index: int) -> dict:
+    if index < 0 or index >= len(references):
+        raise DomainError("not_found", 404)
+    reference = references[index]
+    if not isinstance(reference, dict) or "bucket" not in reference or "object_key" not in reference:
+        raise DomainError("not_found", 404)
+    return reference
+
+
+@router.get("/snapshots/{snapshot_id}/evidence/{index}")
+async def snapshot_evidence(snapshot_id: UUID, index: int, session: DatabaseSession,
+                            user: AuthenticatedUser):
+    snapshot = await session.get(Snapshot, snapshot_id)
+    if snapshot is None:
+        raise DomainError("not_found", 404)
+    require_owner(user, await session.get(Monitor, snapshot.monitor_id))
+    return await _response(_pick(list(snapshot.evidence_refs or []), index))
+
+
+@router.get("/drafts/{draft_id}/evidence/{index}")
+async def draft_evidence(draft_id: UUID, index: int, session: DatabaseSession,
+                         user: AuthenticatedUser):
+    draft = await drafts.require_draft(session, user, draft_id)
+    references = list((draft.preview or {}).get("evidence_refs") or [])
+    return await _response(_pick(references, index))

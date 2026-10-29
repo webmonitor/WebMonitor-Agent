@@ -3,23 +3,37 @@ import asyncio
 from contextlib import suppress
 from time import monotonic
 
-from playwright.async_api import Error as PlaywrightError, TimeoutError as PlaywrightTimeoutError, async_playwright
+from playwright.async_api import Error as PlaywrightError
+from playwright.async_api import TimeoutError as PlaywrightTimeoutError
+from playwright.async_api import async_playwright
 
-from webmonitor.api.errors import DomainError
 from webmonitor.collection.extraction import extract_fields
+from webmonitor.collection.types import (
+    MAX_HTML_BYTES,
+    CollectionResult,
+    analyze_html,
+    collection_coverage,
+)
 from webmonitor.collection.validation import validate_collection
-from webmonitor.collection.types import CollectionResult, MAX_HTML_BYTES, analyze_html, collection_coverage
 from webmonitor.config import get_settings
+from webmonitor.errors import DomainError
 from webmonitor.schemas.monitors import DraftSpec
 from webmonitor.security.egress import validate_target
 
-_BROWSER_SLOTS = asyncio.Semaphore(2)
+_slots: asyncio.Semaphore | None = None
+
+
+def _browser_slots() -> asyncio.Semaphore:
+    global _slots
+    if _slots is None:
+        _slots = asyncio.Semaphore(get_settings().browser_concurrency)
+    return _slots
 MAX_REQUESTS = 100
 MAX_RESOURCE_BYTES = 20 * 1024 * 1024
 
 
 async def collect_browser(url: str, spec: DraftSpec | None = None) -> CollectionResult:
-    async with _BROWSER_SLOTS:
+    async with _browser_slots():
         started = monotonic()
         browser = context = None
         tasks = set()
