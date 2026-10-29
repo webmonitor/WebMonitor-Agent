@@ -50,11 +50,13 @@ Stop to ask clarification when evidence or configuration are insufficient.
 """
 
 
-async def _live(session, job_id: UUID, worker_id: str, *, lock: bool = True) -> Job:
+async def _live(session, job_id: UUID, worker_id: str, *, lock: bool = True,
+                terminal: bool = False) -> Job:
     job = await session.scalar(select(Job).where(Job.id == job_id).with_for_update()
         .execution_options(populate_existing=True)) if lock else await session.get(Job, job_id)
     if (job is None or job.status != "running" or job.lease_owner != worker_id
-            or job.cancel_requested_at is not None or job.lease_expires_at is None
+            or (job.cancel_requested_at is not None and not terminal)
+            or job.lease_expires_at is None
             or job.lease_expires_at <= utc_now()):
         raise DomainError("execution_superseded", 409)
     return job
@@ -83,7 +85,10 @@ async def _finish(job_id: UUID, worker_id: str, *, error: str | None = None,
                   reason: str | None = None, cancelled: bool = False) -> None:
     async with get_session_factory()() as session:
         try:
-            job = await _live(session, job_id, worker_id)
+            # A cancellation only blocks further progress; the owner still writes
+            # the terminal state, otherwise the job would churn until its lease
+            # expires and never become `cancelled`.
+            job = await _live(session, job_id, worker_id, terminal=True)
         except DomainError:
             return  # A superseding cancellation or lease owner owns the terminal state.
         if cancelled:
@@ -98,6 +103,12 @@ async def _finish(job_id: UUID, worker_id: str, *, error: str | None = None,
         else:
             await jobs.finish(session, job, "succeeded")
         await session.commit()
+
+
+async def _cancellation_requested(job_id: UUID) -> bool:
+    async with get_session_factory()() as session:
+        job = await session.get(Job, job_id)
+        return job is not None and job.cancel_requested_at is not None
 
 
 async def _history(conversation_id: UUID, limit: int) -> list[dict]:
@@ -131,13 +142,19 @@ def _reason(exc: Exception) -> str:
     return type(exc).__name__
 
 
+STOP_STREAM_SECONDS = 5.0
+
+
 async def _stop_stream(stream) -> None:
     if stream is None:
         return
     stream.cancel(mode="immediate")
+    # A cancelled stream can still hold the generator open; without a bound the
+    # cancellation path would hang and the job would stay "running" forever.
     try:
-        async for _ in stream.stream_events():
-            pass
+        async with asyncio.timeout(STOP_STREAM_SECONDS):
+            async for _ in stream.stream_events():
+                pass
     except (Exception, asyncio.CancelledError):
         pass
 
@@ -210,6 +227,14 @@ async def execute_job(job_id: UUID, worker_id: str) -> None:
         raise
     except Exception as exc:
         await _stop_stream(stream)
+        if await _cancellation_requested(job_id):
+            # Aborts raised because the user stopped the run end as `cancelled`,
+            # not as a model failure.
+            try:
+                await _finish(job_id, worker_id, cancelled=True)
+            except Exception:
+                pass
+            return
         code = exc.code if isinstance(exc, DomainError) else "model_unavailable"
         try:
             await _finish(job_id, worker_id, error=code, reason=_reason(exc))

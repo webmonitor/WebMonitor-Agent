@@ -5,7 +5,12 @@ from uuid import uuid4
 import pytest
 from sqlalchemy import select
 
-from webmonitor.agent.orchestration import _history, execute_job
+from webmonitor.agent.orchestration import (
+    _cancellation_requested,
+    _finish,
+    _history,
+    execute_job,
+)
 from webmonitor.config import get_settings
 from webmonitor.models import Conversation, Job, Message, User, utc_now
 from webmonitor.services import jobs
@@ -66,3 +71,43 @@ async def test_missing_model_fails_the_job_and_keeps_the_conversation(session):
     assert [message.role for message in messages] == ["user"]
     # The conversation stays usable: a new message can be queued again.
     assert await jobs.claim(session, kind="agent", worker_id="worker") is None
+
+
+@pytest.mark.asyncio
+async def test_a_cancelled_run_writes_the_terminal_state(session):
+    _, job = await running_agent_job(session)
+    job.cancel_requested_at = utc_now()
+    await session.commit()
+
+    await _finish(job.id, "worker", cancelled=True)
+
+    stored = await session.get(Job, job.id, populate_existing=True)
+    assert stored.status == "cancelled" and stored.error_code == "run_cancelled"
+    assert stored.finished_at is not None and stored.lease_owner is None
+
+
+@pytest.mark.asyncio
+async def test_reaping_a_cancelled_run_does_not_retry_it(session):
+    _, job = await running_agent_job(session)
+    job.cancel_requested_at = utc_now() - timedelta(seconds=5)
+    job.lease_expires_at = utc_now() - timedelta(seconds=1)
+    await session.commit()
+
+    assert await jobs.claim(session, kind="agent", worker_id="other") is None
+    await session.commit()
+
+    stored = await session.get(Job, job.id, populate_existing=True)
+    assert stored.status == "cancelled" and stored.error_code == "run_cancelled"
+    assert stored.attempt_count == 1
+
+
+@pytest.mark.asyncio
+async def test_cancellation_probe_reads_the_job_row(session):
+    _, job = await running_agent_job(session)
+    await session.commit()
+    assert await _cancellation_requested(job.id) is False
+
+    job.cancel_requested_at = utc_now()
+    await session.commit()
+    assert await _cancellation_requested(job.id) is True
+    assert await _cancellation_requested(uuid4()) is False

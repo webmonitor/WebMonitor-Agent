@@ -90,6 +90,11 @@ async def _reap(session: AsyncSession, job: Job, now) -> None:
         from webmonitor.services import runs
         await runs.lease_expired(session, job)
         return
+    if job.cancel_requested_at is not None:
+        # The owner died before it could write the cancellation; retrying a run the
+        # user stopped would send a second message after they stopped waiting.
+        await finish(session, job, "cancelled", error_code="run_cancelled")
+        return
     job.attempts = [attempt if index != len(job.attempts) - 1 else
                     {**attempt, "status": "failed", "finished_at": now.isoformat(),
                      "error_code": "lease_expired", "retryable": True}
