@@ -1,0 +1,21 @@
+# Points collection at the independently deployed mocksite (../mocksite) instead of
+# any public target. mocksite publishes only 127.0.0.1:9000, so its compose network is
+# joined directly and egress allows exactly its service name on port 9000.
+services:
+  egress:
+    networks:
+      control: {}
+      outbound: {}
+      mocksite: {}
+    volumes:
+      - ./deploy/egress/squid.mocksite.conf:/etc/squid/squid.conf:ro
+  api:
+    environment:
+      TARGET_POLICY: allowlist
+      TARGET_ALLOWED_ORIGINS: ${MOCKSITE_TARGET_ORIGIN:-http://site:9000}
+
+networks:
+  # The default network of the mocksite compose project; override when it differs.
+  mocksite:
+    external: true
+    name: ${MOCKSITE_NETWORK:-mocksite_default}

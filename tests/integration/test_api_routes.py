@@ -1,5 +1,4 @@
 """Every route resolves to a real service call and a real response model."""
-import os
 from uuid import uuid4
 
 import httpx
@@ -13,9 +12,7 @@ from webmonitor.security.csrf import CSRF_COOKIE
 
 
 @pytest_asyncio.fixture
-async def client(monkeypatch):
-    if not os.environ.get("TEST_DATABASE_URL"):
-        pytest.skip("TEST_DATABASE_URL is not configured")
+async def client(monkeypatch, database_url):
     monkeypatch.setenv("WORKERS_ENABLED", "false")
     monkeypatch.setenv("ADMIN_EMAIL", "route-admin@example.com")
     monkeypatch.setenv("ADMIN_PASSWORD", "route-admin-password")

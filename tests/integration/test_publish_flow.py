@@ -1,11 +1,12 @@
 """One draft publishes exactly one monitor, and a repeated approval is idempotent."""
+from datetime import timedelta
 from uuid import uuid4
 
 import pytest
 from sqlalchemy import func, select
 
 from webmonitor.errors import DomainError
-from webmonitor.models import Draft, Monitor, NotificationGroup, User
+from webmonitor.models import Draft, Job, Monitor, NotificationGroup, User, utc_now
 from webmonitor.schemas.monitors import DraftSpec, content_hash
 from webmonitor.security.auth import CurrentUser
 from webmonitor.services import drafts
@@ -193,6 +194,43 @@ async def test_editing_a_published_draft_starts_a_new_baseline(session):
     assert published.health_status == "healthy"
     assert published.failure_fingerprint is None
     assert await session.scalar(select(func.count()).select_from(Monitor)) == 1
+
+
+@pytest.mark.asyncio
+async def test_preview_reports_a_template_that_cannot_render(session):
+    """A money field not named current_price cannot fill the price template."""
+    user, group = await seed(session)
+    current = CurrentUser(user_id=user.id, role="admin")
+    conversation = await _conversation(session, user)
+    spec = DraftSpec.model_validate({
+        "name": "Fee watch", "url": "https://8.8.8.8/notice", "collection_mode": "http",
+        "fields": [{"name": "current_fee", "type": "money", "semantic": "Fee",
+                    "selector": "#fee",
+                    "normalize": {"decimal_separator": ".", "currency": "CNY"}}],
+        "change_rules": {"mode": "any", "rules": [
+            {"type": "number_percent_change", "field": "current_fee",
+             "operator": "decrease_gte", "value": 10}]},
+        "schedule": {"interval_seconds": 60, "timezone": "UTC"},
+        "notification_group_ids": [str(group.id)],
+        "coverage": {"scope": "bounded", "description": "fee node"},
+    })
+    draft = await drafts.save_draft(session, current, conversation_id=conversation.id, spec=spec)
+    job = Job(user_id=user.id, kind="preview", status="running", draft_id=draft.id,
+              revision=draft.revision, url=spec.url, lease_owner="w",
+              lease_expires_at=utc_now() + timedelta(seconds=90), attempt_count=1,
+              result={"fields": {"current_fee": {"amount": "100.00", "currency": "CNY"}},
+                      "coverage": {"scope": "bounded", "description": "fee node"},
+                      "final_url": spec.url, "evidence_refs": [], "warnings": []})
+    session.add(job)
+    await session.flush()
+
+    preview = await drafts.build_preview(session, draft, job)
+    await session.commit()
+
+    rendered = {item["event_type"] for item in preview["rendered_emails"]}
+    assert "price_changed" not in rendered
+    assert "recovered" in rendered and "run_failed" in rendered
+    assert "template_contract_failed:price_changed" in preview["warnings"]
 
 
 async def _conversation(session, user):

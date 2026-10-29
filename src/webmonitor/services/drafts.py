@@ -131,6 +131,7 @@ async def build_preview(session: AsyncSession, draft: Draft, job: Job) -> dict:
         "evidence_url": f"{get_settings().app_origin}/app",
     }
     rendered = []
+    skipped = []
     for event_type in sorted(_event_types(spec)):
         try:
             message = render_email(event_type, {**payload,
@@ -138,13 +139,14 @@ async def build_preview(session: AsyncSession, draft: Draft, job: Job) -> dict:
         except DomainError as exc:
             if exc.code != "template_contract_failed":
                 raise
+            # A money field that is not named current_price cannot fill the price
+            # template; say so before approval instead of failing silently later.
+            skipped.append(f"template_contract_failed:{event_type}")
             continue
         rendered.append({"event_type": event_type, "subject": message["subject"],
                          "html": message["html"], "text": message["text"],
                          "preview_html": sanitize_preview(message["html"])})
-    warnings = list(result.get("warnings") or [])
-    if not rendered:
-        warnings.append("template_contract_failed")
+    warnings = list(result.get("warnings") or []) + skipped
     now = utc_now()
     preview = {
         "revision": draft.revision,

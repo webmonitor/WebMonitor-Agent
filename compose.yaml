@@ -147,35 +147,6 @@ services:
       timeout: 3s
       retries: 30
 
-  # Explicit trusted acceptance controller, never a collection worker.
-  # Docker socket access is equivalent to host Docker administrator access.
-  smoke-runner:
-    profiles: [smoke]
-    image: webmonitor-smoke:local
-    build:
-      context: .
-      dockerfile: deploy/smoke.Dockerfile
-      additional_contexts:
-        backend: service:api
-    user: "0:0"
-    init: true
-    stdin_open: true
-    tty: true
-    working_dir: /workspace
-    network_mode: service:proxy
-    entrypoint: [python]
-    environment:
-      CONTAINER_RUNTIME: "true"
-      SMOKE_TOKEN: ${SMOKE_TOKEN:-}
-    volumes:
-      - type: bind
-        source: .
-        target: /workspace
-      - /var/run/docker.sock:/var/run/docker.sock
-    depends_on:
-      proxy: {condition: service_healthy}
-    command: [scripts/smoke_mvp.py, --base-url, "http://localhost:8080"]
-
 networks:
   control:
     internal: true

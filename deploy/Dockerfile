@@ -26,11 +26,10 @@ RUN set -eux; \
     if [ -d /opt/playwright ]; then chmod -R a+rX /opt/playwright; fi
 COPY --from=build /wheel /wheel
 RUN pip install --no-cache-dir --no-deps /wheel/*.whl && rm -rf /wheel /tmp/requirements.txt
-COPY scripts/dev_entrypoint.py /usr/local/bin/dev_entrypoint.py
-# pytest reads this for testpaths/asyncio_mode/cache_dir when tests run in the image.
+# The image can run its own regression suite; pytest reads this for testpaths and
+# asyncio_mode, and tests/integration/conftest.py provisions its disposable database.
 COPY pyproject.toml /app/pyproject.toml
 COPY tests /app/tests
-COPY scripts /app/scripts
 USER 10001:10001
 WORKDIR /app
 ENTRYPOINT ["webmonitor"]

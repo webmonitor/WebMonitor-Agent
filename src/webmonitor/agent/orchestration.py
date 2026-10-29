@@ -171,7 +171,8 @@ async def execute_job(job_id: UUID, worker_id: str) -> None:
         if not settings.openai_api_key.get_secret_value() or not settings.openai_model:
             raise DomainError("model_unavailable", 503)
         client = AsyncOpenAI(api_key=settings.openai_api_key.get_secret_value(),
-            base_url=settings.model_base_url, timeout=60, max_retries=0)
+            base_url=settings.model_base_url,
+            timeout=settings.agent_model_timeout_seconds, max_retries=0)
         agent = Agent(name="WebMonitor", instructions=INSTRUCTIONS, tools=make_agent_tools(),
             model=CompleteChatCompletionsModel(model=settings.openai_model,
                 openai_client=client, buffer_streamed_tool_calls=True),

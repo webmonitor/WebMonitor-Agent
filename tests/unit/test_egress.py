@@ -22,7 +22,7 @@ def development_config(monkeypatch):
     "http://[::ffff:127.0.0.1]/", "http://10.0.0.1/", "http://172.16.0.1/",
     "http://192.168.1.1/", "http://224.0.0.1/", "http://localhost./",
     "http://a.localhost/", "file:///etc/passwd", "https://user:pass@example.com/",
-    "http://example.com:8000/", "http://fixture:8000/", "http://host.docker.internal/",
+    "http://example.com:8000/", "http://site:9000/", "http://host.docker.internal/",
     "http://[fe80::1%25eth0]/", "http://example.com\\@127.0.0.1/",
     "http://postgres/", "http://example.com:0/", "http://2130706433/",
 ])
@@ -41,13 +41,13 @@ def test_mapped_ipv6_private_address_rejected():
     assert public_address("2606:4700:4700::1111")
 
 
-def test_allowlist_exact_origin_allows_internal_fixture(monkeypatch):
+def test_allowlist_exact_origin_allows_internal_target(monkeypatch):
     monkeypatch.setenv("TARGET_POLICY", "allowlist")
-    monkeypatch.setenv("TARGET_ALLOWED_ORIGINS", "http://fixture:8000,http://mocksite:9000")
+    monkeypatch.setenv("TARGET_ALLOWED_ORIGINS", "http://site:9000,http://host.docker.internal:9000")
     get_settings.cache_clear()
-    assert validate_url("http://fixture:8000/static/product") == "http://fixture:8000/static/product"
-    assert validate_url("http://mocksite:9000/items") == "http://mocksite:9000/items"
-    for url in ("http://fixture:8001/", "https://fixture:8000/", "http://127.0.0.1:8000/"):
+    assert validate_url("http://site:9000/static/product") == "http://site:9000/static/product"
+    assert validate_url("http://host.docker.internal:9000/items") == "http://host.docker.internal:9000/items"
+    for url in ("http://site:9001/", "https://site:9000/", "http://127.0.0.1:8000/"):
         with pytest.raises(DomainError) as exc:
             validate_url(url)
         assert exc.value.code == "url_forbidden"

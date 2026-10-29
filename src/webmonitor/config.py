@@ -54,6 +54,7 @@ class Settings(BaseSettings):
     target_allowed_origins: str = ""
 
     agent_max_turns: int = 24
+    agent_model_timeout_seconds: int = 120
     agent_max_tokens: int = 8192
     agent_timeout_seconds: int = 300
     agent_history_messages: int = 30
@@ -91,6 +92,7 @@ class Settings(BaseSettings):
         if self.target_policy == "allowlist" and not parse_target_origins(self.target_allowed_origins):
             raise ValueError("TARGET_POLICY=allowlist requires TARGET_ALLOWED_ORIGINS")
         for name in ("preview_ttl_minutes", "agent_concurrency", "http_concurrency",
+                     "agent_model_timeout_seconds",
                      "browser_concurrency", "max_attempts", "max_active_monitors",
                      "login_attempts", "login_window_minutes", "agent_max_turns",
                      "agent_max_tokens", "agent_timeout_seconds", "agent_history_messages",

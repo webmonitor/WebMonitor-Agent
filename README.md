@@ -81,7 +81,7 @@ Agents SDK 固定为 0.22.3，使用单 Agent/Runner，不实现第二套工具�
 
 采集必须经过 Squid 实际连接 ACL，拒绝私网、loopback、link-local、metadata、异常端口与不安全重定向；Collector 没有直连公网路由。HTTP 限 5 MiB/30 秒/5 次重定向，压缩输出在展开分配前受限。浏览器为全新 context、UID 10001、`chromium_sandbox=True`、只读根文件系统、cap_drop ALL；限制 60 秒、100 请求、20 MiB、5 MiB DOM，进程内并发受 `BROWSER_CONCURRENCY` 限制。沙箱不可用返回 `browser_unavailable`，不降级成无沙箱。
 
-公网 DNS 由同一 `egress` 容器内的 Unbound 通过验证证书的 DNS-over-TLS 转发给 Cloudflare/Quad9。Squid 对解析后的实际连接地址执行 ACL，HTTPS CONNECT 仅允许 443。仅 smoke 配置把精确的 `fixture.` 名称交给 Docker DNS。
+公网 DNS 由同一 `egress` 容器内的 Unbound 通过验证证书的 DNS-over-TLS 转发给 Cloudflare/Quad9。Squid 对解析后的实际连接地址执行 ACL，HTTPS CONNECT 仅允许 443。mocksite overlay 让 Squid 改用 Docker DNS，并且只额外放行 `site:9000` 这一个来源；其余目标仍按公网 ACL 处理。
 
 Playwright seccomp 基于[官方 Docker profile](https://github.com/microsoft/playwright/blob/v1.63.0/utils/docker/seccomp_profile.json)，增加用户 namespace 内 Chromium 所需的 `chroot` 调用许可；仍由内核检查 namespace capability，不给容器增加 capability。
 
@@ -136,10 +136,12 @@ MinIO 公共镜像在本环境无法拉取，经用户批准使用 `deploy/minio
 开发、部署和测试统一在 Docker 中运行；宿主只需要 Docker Engine / Compose。
 
 ```sh
-# 全量回归：镜像内创建随机测试库、初始化、跑测试，最后只删除自己创建的测试库
-docker compose run --rm --entrypoint python api scripts/dev_entrypoint.py pytest -q
-docker compose run --rm --entrypoint python api scripts/dev_entrypoint.py pytest tests/unit -q
+# 全量回归：集成测试自建 wm_test_<hex> 一次性数据库，跑完只删除它自己创建的库
+docker compose run --rm --entrypoint pytest api -q
+docker compose run --rm --entrypoint pytest api tests/unit -q
 ```
+
+不需要任何辅助脚本：`tests/integration/conftest.py` 在会话开始创建一次性数据库、建表、结束时 drop；设置了 `TEST_DATABASE_URL` 时直接使用该库（不会删除）。没有可达的 PostgreSQL 时集成测试 skip，单元测试照常运行。
 
 依赖通过单一 `requirements.txt` 保留哈希校验（含运行时与开发依赖，因此同一镜像可直接跑测试）。不要在宿主创建 `.venv` 或使用 `uv sync` / `uv run` 安装、运行本项目。
 
@@ -159,29 +161,40 @@ docker compose run --rm --entrypoint uv api pip compile pyproject.toml --group d
 docker compose run --rm --no-deps web pnpm run generate:api   # 需要可访问 /api/v1/openapi.json
 ```
 
-项目测试仅发现 `tests/unit` 与 `tests/integration`，不执行 `reference/` 中第三方项目的测试。集成测试读取 `TEST_DATABASE_URL`，缺失时 skip。当前覆盖：出口策略与目标策略、请求契约、密码/邮箱/会话、令牌摘要、预览摘要敏感性、claim/续租/重排/取消、首次基线静默、变化事件与投递、失败保留基线、恢复通知、邀请单次使用、登录限流、发布幂等与预览失效。
+项目测试仅发现 `tests/unit` 与 `tests/integration`，不执行 `reference/` 中第三方项目的测试。集成测试优先读 `TEST_DATABASE_URL`，否则用 `PG*`/`POSTGRES_PASSWORD` 自建一次性库，两者都没有时 skip。当前覆盖：出口策略与目标策略、请求契约、密码/邮箱/会话、令牌摘要、预览摘要敏感性、claim/续租/重排/取消、首次基线静默、变化事件与投递、失败保留基线、恢复通知、邀请单次使用、登录限流、发布幂等与预览失效。
 
-## 可重复真实验收
+## 与 mocksite 联调
 
-只启用验收 overlay 时允许精确目标 `http://fixture:8000`（`TARGET_POLICY=allowlist`），其他私网仍拒绝。fixture 不向宿主发布管理端口。
+本仓库不再自带任何目标站点，也不再自带验收脚本。可重复的真实采集验收统一指向独立仓库 `../mocksite`（一个进程两个监听端口：站点 `:9000`、管理 `:9001`），它自己负责页面、数据与确定性故障；本仓库只负责采集、差异、证据与通知。
 
-`smoke-runner` 是显式启用 `smoke` profile 的可信验收工具：它由 `deploy/smoke.Dockerfile` 在产品镜像之上加入 Docker CLI/Compose，以 root 运行并挂载 `/var/run/docker.sock`；**它拥有 Docker 管理员权限，只应运行可信代码。** 它与 proxy 共享网络，使用 `http://localhost:8080`；`SMOKE_TOKEN` 通过环境传给 Compose，不要输出它。
+mocksite 只把站点端口发布到 `127.0.0.1:9000`，容器内无法经宿主网关可靠到达（Docker Desktop 会把该名字解析成 IPv6，而 Squid 不支持优先 IPv4）。因此 `compose.mocksite.yaml` 把 `egress` 直接接到 mocksite 的 compose 网络，用其服务名 `site:9000` 访问，并同时把 `api` 的目标策略改为 `allowlist`：
 
 ```sh
-export SMOKE_TOKEN="$(openssl rand -hex 32)"
-docker compose -f compose.yaml -f compose.smoke.yaml up --build --wait
+# 1) 独立仓库启动站点（默认只发布 127.0.0.1:9000）
+cd ../mocksite && docker compose up -d --wait && cd -
 
-# 默认只实际分析、提取与预览，不确认生产监控、不发生产邮件
-docker compose -f compose.yaml -f compose.smoke.yaml --profile smoke run --rm smoke-runner \
-  python scripts/smoke_mvp.py --base-url http://localhost:8080
+# 2) 叠加 overlay：只允许 http://site:9000
+docker compose -f compose.yaml -f compose.mocksite.yaml up -d --no-build --wait
 
-# 仅在明确允许发送真实邮件后执行；收件人只能为配置的 MAIL_TEST_TO
-docker compose -f compose.yaml -f compose.smoke.yaml --profile smoke run --rm smoke-runner \
-  python scripts/smoke_mvp.py --base-url http://localhost:8080 --send-mail
+# 3) 真实模型密钥：分析、草稿、预览都要走真实模型
+#    OPENAI_API_KEY / OPENAI_BASE_URL / OPENAI_MODEL 见 .env
 ```
 
-**`--send-mail` 会发送多封真实邮件，涵盖变化、故障和恢复；重新运行还会再次发送。** 请先使用默认的仅预览模式。
+- `MOCKSITE_NETWORK`（默认 `mocksite_default`）指定要加入的 mocksite 网络；项目名不同时改这里。
+- `MOCKSITE_TARGET_ORIGIN`（默认 `http://site:9000`）指定允许的来源；换成别的端口时一并修改。
+- 该 overlay 下 Squid 用 Docker DNS 解析（`deploy/egress/squid.mocksite.conf`），只额外放行 `site:9000`；公网目标仍被 `allowlist` 拒绝。
+- 回滚到公网目标：`docker compose up -d --no-build --force-recreate api egress`。
 
-脚本交互读取已创建管理员的邮箱/密码，创建两个重叠收件人的验收组，通过真实模型对话生成配置；模型不可用会失败退出，不回退到手工配置。完整模式验证静态/SSR/React/Vue、确认前不创建、重复确认幂等、首次基线静默、100→80、连续 B/C 新增、重复键/空值/故障不改基线、私网拦截、证据权限和暂停。
+mocksite 当前页面是 `/static/notice`（静态）与 `/ssr/notice`（SSR），主金额节点 `#notice #current-fee`，执行日期 `#notice #effective-date`，其余金额/日期是干扰项。改数据用管理端口：
 
-截图保存在 `.smoke-artifacts`，含工作区数据，按私有验收材料处理。脚本结束暂停本次创建的监控并保留运行与证据；收件箱实际送达仍需独立确认。
+```sh
+TOKEN=$(grep '^MOCKSITE_TOKEN=' ../mocksite/.env | cut -d= -f2-)
+curl -sS -H "Authorization: Bearer $TOKEN" http://127.0.0.1:9001/_admin/state
+curl -sS -X PATCH -H "Authorization: Bearer $TOKEN" -H 'Content-Type: application/json' \
+  -d '{"business":{"notice":{"current_fee":"100.00"}}}' http://127.0.0.1:9001/_admin/state
+curl -sS -X POST -H "Authorization: Bearer $TOKEN" http://127.0.0.1:9001/_admin/reset
+```
+
+联调闭环（本仓库实测过的顺序）：对话里让助手分析 `http://site:9000/static/notice` → 保存草稿 → 真实预览（含 `current_price` money/CNY 与 `effective_date`）→ 在工作台点“确认创建” → 首次成功只建基线 → 用 `_admin/state` 把 `current_fee` 改小 → 下一个周期产生一个 `price_changed` 事件并按通知组投递邮件。
+
+注意金额字段的命名约定：价格邮件模板要求字段名为 `current_price`，其他名字的 money 字段不会生成价格邮件；预览现在会以 `template_contract_failed:price_changed` 警告提示，而不是等投递时才失败。
