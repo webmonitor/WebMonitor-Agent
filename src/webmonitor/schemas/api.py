@@ -30,6 +30,9 @@ class PostMessageRequest(Input):
 
 class ConversationCreate(Input):
     title: str | None = Field(default=None, max_length=200)
+    # Sending the first message in the same request keeps an abandoned draft from
+    # leaving an unnamed conversation behind.
+    message: PostMessageRequest | None = None
 
 
 class ApproveRequest(Input):

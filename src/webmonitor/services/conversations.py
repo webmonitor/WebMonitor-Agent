@@ -15,6 +15,7 @@ from webmonitor.schemas.api import (
     Limits,
     MessageView,
     Page,
+    PostMessageRequest,
 )
 from webmonitor.security.auth import CurrentUser, require_owner
 from webmonitor.services import jobs
@@ -45,10 +46,14 @@ async def list_conversations(session: AsyncSession, user: CurrentUser, limit: in
 
 
 async def create_conversation(session: AsyncSession, user: CurrentUser,
-                              title: str | None = None) -> ConversationView:
+                              title: str | None = None, *,
+                              message: PostMessageRequest | None = None) -> ConversationView:
     conversation = Conversation(user_id=user.user_id, title=(title or None))
     session.add(conversation)
     await session.flush()
+    if message is not None:
+        await post_message(session, user, conversation.id, content=message.content,
+                           client_message_id=message.client_message_id)
     return _conversation_view(conversation)
 
 

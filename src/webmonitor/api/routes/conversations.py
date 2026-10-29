@@ -38,7 +38,8 @@ async def list_conversations(session: DatabaseSession, user: AuthenticatedUser,
 @router.post("/conversations", response_model=ConversationView, status_code=201)
 async def create_conversation(payload: ConversationCreate, session: DatabaseSession,
                               user: AuthenticatedUser):
-    result = await conversations.create_conversation(session, user, payload.title)
+    result = await conversations.create_conversation(session, user, payload.title,
+                                                     message=payload.message)
     await session.commit()
     return result
 

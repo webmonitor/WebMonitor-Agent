@@ -130,6 +130,32 @@ async def test_first_message_names_the_conversation(client, session):
 
 
 @pytest.mark.asyncio
+async def test_creating_a_conversation_can_carry_the_first_message(client, session):
+    await ensure_admin(session)
+    headers = await sign_in(client)
+    before = (await client.get("/api/v1/conversations")).json()["total"]
+
+    created = await client.post("/api/v1/conversations", headers=headers, json={
+        "title": None,
+        "message": {"content": "监控 https://example.com/ 的库存",
+                    "client_message_id": str(uuid4())}})
+    assert created.status_code == 201, created.text
+    conversation = created.json()
+    assert conversation["title"] == "监控 https://example.com/ 的库存"
+
+    snapshot = (await client.get(f"/api/v1/conversations/{conversation['id']}")).json()
+    assert [row["content"] for row in snapshot["messages"]] == ["监控 https://example.com/ 的库存"]
+    assert [job["kind"] for job in snapshot["jobs"]] == ["agent"]
+    assert snapshot["jobs"][0]["status"] == "queued"
+
+    rejected = await client.post("/api/v1/conversations", headers=headers, json={
+        "message": {"content": "   ", "client_message_id": str(uuid4())}})
+    assert rejected.status_code == 422
+    assert rejected.json()["error"]["code"] == "message_empty"
+    assert (await client.get("/api/v1/conversations")).json()["total"] == before + 1
+
+
+@pytest.mark.asyncio
 async def test_draft_view_and_missing_evidence_index(client, session):
     user = await ensure_admin(session)
     await sign_in(client)
