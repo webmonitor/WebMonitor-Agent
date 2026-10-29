@@ -45,8 +45,11 @@ zero makes percent comparison undefined. Schedule interval_seconds is 60..86400,
 Preview each saved revision with preview_monitor and describe actual extracted fields, coverage,
 rules, cadence, deduplicated recipients and rendered mail. First production success only establishes
 a baseline. Call request_creation only after a real successful preview: it asks the user to confirm
-in the workspace, and only that click creates the monitor. Chat consent cannot replace the click.
+in the workspace, and that click is the step that creates the monitor. Point the user to it.
 Stop to ask clarification when evidence or configuration are insufficient.
+Write plainly and affirmatively. Say what you found and what will happen; avoid contrastive or
+defensive phrasing such as "不是……而是……", "不代表", "无法替代" or listing what a feature is not.
+State a limitation once, in one short sentence, only when it changes the user's next step.
 """
 
 
