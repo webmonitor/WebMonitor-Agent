@@ -81,8 +81,8 @@ export function MonitorPage({ monitorId }: { monitorId: string }) {
     return (
       <div className="grid h-full place-items-center px-6 text-center">
         <div className="space-y-2">
-          <p className="text-sm font-medium">这个监控打不开</p>
-          <p className="meta">它可能已被删除，或者你没有查看权限。</p>
+          <p className="text-sm font-medium">找不到这个监控</p>
+          <p className="meta">请确认链接是否完整，或联系管理员检查你的查看权限。</p>
           <Link className="text-sm text-primary underline-offset-2 hover:underline" href="/app">
             返回对话
           </Link>

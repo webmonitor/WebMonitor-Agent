@@ -173,7 +173,7 @@ export function CreateMonitorCard({
       <div className="space-y-1.5">
         <h3 className="text-[11px] font-medium uppercase tracking-wide text-muted-foreground">收件人</h3>
         {preview.recipients.length === 0 ? (
-          <p className="text-[13px] text-warning">还没有收件人，无法发送通知。</p>
+          <p className="text-[13px] text-warning">还没有收件人，添加收件人后才能发送通知。</p>
         ) : (
           <ul className="flex flex-wrap gap-1.5">
             {preview.recipients.map((recipient) => (
@@ -234,7 +234,7 @@ export function CreateMonitorCard({
       </div>
 
       {expired && (
-        <p className="text-xs text-warning">预览已过期，重新预览后才能创建。</p>
+        <p className="text-xs text-warning">预览已过期，重新预览后即可创建。</p>
       )}
       {error && (
         <p className="text-xs text-error" role="alert">

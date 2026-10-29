@@ -198,9 +198,9 @@ export function errorText(code?: string | null): string {
 }
 
 const WARNING_LABELS: Record<string, string> = {
-  pagination_coverage_unproven: "未能确认分页后的内容是否被完整覆盖",
-  coverage_bounded: "只检查了页面的一部分区域",
-  template_contract_failed: "邮件模板缺少必要字段 该类型邮件不会发送",
+  pagination_coverage_unproven: "分页后的内容覆盖范围尚未确认",
+  coverage_bounded: "检查范围覆盖页面的一部分",
+  template_contract_failed: "邮件模板缺少必要字段，该类邮件暂不发送",
 };
 
 export function warningText(warning: string): string {

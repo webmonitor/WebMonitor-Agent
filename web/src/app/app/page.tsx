@@ -29,7 +29,7 @@ function ContextPanel({
         <section className="surface-pad space-y-1.5">
           <h2 className="text-[15px] font-semibold">还没有监控</h2>
           <p className="meta">
-            描述你想盯住的内容。助手会先真实打开页面、试采集一次，再由你确认是否开始定时监控。
+            描述你想盯住的内容。助手会先打开页面试采集一次，再由你确认是否开始定时监控。
           </p>
         </section>
       )}

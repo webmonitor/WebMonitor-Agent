@@ -4,7 +4,15 @@ import Link from "next/link";
 import { useRouter } from "next/navigation";
 import Markdown from "react-markdown";
 import remarkGfm from "remark-gfm";
-import { ArrowUp, Loader2, Radar, Square } from "lucide-react";
+import {
+  ArrowDown,
+  ArrowUp,
+  ChevronRight,
+  Loader2,
+  Radar,
+  Square,
+  TriangleAlert,
+} from "lucide-react";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { ApiError } from "@/lib/api/client";
@@ -27,16 +35,41 @@ const EXAMPLES = [
   "每天检查一次库存数量，有变化就告诉我",
 ];
 
-function WorkLog({ job }: { job: JobView }) {
-  if (job.steps.length === 0) return null;
-  const current = job.steps.at(-1);
+/**
+ * The job appends a `started` entry and later a terminal entry per tool call, and
+ * parallel calls interleave. Pair each terminal entry with the pending entry of the
+ * same name so one tool call reads as one line.
+ */
+function mergeSteps(steps: JobView["steps"]) {
+  const merged: JobView["steps"] = [];
+  const pending = new Map<string, number>();
+  for (const step of steps) {
+    const index = step.status === "started" ? undefined : pending.get(step.name);
+    if (index === undefined) {
+      const start = step.status === "started" ? merged.length : undefined;
+      merged.push(step);
+      if (start !== undefined) pending.set(step.name, start);
+      continue;
+    }
+    merged[index] = step;
+    pending.delete(step.name);
+  }
+  return merged;
+}
+
+/** The collapsed "what the assistant did" trail: one line, expandable, no box. */
+function WorkLog({ job, open = false }: { job: JobView; open?: boolean }) {
+  const steps = mergeSteps(job.steps);
+  if (steps.length === 0) return null;
+  const failed = steps.filter((step) => step.status === "failed").length;
   return (
-    <details className="mt-2 rounded-lg border border-dashed bg-muted/30 px-3 py-2 text-xs">
-      <summary className="cursor-pointer select-none text-muted-foreground">
-        助手做了 {job.steps.length} 步 · {current ? stepLabel(current.name) : ""}
+    <details open={open} className="group mt-2.5 text-[13px]">
+      <summary className="inline-flex cursor-pointer list-none items-center gap-1.5 rounded-full border bg-card px-2.5 py-1 text-muted-foreground transition-colors select-none hover:text-foreground [&::-webkit-details-marker]:hidden">
+        <ChevronRight className="size-3.5 transition-transform group-open:rotate-90" />
+        {failed > 0 ? `${steps.length} 步，${failed} 步未完成` : `查看 ${steps.length} 步操作`}
       </summary>
-      <ol className="mt-2 space-y-1.5">
-        {job.steps.map((step, index) => (
+      <ol className="mt-2.5 space-y-2 border-l pl-3.5">
+        {steps.map((step, index) => (
           <li key={`${step.name}-${index}`} className="flex items-start gap-2">
             <span
               aria-hidden
@@ -49,9 +82,9 @@ function WorkLog({ job }: { job: JobView }) {
               }`}
             />
             <span className="min-w-0 flex-1">
-              <span className="block text-[13px]">{stepLabel(step.name)}</span>
+              <span className="block leading-5">{stepLabel(step.name)}</span>
               {(step.error_code || step.detail) && (
-                <span className="block break-words text-[11px] text-muted-foreground">
+                <span className="block break-words text-[12px] text-muted-foreground">
                   {step.error_code ? errorText(step.error_code) : step.detail?.slice(0, 240)}
                 </span>
               )}
@@ -63,11 +96,22 @@ function WorkLog({ job }: { job: JobView }) {
   );
 }
 
+/** Assistant prose: no bubble, no avatar — full-width text, the way ChatGPT reads. */
 function AssistantText({ content }: { content: string }) {
   return (
-    <div className="space-y-2 text-[14px] leading-relaxed [&_a]:text-primary [&_a]:underline [&_a]:underline-offset-2 [&_code]:rounded [&_code]:bg-muted [&_code]:px-1 [&_code]:py-0.5 [&_code]:text-[12px] [&_h3]:mt-3 [&_h3]:text-[13px] [&_h3]:font-semibold [&_li]:ml-4 [&_li]:list-disc [&_ol_li]:list-decimal [&_p]:my-1.5 [&_table]:w-full [&_table]:border-collapse [&_td]:border [&_td]:px-2 [&_td]:py-1 [&_th]:border [&_th]:px-2 [&_th]:py-1">
+    <div className="space-y-2 text-[15px] leading-7 [&_a]:text-primary [&_a]:underline [&_a]:underline-offset-2 [&_blockquote]:border-l-2 [&_blockquote]:pl-3 [&_blockquote]:text-muted-foreground [&_code]:rounded-md [&_code]:bg-muted [&_code]:px-1.5 [&_code]:py-0.5 [&_code]:text-[13px] [&_h1]:mt-5 [&_h1]:text-[17px] [&_h2]:mt-5 [&_h2]:text-[16px] [&_h3]:mt-4 [&_h3]:text-[15px] [&_h3]:font-semibold [&_hr]:my-4 [&_li]:pl-0.5 [&_ol]:list-decimal [&_ol]:pl-5 [&_p]:leading-7 [&_pre]:mt-3 [&_pre]:overflow-x-auto [&_pre]:rounded-xl [&_pre]:border [&_pre]:bg-muted/50 [&_pre]:p-3 [&_pre_code]:bg-transparent [&_pre_code]:p-0 [&_table]:w-full [&_table]:border-collapse [&_table]:text-[13px] [&_td]:border [&_td]:px-2.5 [&_td]:py-1.5 [&_th]:border [&_th]:bg-muted/50 [&_th]:px-2.5 [&_th]:py-1.5 [&_th]:text-left [&_ul]:list-disc [&_ul]:pl-5 [&>*:first-child]:mt-0 [&>*:last-child]:mb-0">
       <Markdown remarkPlugins={[remarkGfm]}>{content}</Markdown>
     </div>
+  );
+}
+
+/** A single pulsing dot in place of a spinner: quieter, closer to streaming text. */
+function Thinking({ label }: { label: string }) {
+  return (
+    <p className="flex items-center gap-2.5 text-[15px] text-muted-foreground">
+      <span aria-hidden className="size-1.5 shrink-0 animate-pulse rounded-full bg-primary" />
+      {label}
+    </p>
   );
 }
 
@@ -87,9 +131,10 @@ export function ChatPanel({
   const cancel = useCancelRun(conversationId ?? "");
   const [draft, setDraft] = useState("");
   const [error, setError] = useState("");
-  const bottom = useRef<HTMLDivElement>(null);
+  const [pinned, setPinned] = useState(true);
+  const [composerFocused, setComposerFocused] = useState(false);
+  const scroller = useRef<HTMLDivElement>(null);
   const composer = useRef<HTMLTextAreaElement>(null);
-  const atBottom = useRef(true);
 
   const snapshot = conversation.data;
   const running = snapshot?.jobs.filter((job) => ACTIVE.includes(job.status)).at(-1);
@@ -98,14 +143,16 @@ export function ChatPanel({
   const stopped = lastJob?.status === "cancelled" ? lastJob : undefined;
   const limit = snapshot?.limits.message_max_chars ?? 32000;
   const messages = snapshot?.messages ?? [];
+  const activeStep = running?.steps.at(-1);
 
   useEffect(() => {
-    if (!atBottom.current) return;
-    bottom.current?.scrollIntoView({ block: "end" });
-  }, [messages.length, running?.partial_text, running?.steps.length]);
+    if (!pinned) return;
+    const node = scroller.current;
+    if (node) node.scrollTop = node.scrollHeight;
+  }, [pinned, messages.length, running?.partial_text, running?.steps.length]);
 
   useEffect(() => {
-    atBottom.current = true;
+    setPinned(true);
   }, [conversationId]);
 
   useEffect(() => {
@@ -113,8 +160,6 @@ export function ChatPanel({
     if (!node) return;
     node.style.height = "auto";
     node.style.height = `${Math.min(node.scrollHeight, 200)}px`;
-    // A taller composer cuts into the message area; keep the latest turn in view.
-    if (atBottom.current) bottom.current?.scrollIntoView({ block: "end" });
   }, [draft]);
 
   async function submit() {
@@ -134,8 +179,7 @@ export function ChatPanel({
       await send.mutateAsync(content);
       setDraft("");
       // Your own message always brings the conversation back to the latest turn.
-      atBottom.current = true;
-      bottom.current?.scrollIntoView({ block: "end" });
+      setPinned(true);
     } catch (failure) {
       setError(failure instanceof ApiError ? errorText(failure.code) : "消息没有发出去，请重试。");
     }
@@ -146,7 +190,7 @@ export function ChatPanel({
       <section className="grid h-full place-items-center px-6">
         <div className="max-w-sm space-y-2 text-center">
           <h2 className="text-lg font-semibold">先选一个对话</h2>
-          <p className="meta">在左侧选择已有对话，或点击「对话」右侧的「新对话」开始。</p>
+          <p className="meta">在左侧选择一个已有对话，或点顶部的「新对话」开始新的一个。</p>
         </div>
       </section>
     );
@@ -154,158 +198,179 @@ export function ChatPanel({
 
   const lastDraft = snapshot?.drafts.at(-1);
   const monitorId = lastDraft?.monitor_id;
+  const empty = messages.length === 0 && !running && !pendingDraft;
+  const busy = Boolean(running);
 
   return (
     <section className="flex h-full min-h-0 min-w-0 flex-col overflow-hidden bg-background">
-      <header className="flex h-14 shrink-0 items-center border-b bg-card px-5">
-        <div className="mx-auto flex w-full max-w-3xl items-center justify-between gap-3">
-        <div className="flex min-w-0 items-center gap-2">
-          <h2 className="truncate text-sm font-semibold">{snapshot?.conversation.title?.trim() || "新对话"}</h2>
+      <header className="flex h-12 shrink-0 items-center justify-between gap-3 px-4 pt-1 sm:px-6">
+        <div className="mx-auto flex w-full max-w-3xl items-center gap-2">
+          <h2 className="truncate text-[13px] text-muted-foreground">
+            {snapshot?.conversation.title?.trim() || "新对话"}
+          </h2>
           {monitorId && (
-            <Link href={`/app/monitors/${monitorId}`} className="hidden shrink-0 sm:block">
+            <Link href={`/app/monitors/${monitorId}`} className="shrink-0">
               <Badge tone={lastDraft?.status === "published" ? "success" : "warning"}>
                 {lastDraft?.status === "published" ? "监控已创建" : "正在修改"}
               </Badge>
             </Link>
           )}
         </div>
-        {running && (
-          <Button
-            variant="outline"
-            size="sm"
-            className="h-8 shrink-0"
-            onClick={() => void cancel.mutateAsync()}
-            disabled={cancel.isPending}
-          >
-            <Square className="size-3" />
-            停止
-          </Button>
-        )}
-        </div>
       </header>
 
-      <div
-        className="min-h-0 flex-1 overflow-y-auto px-5"
-        onScroll={(event) => {
-          const node = event.currentTarget;
-          atBottom.current = node.scrollHeight - node.scrollTop - node.clientHeight < 80;
-        }}
-      >
+      <div className="relative min-h-0 flex-1">
         <div
-          className={`mx-auto w-full max-w-3xl py-6 ${
-            messages.length === 0 && !running ? "flex min-h-full flex-col justify-center" : ""
-          }`}
+          ref={scroller}
+          className="h-full overflow-y-auto px-4 sm:px-6"
+          onScroll={(event) => {
+            const node = event.currentTarget;
+            setPinned(node.scrollHeight - node.scrollTop - node.clientHeight < 80);
+          }}
         >
-          {conversationId && conversation.isPending && <p className="meta">正在加载对话…</p>}
-          {conversation.error && (
-            <p className="text-sm text-error" role="alert">
-              对话加载失败，请刷新页面。
-            </p>
-          )}
+          <div
+            className={`mx-auto w-full max-w-3xl py-6 ${
+              empty ? "flex min-h-full flex-col justify-center" : ""
+            }`}
+          >
+            {conversationId && conversation.isPending && <p className="meta">正在加载对话…</p>}
+            {conversation.error && (
+              <p className="text-sm text-error" role="alert">
+                对话加载失败，请刷新页面。
+              </p>
+            )}
 
-          {messages.length === 0 && !running && !pendingDraft && (
-            <div className="mt-6 space-y-6">
-              <div className="space-y-2">
-                <h2 className="text-xl font-semibold tracking-tight">你想盯着哪个网页？</h2>
-                <p className="text-sm text-muted-foreground">
-                  用平常的话说清楚要看什么、什么情况下提醒你。助手会先真的打开页面确认能取到内容，再由你决定是否开始监控。
-                </p>
-              </div>
-              <ul className="space-y-2">
-                {EXAMPLES.map((example) => (
-                  <li key={example}>
-                    <button
-                      className="w-full rounded-xl border bg-card px-4 py-3 text-left text-[13px] text-muted-foreground transition-colors hover:border-primary/30 hover:text-foreground"
-                      onClick={() => {
-                        setDraft(example);
-                        composer.current?.focus();
-                      }}
-                    >
-                      {example}
-                    </button>
-                  </li>
-                ))}
-              </ul>
-            </div>
-          )}
-
-          <ol className="space-y-6">
-            {messages.map((message) =>
-              message.role === "user" ? (
-                <li key={message.id} className="flex justify-end">
-                  <div className="max-w-[85%] rounded-2xl rounded-br-md bg-accent px-4 py-2.5 text-[14px] text-accent-foreground">
-                    <p className="whitespace-pre-wrap break-words">{message.content}</p>
-                  </div>
-                </li>
-              ) : (
-                <li key={message.id} className="flex gap-3">
+            {empty && (
+              <div className="space-y-7">
+                <div className="space-y-2.5 text-center">
                   <span
                     aria-hidden
-                    className="mt-1 grid size-7 shrink-0 place-items-center rounded-full bg-primary/10"
+                    className="mx-auto grid size-11 place-items-center rounded-full bg-primary/10"
                   >
-                    <Radar className="size-3.5 text-primary" />
+                    <Radar className="size-5 text-primary" />
                   </span>
-                  <div className="min-w-0 flex-1">
-                    <AssistantText content={message.content} />
-                  </div>
-                </li>
-              ),
+                  <h2 className="text-[1.375rem] font-semibold tracking-tight">
+                    你想盯着哪个网页？
+                  </h2>
+                  <p className="mx-auto max-w-md text-[13px] leading-6 text-muted-foreground">
+                    说清楚要看什么、什么情况下提醒你。助手会先打开页面试采集一次，再由你决定是否开始监控。
+                  </p>
+                </div>
+                <ul className="flex flex-wrap justify-center gap-2">
+                  {EXAMPLES.map((example) => (
+                    <li key={example}>
+                      <button
+                        className="cursor-pointer rounded-full border bg-card px-3.5 py-2 text-[13px] text-muted-foreground transition-colors hover:border-primary/30 hover:text-foreground"
+                        onClick={() => {
+                          setDraft(example);
+                          composer.current?.focus();
+                        }}
+                      >
+                        {example}
+                      </button>
+                    </li>
+                  ))}
+                </ul>
+              </div>
             )}
 
-            {running && (
-              <li className="flex gap-3">
-                <span
-                  aria-hidden
-                  className="mt-0.5 grid size-7 shrink-0 place-items-center rounded-full bg-primary/10"
-                >
-                  <Loader2 className="size-3.5 animate-spin text-primary" />
-                </span>
-                <div className="min-w-0 flex-1">
-                  <p className="text-[13px] text-muted-foreground">
-                    {running.steps.at(-1) ? `${stepLabel(running.steps.at(-1)!.name)}…` : "正在理解你的要求…"}
-                  </p>
-                  {running.partial_text && (
-                    <div className="mt-1 text-[14px] text-muted-foreground">
-                      <AssistantText content={running.partial_text} />
+            <ol className="space-y-7">
+              {messages.map((message) =>
+                message.role === "user" ? (
+                  <li key={message.id} className="flex justify-end">
+                    <div className="max-w-[85%] rounded-3xl rounded-br-lg bg-muted px-4 py-2.5 text-[15px] leading-7 break-words whitespace-pre-wrap">
+                      {message.content}
                     </div>
+                  </li>
+                ) : (
+                  <li key={message.id} className="min-w-0">
+                    <AssistantText content={message.content} />
+                  </li>
+                ),
+              )}
+
+              {running && (
+                <li className="min-w-0">
+                  {running.partial_text ? (
+                    <AssistantText content={running.partial_text} />
+                  ) : (
+                    <Thinking
+                      label={
+                        activeStep ? `${stepLabel(activeStep.name)}…` : "正在理解你的要求…"
+                      }
+                    />
+                  )}
+                  {running.partial_text && activeStep && (
+                    <p className="mt-2 text-[13px] text-muted-foreground">
+                      {stepLabel(activeStep.name)}…
+                    </p>
                   )}
                   <WorkLog job={running} />
-                </div>
-              </li>
-            )}
+                </li>
+              )}
 
-            {!running && stopped && (
-              <li className="flex items-center gap-2 text-[13px] text-muted-foreground">
-                <Square className="size-3" />
-                这次检查已停止。
-              </li>
-            )}
-            {!running && failed && (
-              <li className="rounded-xl border border-error/25 bg-error/5 px-4 py-3">
-                <p className="text-[13px] font-medium text-error">这次没有完成</p>
-                <p className="mt-0.5 text-[13px] text-muted-foreground">
-                  {errorText(failed.error_code)}。你可以再发一次，或者换一种说法描述需求。
-                </p>
-                <WorkLog job={failed} />
-              </li>
-            )}
-            {pendingDraft && conversationId && (
-              <li className="xl:hidden">
-                <CreateMonitorCard conversationId={conversationId} draft={pendingDraft} />
-              </li>
-            )}
-          </ol>
-          <div ref={bottom} className="h-2" />
+              {/* A finished turn keeps its trail available, collapsed. */}
+              {!running &&
+                lastJob &&
+                lastJob.status !== "failed" &&
+                lastJob.steps.length > 0 && (
+                  <li className="min-w-0">
+                    <WorkLog job={lastJob} />
+                  </li>
+                )}
+
+              {!running && stopped && (
+                <li className="flex items-center gap-2.5 text-[15px] text-muted-foreground">
+                  <Square className="size-3.5" />
+                  这次检查已停止。
+                </li>
+              )}
+              {!running && failed && (
+                <li className="flex gap-3 rounded-2xl border border-error/20 bg-error/5 px-4 py-3">
+                  <TriangleAlert className="mt-0.5 size-4 shrink-0 text-error" />
+                  <div className="min-w-0 flex-1">
+                    <p className="text-[13px] font-medium text-error">这次没有完成</p>
+                    <p className="mt-0.5 text-[13px] leading-6 text-muted-foreground">
+                      {errorText(failed.error_code)}。你可以再发一次，或者换一种说法描述需求。
+                    </p>
+                    <WorkLog job={failed} />
+                  </div>
+                </li>
+              )}
+              {pendingDraft && conversationId && (
+                <li className="xl:hidden">
+                  <CreateMonitorCard conversationId={conversationId} draft={pendingDraft} />
+                </li>
+              )}
+            </ol>
+          </div>
         </div>
+
+        {!pinned && messages.length > 0 && (
+          <div className="pointer-events-none absolute inset-x-0 bottom-2 flex justify-center">
+            <Button
+              variant="outline"
+              size="icon"
+              aria-label="回到最新消息"
+              className="pointer-events-auto size-8 rounded-full bg-card shadow-sm"
+              onClick={() => setPinned(true)}
+            >
+              <ArrowDown className="size-4" />
+            </Button>
+          </div>
+        )}
       </div>
 
-      <div className="shrink-0 border-t px-5 py-3">
+      <div className="shrink-0 px-4 pt-2 pb-4 sm:px-6">
         <div className="mx-auto w-full max-w-3xl">
-          <div className="rounded-xl border border-transparent bg-transparent p-2 transition-colors focus-within:border-border/60">
+          {/* The rounded band around the box stays transparent; only the box
+              itself is a surface, and its ring appears on hover/focus. */}
+          <div className="flex items-end gap-2 rounded-[26px] border border-transparent bg-card px-3 py-2 shadow-sm transition-colors hover:border-border/70 focus-within:border-primary/40 focus-within:shadow-md">
             <textarea
               ref={composer}
               value={draft}
               onChange={(event) => setDraft(event.target.value)}
+              onFocus={() => setComposerFocused(true)}
+              onBlur={() => setComposerFocused(false)}
               onKeyDown={(event) => {
                 if (event.key === "Enter" && !event.shiftKey && !event.nativeEvent.isComposing) {
                   event.preventDefault();
@@ -314,31 +379,51 @@ export function ChatPanel({
               }}
               rows={1}
               maxLength={limit}
-              disabled={Boolean(running)}
               aria-label="描述你想监控的内容"
-              className="max-h-[12.5rem] w-full resize-none bg-transparent px-2 py-1.5 text-[14px] outline-none placeholder:text-muted-foreground/70 disabled:opacity-60"
-              placeholder={running ? "助手正在处理，稍等或先停止…" : "例如：监控这个页面的价格，降价 10% 时提醒我"}
+              className="max-h-[12.5rem] min-h-9 flex-1 resize-none bg-transparent px-1 py-1.5 text-[15px] leading-6 outline-none placeholder:text-muted-foreground/70"
+              placeholder={busy ? "助手正在处理，可以先继续输入…" : "描述你想监控的内容，例如价格、库存、公告"}
             />
-            <div className="flex items-center justify-between gap-2 px-1 pt-1">
-              <span className="text-[11px] text-muted-foreground">
-                {draft.length > limit * 0.9 ? `${draft.length}/${limit} 字` : "Enter 发送，Shift + Enter 换行"}
-              </span>
+            {busy ? (
               <Button
-                size="sm"
-                className="h-8"
-                onClick={() => void submit()}
-                disabled={Boolean(running) || !draft.trim() || send.isPending || start.isPending}
+                size="icon"
+                aria-label="停止这次检查"
+                className="size-9 shrink-0 rounded-full"
+                onClick={() => void cancel.mutateAsync()}
+                disabled={cancel.isPending}
               >
-                {send.isPending || start.isPending ? <Loader2 className="animate-spin" /> : <ArrowUp />}
-                发送
+                <Square className="size-3.5" />
               </Button>
-            </div>
+            ) : (
+              <Button
+                size="icon"
+                aria-label="发送"
+                className="size-9 shrink-0 rounded-full"
+                onClick={() => void submit()}
+                disabled={!draft.trim() || send.isPending || start.isPending}
+              >
+                {send.isPending || start.isPending ? (
+                  <Loader2 className="animate-spin" />
+                ) : (
+                  <ArrowUp className="size-4" />
+                )}
+              </Button>
+            )}
           </div>
-          {error && (
-            <p className="mt-2 text-xs text-error" role="alert">
-              {error}
-            </p>
-          )}
+          <p className="mt-2 min-h-4 text-center text-[11px] text-muted-foreground">
+            {error ? (
+              <span className="text-error" role="alert">
+                {error}
+              </span>
+            ) : draft.length > limit * 0.9 ? (
+              `${draft.length}/${limit} 字`
+            ) : composerFocused ? (
+              "Enter 发送，Shift + Enter 换行"
+            ) : busy ? (
+              "助手正在打开页面试采集，可以点右侧按钮停止"
+            ) : (
+              "助手会先采集一次，再由你确认是否开始定时监控"
+            )}
+          </p>
         </div>
       </div>
     </section>

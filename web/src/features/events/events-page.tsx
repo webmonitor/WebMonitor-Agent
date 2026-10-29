@@ -34,7 +34,7 @@ export function EventsPage() {
       <PageBody>
         <PageHeader
           title="事件"
-          description="监控发现变化、采集失败或恢复时都会记录在这里。首次成功采集只建立基线，不产生事件。"
+          description="监控发现变化、采集失败或恢复时都会记录在这里。新监控的第一次成功采集用来建立基线，从第二次采集开始比较变化。"
           actions={
             <div className="flex items-center gap-1 rounded-lg border bg-card p-0.5">
               {([

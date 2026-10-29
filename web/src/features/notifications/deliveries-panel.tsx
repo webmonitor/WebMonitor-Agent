@@ -23,7 +23,7 @@ export function DeliveriesPanel() {
     <section className="space-y-3">
       <header>
         <h2 className="text-sm font-semibold">投递记录</h2>
-        <p className="meta mt-0.5">“已发送”表示邮件服务器已接收，不代表一定进入收件箱。</p>
+        <p className="meta mt-0.5">“已发送”表示邮件服务器已接收；邮件何时进入收件箱由收件方决定。</p>
       </header>
 
       {deliveries.isPending && <p className="meta">正在加载…</p>}

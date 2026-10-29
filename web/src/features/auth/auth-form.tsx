@@ -81,7 +81,7 @@ export function AuthForm({ register = false }: { register?: boolean }) {
         <h1 className="text-xl font-semibold">{register ? "接受邀请" : "登录"}</h1>
         <p className="meta">
           {register
-            ? "请使用受邀邮箱注册。邀请链接仅可使用一次。"
+            ? "请使用收到邀请的邮箱注册，每个邀请链接对应一次注册。"
             : "登录以管理监控和查看通知。"}
         </p>
 
@@ -107,7 +107,7 @@ export function AuthForm({ register = false }: { register?: boolean }) {
               maxLength={128}
               required
             />
-            {register && <p className="meta mt-1">密码长度为 12–128 个字符，请勿重复使用其他账户的密码。</p>}
+            {register && <p className="meta mt-1">密码长度为 12–128 个字符，建议为本账户单独设置密码。</p>}
           </div>
           {register && !invitation && (
             <p className="rounded-lg border border-warning/40 bg-warning/5 px-3 py-2 text-xs text-warning">

@@ -43,7 +43,7 @@ export function ChangeRows({
   type?: string;
 }) {
   if (type === "run_failed") {
-    return <p className="text-[13px] text-muted-foreground">这次检查没有成功，监控继续保留上一次采集到的内容。</p>;
+    return <p className="text-[13px] text-muted-foreground">这次采集没有成功，监控继续使用上一次采集到的内容。</p>;
   }
   if (type === "recovered") {
     return <p className="text-[13px] text-muted-foreground">采集恢复正常，监控重新开始比较内容。</p>;

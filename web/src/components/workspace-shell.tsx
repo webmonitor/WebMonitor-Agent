@@ -8,7 +8,6 @@ import {
   ChevronRight,
   LogOut,
   Menu,
-  MessagesSquare,
   Plus,
   Radar,
   X,
@@ -19,7 +18,6 @@ import { useAuth } from "@/lib/providers";
 import { dayLabel, formatInterval, formatRelative } from "@/lib/format";
 
 const links = [
-  { href: "/app", label: "对话", icon: MessagesSquare },
   { href: "/app/events", label: "事件", icon: Activity },
   { href: "/app/notifications", label: "通知", icon: Bell },
 ];
@@ -149,16 +147,14 @@ function MonitorList({ onNavigate }: { onNavigate: () => void }) {
 function SectionLabel({
   children,
   count,
-  action,
 }: {
   children: ReactNode;
   count?: number;
-  action?: ReactNode;
 }) {
   return (
     <div className="flex items-center justify-between gap-2 px-2 pb-1 pt-2 text-[11px] font-medium tracking-wide text-muted-foreground">
       <span>{children}</span>
-      {action ?? (typeof count === "number" && <span className="tabular-nums">{count}</span>)}
+      {typeof count === "number" && <span className="tabular-nums">{count}</span>}
     </div>
   );
 }
@@ -246,8 +242,15 @@ export function WorkspaceShell({ children }: { children: ReactNode }) {
         </div>
 
         <nav className="space-y-0.5 px-3 pb-2">
+          <button
+            onClick={() => void startConversation()}
+            className="flex w-full items-center gap-2 rounded-lg px-2.5 py-1.5 text-left text-[13px] text-muted-foreground transition-colors hover:bg-muted hover:text-foreground"
+          >
+            <Plus className="size-4" />
+            新对话
+          </button>
           {links.map(({ href, label, icon: Icon }) => {
-            const current = href === "/app" ? pathname === href : pathname.startsWith(href);
+            const current = pathname.startsWith(href);
             return (
               <Link
                 key={href}
@@ -267,24 +270,12 @@ export function WorkspaceShell({ children }: { children: ReactNode }) {
         </nav>
 
         <div className="min-h-0 flex-1 overflow-y-auto border-t px-3 pb-4">
-          <SectionLabel
-            action={
-              <button
-                className="flex items-center gap-0.5 rounded-md px-1 py-0.5 text-[11px] text-muted-foreground transition-colors hover:bg-muted hover:text-foreground"
-                onClick={() => void startConversation()}
-              >
-                <Plus className="size-3" />
-                新对话
-              </button>
-            }
-          >
-            对话
-          </SectionLabel>
+          <SectionLabel count={monitors.data?.total}>监控</SectionLabel>
+          <MonitorList onNavigate={() => setOpen(false)} />
+          <SectionLabel>对话</SectionLabel>
           <Suspense fallback={null}>
             <ConversationList />
           </Suspense>
-          <SectionLabel count={monitors.data?.total}>监控</SectionLabel>
-          <MonitorList onNavigate={() => setOpen(false)} />
         </div>
 
         <div className="flex items-center gap-2 border-t px-3 py-2.5">
