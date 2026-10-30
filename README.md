@@ -64,7 +64,7 @@ The checkout supplies `compose.yaml`, the reverse-proxy configuration and the br
 
 | Setting | What to enter |
 | --- | --- |
-| `WEBMONITOR_IMAGE` | The release you want, e.g. `ghcr.io/webmonitor/webmonitor-agent:0.1.0`; leave it empty to build from source instead |
+| `WEBMONITOR_IMAGE` | The release you want, e.g. `ghcr.io/webmonitor/webmonitor-agent:1.0.0`; leave it empty to build from source instead |
 | `ADMIN_EMAIL`, `ADMIN_PASSWORD` | Your initial administrator email and password; the password must be 12–128 characters |
 | `SECRET_KEY` | A random key of at least 32 characters |
 | `POSTGRES_PASSWORD` | Your database password |

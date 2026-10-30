@@ -3,7 +3,7 @@
 #   docker compose -f compose.yaml -f compose.ghcr.yaml up -d --wait
 #
 # Set WEBMONITOR_IMAGE in .env to pin a release, e.g.
-#   WEBMONITOR_IMAGE=ghcr.io/webmonitor/webmonitor-agent:0.1.0
+#   WEBMONITOR_IMAGE=ghcr.io/webmonitor/webmonitor-agent:1.0.0
 #
 # One image backs both `api` and `web`; only the entrypoint differs.
 # `pull_policy: always` keeps Compose from rebuilding that image from the

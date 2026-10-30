@@ -64,7 +64,7 @@ cp .env.example .env
 
 | 配置项 | 填写内容 |
 | --- | --- |
-| `WEBMONITOR_IMAGE` | 要使用的版本，例如 `ghcr.io/webmonitor/webmonitor-agent:0.1.0`；留空则改为从源码构建 |
+| `WEBMONITOR_IMAGE` | 要使用的版本，例如 `ghcr.io/webmonitor/webmonitor-agent:1.0.0`；留空则改为从源码构建 |
 | `ADMIN_EMAIL`、`ADMIN_PASSWORD` | 初始管理员邮箱与密码，密码为 12–128 字符 |
 | `SECRET_KEY` | 至少 32 字符的随机密钥 |
 | `POSTGRES_PASSWORD` | 数据库密码 |
