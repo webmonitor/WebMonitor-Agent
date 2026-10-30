@@ -310,8 +310,6 @@ The stack is meant for local use — it binds to `127.0.0.1`, terminates no TLS,
 
 ## License
 
-[CC BY-NC 4.0](./LICENSE) — share and adapt for non-commercial use, with attribution, a license link and an indication of changes. Public images do not grant commercial-use permission.
-
-This license applies to the project from this change onward. Copies previously distributed under MIT retain the permissions granted by that license. Third-party components keep their own licenses.
+[CC BY-NC 4.0](./LICENSE) — share and adapt for non-commercial use, with attribution, a license link and an indication of changes.
 
 Created by 秋风飘起黄叶落.
