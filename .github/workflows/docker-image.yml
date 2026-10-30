@@ -152,7 +152,9 @@ jobs:
   merge:
     name: publish ${{ matrix.image }}
     needs: build
-    if: github.event_name != 'pull_request'
+    # `always()` is required: the skipped `verify` job upstream otherwise skips
+    # this job too, and nothing would ever be published.
+    if: always() && github.event_name != 'pull_request' && needs.build.result == 'success'
     runs-on: ubuntu-latest
     strategy:
       fail-fast: false
