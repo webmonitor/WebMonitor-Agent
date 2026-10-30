@@ -302,7 +302,7 @@ docker compose -f compose.yaml -f compose.build.yaml up --build -d --wait
 
 Fill `.env` with the same values as above; `.env.example` lists every development setting. Keep both `-f` flags on later commands. The build installs Chromium and takes several minutes. The running `web` container contains only the compiled frontend server, so run frontend tooling outside it.
 
-Pushes to `main` build `:main` and `:sha-<short>` development images. `vX.Y.Z` tags verify the version declared in `pyproject.toml`, `src/webmonitor/__init__.py` and `web/package.json`, publish `:X.Y.Z`, `:X.Y` and `:latest`, and create a release. The application image is built for `linux/amd64` and `linux/arm64` and runs both the API and the frontend; the two helper images are built locally from `deploy/`.
+Push a `vX.Y.Z` tag to publish a release. The workflow checks the declared application versions, builds `linux/amd64` and `linux/arm64` images, publishes `:X.Y.Z` and `:X.Y`, and creates a GitHub Release. Stable releases also update `:latest`. Pull requests build without publishing; ordinary branch pushes do not run the image workflow. The two helper images are built locally from `deploy/`.
 
 The stack is meant for local use — it binds to `127.0.0.1`, terminates no TLS, and keeps no durable state.
 

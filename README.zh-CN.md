@@ -302,7 +302,7 @@ docker compose -f compose.yaml -f compose.build.yaml up --build -d --wait
 
 `.env` 按上面的说明填写，`.env.example` 列出了全部开发配置。后续命令都要保留两个 `-f` 参数。构建会安装 Chromium，耗时数分钟。运行中的 `web` 容器里只有编译好的前端服务，前端工具请在容器外使用。
 
-推送到 `main` 会构建 `:main` 和 `:sha-<短哈希>` 开发镜像。`vX.Y.Z` 标签会先校验 `pyproject.toml`、`src/webmonitor/__init__.py` 和 `web/package.json` 中声明的版本，再发布 `:X.Y.Z`、`:X.Y` 与 `:latest` 并创建 Release。应用镜像同时构建 `linux/amd64` 与 `linux/arm64`，承载 API 与前端；两个辅助镜像由 `deploy/` 下的文件在本地构建。
+推送 `vX.Y.Z` 标签发布版本。工作流核对应用版本，构建 `linux/amd64` 与 `linux/arm64` 镜像，发布 `:X.Y.Z`、`:X.Y` 并创建 GitHub Release；稳定版同时更新 `:latest`。Pull Request 仅构建，日常分支推送不触发镜像工作流。两个辅助镜像由 `deploy/` 下的文件在本地构建。
 
 这套栈面向本机使用：只绑定 `127.0.0.1`，不做 TLS，不保存持久状态。
 
