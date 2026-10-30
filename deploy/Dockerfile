@@ -18,7 +18,7 @@
 # ---------------------------------------------------------------------------
 FROM python:3.12-slim-bookworm AS py
 WORKDIR /build
-COPY requirements.txt pyproject.toml ./
+COPY requirements.txt pyproject.toml LICENSE ./
 RUN pip install --no-cache-dir --require-hashes -r requirements.txt
 COPY src ./src
 RUN pip wheel --no-deps --wheel-dir /wheel .
@@ -39,6 +39,7 @@ RUN pnpm run build
 # Stage 3: runtime
 # ---------------------------------------------------------------------------
 FROM python:3.12-slim-bookworm
+LABEL org.opencontainers.image.licenses="CC-BY-NC-4.0"
 ARG INSTALL_BROWSER=1
 ENV PYTHONUNBUFFERED=1 \
     PYTHONDONTWRITEBYTECODE=1 \
@@ -68,6 +69,7 @@ RUN pip install --no-cache-dir --no-deps /wheel/*.whl && rm -rf /wheel /tmp/requ
 # The image can run its own regression suite; pytest reads this for testpaths and
 # asyncio_mode, and tests/integration/conftest.py provisions its disposable database.
 COPY pyproject.toml /app/pyproject.toml
+COPY LICENSE /app/LICENSE
 COPY tests /app/tests
 USER 10001:10001
 WORKDIR /app

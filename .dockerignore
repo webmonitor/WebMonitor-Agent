@@ -1,6 +1,7 @@
 **
 !requirements.txt
 !pyproject.toml
+!LICENSE
 !src/
 !src/**
 !tests/
