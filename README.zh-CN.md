@@ -34,13 +34,13 @@
 ## 开始前需要准备
 
 - Docker Engine 与 Docker Compose v2，Linux、macOS、Windows 都可以。
-- 一个兼容 OpenAI Chat Completions 的模型服务：API 密钥、接口地址和模型名称。没有它对话无法工作。
-- 一个可用的 SMTP 邮箱（可选）。不配也能用，只是发不出邮件。
+- 一个兼容 OpenAI Chat Completions 的模型服务：API 密钥、接口地址和模型名称，用于对话创建监控。
+- 一个可用的 SMTP 邮箱（可选），用于发送邮件提醒。
 - 一个复制到无痕窗口也能直接打开的网页地址。
 
 ## 三步装好
 
-不需要克隆仓库。建一个空目录，把运行文件下进去，写一个 `.env`，启动一次。
+创建一个空目录，下载部署文件，按模板填写 `.env`，然后启动。
 
 ### 1. 下载部署文件
 
@@ -103,7 +103,7 @@ WEBMONITOR_HTTP_PORT=8080
 APP_ORIGIN=http://localhost:8080
 DEVELOPMENT_MODE=true
 
-# 数据库密码与会话签名密钥，各自生成，不要复用。
+# 分别生成数据库密码与会话签名密钥。
 POSTGRES_PASSWORD=replace-with-a-strong-database-password
 SECRET_KEY=replace-with-at-least-32-random-characters
 
@@ -126,11 +126,11 @@ OPENAI_MODEL=replace-with-your-model-name
 # MAIL_FROM=
 ```
 
-把每一个 `replace-with-...` 换掉，它们只是占位符，不是可用凭据。`SECRET_KEY` 和数据库密码用 `openssl rand -hex 32` 生成即可；管理员密码必须 12–128 个字符。
+把 `replace-with-...` 替换为自己的配置。`SECRET_KEY` 和数据库密码可分别用 `openssl rand -hex 32` 生成；管理员密码长度为 12–128 个字符。
 
 `ADMIN_PASSWORD` 留空的话，启动时不会创建账户，之后可以用[常见问题](#常见问题)里的命令补建。
 
-地址还是 `http://` 时请保留 `DEVELOPMENT_MODE=true`，否则会被拒绝启动。改了 `WEBMONITOR_HTTP_PORT`，就把 `APP_ORIGIN` 改成同一个主机和端口。完整配置项见 [`.env.example`](https://github.com/webmonitor/WebMonitor-Agent/blob/main/.env.example)。
+本地 `http://` 地址使用 `DEVELOPMENT_MODE=true`。修改 `WEBMONITOR_HTTP_PORT` 时，同步更新 `APP_ORIGIN` 的主机和端口。完整配置项见 [`.env.example`](https://github.com/webmonitor/WebMonitor-Agent/blob/main/.env.example)。
 
 ### 3. 一条命令启动
 
@@ -138,11 +138,11 @@ OPENAI_MODEL=replace-with-your-model-name
 docker compose up -d --wait
 ```
 
-这一条命令负责整套服务：应用、数据库、证据存储、入口代理和用于抓取页面的出站代理。它会拉取发布镜像，第一次运行时用下载到的文件在本地构建两个小辅助镜像（需要联网，不会重新下载浏览器），等所有服务就绪——配置了健康检查的必须通过——才返回。
+命令会拉取应用镜像，首次运行时联网构建两个辅助镜像，启动配套服务并等待健康检查完成。
 
 顺利时命令正常结束，`docker compose ps` 里没有服务在反复重启或已退出。然后打开 **[http://localhost:8080](http://localhost:8080/)**。
 
-如果命令报错，或者有容器一直不健康，说明还没就绪，页面也打不开：先看 `docker compose ps` 和 `docker compose logs`（后面加上服务名可以缩小范围），不要反复重试。`curl --fail http://localhost:8080/api/v1/health/ready` 应当返回 `{"status":"ready"}`。
+启动失败时，用 `docker compose ps` 查看服务状态，用 `docker compose logs` 查看错误；命令后可追加服务名。健康接口 `curl --fail http://localhost:8080/api/v1/health/ready` 正常返回 `{"status":"ready"}`。
 
 站点只绑定在运行 Docker 这台机器的 `127.0.0.1` 上。用这台机器的浏览器打开，或者从你自己的机器建一条 SSH 隧道。
 
@@ -163,7 +163,7 @@ docker compose up -d --wait
 接下来会看到两件事：
 
 - 助手打开页面，并出现一条 **查看 N 步操作** 的记录，说明它做了什么：读取页面、确认通知组、整理设置。
-- 如果还缺关键信息（多久检查一次、什么条件下提醒、通知给谁），它会先问你，而不是自己编。在同一个对话里回答就行。
+- 助手会在对话中询问需要补充的信息，例如检查频率、提醒条件和收件人。在同一对话中回答即可。
 
 ### 核对预览再创建
 
@@ -211,21 +211,21 @@ docker compose up -d --wait
 
 几条关键规则：
 
-- `SMTP_USE_SSL` 与 `SMTP_STARTTLS` 必须恰好一个为 `true`，选邮件服务商文档里写的那种；465 通常是 SSL，587 通常是 STARTTLS。
-- `MAIL_FROM` 必须是真实地址，多数服务商要求它与登录账号一致。
-- 服务商要求认证时，`SMTP_USERNAME` 和 `SMTP_PASSWORD` 要同时填；只填一个等于不启用认证。
+- 按邮件服务商要求选择加密方式：`SMTP_USE_SSL` 与 `SMTP_STARTTLS` 中一个设为 `true`，另一个设为 `false`。465 通常使用 SSL，587 通常使用 STARTTLS。
+- `MAIL_FROM` 填写发件地址，按服务商要求与登录账户保持一致。
+- 需要身份认证时，同时填写 `SMTP_USERNAME` 和 `SMTP_PASSWORD`。
 
-应用里没有 SMTP 设置页，这个文件是唯一的配置位置。不配也能用：监控照常运行、事件照常记录，只是邮件发不出去，原因会写在 **投递记录** 里。
+SMTP 在 `.env` 中配置。采集结果记录在事件页，邮件发送状态显示在 **投递记录** 中。
 
-`已发送` 表示邮件服务器已经接收这封信，是否进入收件箱由收件方决定，同事说没收到时先看垃圾邮件。临时性的发送失败会自动重试，最多三次；配置错误则直接记为失败。
+`已发送` 表示邮件服务器已接受邮件。未收到时可检查垃圾邮件。临时发送失败最多重试三次，配置错误显示为失败。
 
 ## 常见问题
 
 **页面打不开。**
-`docker compose ps` 里配置了健康检查的服务必须显示 `healthy`，也不能有服务在反复重启或已退出；`docker compose logs api web proxy` 能看出是哪一个停了。端口被占用时，把 `WEBMONITOR_HTTP_PORT` **和** `APP_ORIGIN` 一起改到新端口，再执行 `docker compose up -d --wait`。
+用 `docker compose ps` 检查服务状态，`docker compose logs api web proxy` 查看启动错误。端口被占用时，同步修改 `WEBMONITOR_HTTP_PORT` 和 `APP_ORIGIN`，再执行 `docker compose up -d --wait`。
 
 **在另一台电脑上打不开。**
-站点只绑定在 Docker 主机的 `127.0.0.1`，这是有意的。请在那台机器上打开，或者修改 `compose.yaml` 里的端口绑定，并把 `APP_ORIGIN` 改成你实际使用的地址；对外提供前请自行加上 HTTPS 反向代理。
+默认访问地址绑定 Docker 主机的 `127.0.0.1`。远程访问时，修改 `compose.yaml` 的端口绑定，并将 `APP_ORIGIN` 设为实际访问地址；对外服务时配置 HTTPS 反向代理。
 
 **登录提示邮箱或密码不正确，或者根本没有管理员。**
 现在补建一个：
@@ -254,7 +254,7 @@ docker compose exec api webmonitor invite-create --email member@example.com --tt
 还没有可用的预览：点 **试采集一次**；过期了就点 **重新预览**。如果 **收件人** 显示「还没有收件人」，先到通知组里加收件人。
 
 **邮件没收到。**
-打开 **通知** → **投递记录**。`已发送` 表示服务器已接收，去垃圾邮件里找；`失败` 后面写着 SMTP 返回的错误。监控的第一次检查本来就不发信。检查持续失败时，同一个原因只会发一封失败通知，恢复正常后再发一封恢复通知。
+打开 **通知** → **投递记录** 查看收件人、发送状态和错误信息。状态为 `已发送` 时检查垃圾邮件，状态为 `失败` 时按 SMTP 错误检查配置。首次检查建立比较基准；后续变化按规则通知。连续采集失败时，同一原因发送一次失败通知，恢复后发送恢复通知。
 
 **改了收件人却没生效。**
 收件人来自通知组。改完组之后，用 **修改设置** → **保存修改** 再确认一次监控；之后第一次成功检查会重建基线。
@@ -263,7 +263,7 @@ docker compose exec api webmonitor invite-create --email member@example.com --tt
 1 分钟到 24 小时。间隔越短，对目标站点的请求越多，这台机器的负载也越高。
 
 **需要登录才能看的页面能监控吗？**
-不能。采集不会使用你的账号、Cookie 或凭证。
+目前支持无需登录即可访问的公开页面。
 
 ## 更新、回退与数据保留
 
@@ -278,20 +278,20 @@ docker compose up -d --wait
 
 `:latest` 跟随稳定版；固定版本号才能让部署可重复。部署文件来自 `main` 分支，请保留你实际启动时用的那一份。
 
-数据格式在启动时创建，不会跨版本迁移。新版本如果改了存储方式，请从空数据开始，不要沿用旧数据库。
+跨版本更新前，请确认数据格式兼容性；格式变化的版本需使用新存储。
 
 ### 回退
 
-把 `WEBMONITOR_IMAGE` 改回上一个标签，执行同样两条命令。旧版本不一定能读新版本写下的数据。
+把 `WEBMONITOR_IMAGE` 改回上一个标签，执行同样两条命令，并使用与该版本匹配的数据。
 
-> **数据只在容器活着的时候存在。** 这套部署没有持久卷：数据库和证据存储都是内存支撑的临时目录。停止、重启或重建 `postgres` 或 `s3` 容器，账号、监控、草稿、事件、截图和页面存档都会消失；`docker compose down` 会移除这些容器，数据也随之消失。只执行 `docker compose restart api` 不受影响。这里没有备份任务、导出命令或恢复工具——数据重要的话，请自己另存，并保留 `.env` 以便重建同样的栈。
+默认数据库和证据存储使用临时内存目录。停止、重启或重建 `postgres`、`s3`，以及执行 `docker compose down`，会清空账户、监控、事件和页面证据。`docker compose restart api` 保留仍在运行的数据服务。长期使用前配置持久存储和备份，并保存 `.env` 与部署文件。
 
 ## 开发说明
 
 <details>
 <summary>从源码构建、镜像发布与内部结构</summary>
 
-只有改源码才需要克隆仓库：
+源码开发步骤：
 
 ```sh
 git clone https://github.com/webmonitor/WebMonitor-Agent.git

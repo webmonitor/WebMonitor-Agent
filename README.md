@@ -34,13 +34,13 @@ It checks public `http://` and `https://` pages on ports 80 or 443, every 1 minu
 ## Before you start
 
 - Docker Engine with Docker Compose v2, on Linux, macOS or Windows.
-- A model service that speaks OpenAI Chat Completions: API key, base URL, model name. The conversation cannot run without it.
-- An SMTP mailbox if you want email alerts. Optional, but without it no mail leaves the machine.
+- An OpenAI Chat Completions model service: API key, base URL and model name, for conversational monitor setup.
+- An SMTP account (optional), for email alerts.
 - A page URL you can open in a private window without signing in.
 
 ## Install in three steps
 
-You do not clone the repository. Make a folder, download the runtime files into it, add one `.env`, start once.
+Create a folder, download the deployment files, fill in `.env` from the template, then start.
 
 ### 1. Download the deployment files
 
@@ -103,7 +103,7 @@ WEBMONITOR_HTTP_PORT=8080
 APP_ORIGIN=http://localhost:8080
 DEVELOPMENT_MODE=true
 
-# Database password and session signing key. Generate both; do not reuse.
+# Generate a separate database password and session signing key.
 POSTGRES_PASSWORD=replace-with-a-strong-database-password
 SECRET_KEY=replace-with-at-least-32-random-characters
 
@@ -126,11 +126,11 @@ OPENAI_MODEL=replace-with-your-model-name
 # MAIL_FROM=
 ```
 
-Replace every `replace-with-...` value; these are placeholders, not credentials. `openssl rand -hex 32` is enough for `SECRET_KEY` and the database password. The administrator password must be 12–128 characters.
+Replace each `replace-with-...` value with your settings. Generate `SECRET_KEY` and the database password separately with `openssl rand -hex 32`. Use a 12–128 character administrator password.
 
 If you leave `ADMIN_PASSWORD` empty, no account is created at startup; create one later with the command in the [FAQ](#faq).
 
-Keep `DEVELOPMENT_MODE=true` while the address is plain `http://`; an `http://` origin is rejected otherwise. If you change `WEBMONITOR_HTTP_PORT`, change `APP_ORIGIN` to the same host and port. The full list of settings is in [`.env.example`](https://github.com/webmonitor/WebMonitor-Agent/blob/main/.env.example).
+Use `DEVELOPMENT_MODE=true` for local `http://` access. When changing `WEBMONITOR_HTTP_PORT`, update the host and port in `APP_ORIGIN` too. See [`.env.example`](https://github.com/webmonitor/WebMonitor-Agent/blob/main/.env.example) for all settings.
 
 ### 3. Start everything
 
@@ -138,11 +138,11 @@ Keep `DEVELOPMENT_MODE=true` while the address is plain `http://`; an `http://` 
 docker compose up -d --wait
 ```
 
-One command starts the whole stack: the application, its database, the evidence store, the proxy and an outbound proxy for page collection. It pulls the published image, builds the two helper images locally on the first run (network needed, Chromium is not downloaded again), and returns only when every service is up — the ones with health checks have passed them.
+The command downloads the application image, builds two helper images on the first run, starts the supporting services and waits for health checks.
 
 You should see a clean exit, and in `docker compose ps` no service restarting or exited. Then open **[http://localhost:8080](http://localhost:8080/)**.
 
-If the command fails or a container stays unhealthy, the site is not ready: inspect `docker compose ps` and `docker compose logs` (append a service name to narrow it) instead of retrying blindly. `curl --fail http://localhost:8080/api/v1/health/ready` should answer `{"status":"ready"}`.
+If startup fails, inspect service status with `docker compose ps` and errors with `docker compose logs`; append a service name to narrow the output. The health endpoint `curl --fail http://localhost:8080/api/v1/health/ready` returns `{"status":"ready"}` when ready.
 
 The site is published on `127.0.0.1` only, on the machine running Docker. Use that machine's browser, or an SSH tunnel from yours.
 
@@ -163,7 +163,7 @@ Click **New conversation** and type what you need, for example one of the senten
 Two things happen next:
 
 - The assistant opens the page and shows a work log — **View N steps** — listing what it did: read the page, checked your notification groups, prepared the settings.
-- If a decision is missing (how often to check, when exactly to alert, who should receive the mail) it asks instead of guessing. Answer in the same conversation.
+- The assistant asks for any missing details, such as check frequency, alert conditions and recipients. Reply in the same conversation.
 
 ### Check the preview, then create
 
@@ -211,21 +211,21 @@ docker compose up -d --wait
 
 Rules that matter:
 
-- Exactly one of `SMTP_USE_SSL` and `SMTP_STARTTLS` must be `true`. Use the mode your provider documents; port 465 usually means SSL, port 587 usually means STARTTLS.
-- `MAIL_FROM` must contain a real address, and most providers require it to match the account you sign in with.
-- If the provider requires authentication, set both `SMTP_USERNAME` and `SMTP_PASSWORD`. Leaving one empty disables authentication.
+- Choose the encryption mode documented by your provider: set one of `SMTP_USE_SSL` and `SMTP_STARTTLS` to `true` and the other to `false`. Port 465 usually uses SSL; 587 usually uses STARTTLS.
+- Set `MAIL_FROM` to your sender address and match the account when your provider requires it.
+- Set both `SMTP_USERNAME` and `SMTP_PASSWORD` when authentication is required.
 
-There is no SMTP form inside the app — this file is the only place to configure it. Without it, monitors still run and events are still recorded; only deliveries fail, and **Delivery log** shows why.
+Configure SMTP in `.env`. Collection results appear in Events; email status appears in **Delivery log**.
 
-`Sent` means the mail server accepted the message. Whether it reaches the inbox depends on the receiving side, so check spam first when a colleague says nothing arrived. Temporary delivery failures are retried up to three times; configuration errors are reported as failed straight away.
+`Sent` means the mail server accepted the message. Check spam if it has not arrived. Temporary failures are retried up to three times; configuration errors appear as failed.
 
 ## FAQ
 
 **The page does not load.**
-In `docker compose ps`, the services with a health check must say `healthy` and none may be restarting or exited. `docker compose logs api web proxy` shows what stopped. If the port is taken, change `WEBMONITOR_HTTP_PORT` *and* `APP_ORIGIN` to the same port, then `docker compose up -d --wait`.
+Check service status with `docker compose ps` and startup errors with `docker compose logs api web proxy`. If the port is occupied, update `WEBMONITOR_HTTP_PORT` and `APP_ORIGIN` together, then run `docker compose up -d --wait`.
 
 **I cannot open it from another computer.**
-The site is bound to `127.0.0.1` on the Docker host by design. Open it there, or change the port binding in `compose.yaml` and set `APP_ORIGIN` to the address you will actually use. Put your own HTTPS proxy in front before exposing it to a network.
+The default address binds to `127.0.0.1` on the Docker host. For remote access, change the port binding in `compose.yaml` and set `APP_ORIGIN` to your actual address. Configure an HTTPS reverse proxy for public access.
 
 **Sign-in says the email or password is incorrect, or no administrator exists.**
 Create one now:
@@ -254,7 +254,7 @@ The assistant reads the HTML first and opens the page in a real browser when the
 There is no valid preview yet: click **Take a sample**, or **Preview again** if it expired. If **Recipients** says “No recipients yet”, add addresses to a notification group first.
 
 **No email arrived.**
-Open **Notifications** → **Delivery log**. `Sent` means the server accepted it — check spam. `Failed` shows the SMTP error. A monitor's first check sends nothing by design. When checks keep failing, one failure email goes out for that cause, and one recovery email when checks succeed again.
+Open **Notifications** → **Delivery log** to check recipients, status and errors. For `Sent`, check spam; for `Failed`, review the SMTP settings using the error shown. The first check establishes a baseline; later changes trigger the configured rules. Repeated collection failures send one alert per cause, followed by a recovery alert after success.
 
 **I changed the recipients but nothing happened.**
 Recipients come from notification groups. After editing a group, confirm the monitor again with **Edit settings** → **Save changes**; the next successful check establishes a new baseline.
@@ -263,7 +263,7 @@ Recipients come from notification groups. After editing a group, confirm the mon
 Between 1 minute and 24 hours. Short intervals mean more requests to the target site and more load on this machine.
 
 **Can it watch a page I have to log in to?**
-No. Collection uses no cookies or credentials of yours.
+Currently supported targets are public pages accessible without signing in.
 
 ## Update, roll back, and your data
 
@@ -278,20 +278,20 @@ docker compose up -d --wait
 
 `:latest` follows stable releases; a pinned version keeps an install repeatable. Deployment files come from `main`, so keep the copies you actually started with.
 
-The stored data format is created at startup and is not migrated between versions. If a release changes it, start from empty storage instead of carrying an old database forward.
+Check data-format compatibility before updating between versions. A release with a changed format requires fresh storage.
 
 ### Roll back
 
-Set the previous tag in `.env` and run the same two commands. Older versions may not read data written by a newer one.
+Set `WEBMONITOR_IMAGE` to the previous tag, repeat the two commands and use data matching that version.
 
-> **Your data lasts only as long as these containers.** The deployment uses no persistent volumes: the database and the evidence store are memory-backed. Stopping, restarting, or removing the `postgres` or `s3` container erases accounts, monitors, drafts, events, screenshots and page archives. That includes `docker compose down`, which removes the containers. `docker compose restart api` alone is safe. There is no backup job, export command or restore tool here — if the data matters, keep it elsewhere and rebuild from `.env`.
+The default database and evidence store use temporary memory-backed directories. Stopping, restarting or recreating `postgres` or `s3`, or running `docker compose down`, clears accounts, monitors, events and saved pages. `docker compose restart api` preserves the running data services. Configure persistent storage and backups for long-term use, and retain `.env` and deployment files.
 
 ## Development
 
 <details>
 <summary>Build from source, image releases, internals</summary>
 
-Source work is the only path that needs a checkout:
+To develop from source:
 
 ```sh
 git clone https://github.com/webmonitor/WebMonitor-Agent.git
