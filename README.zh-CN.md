@@ -88,6 +88,29 @@ docker compose up --build -d --wait
 
 默认仅向本机开放访问。更改端口时同步调整 `WEBMONITOR_HTTP_PORT` 与 `APP_ORIGIN`；本地 HTTP 部署保留 `DEVELOPMENT_MODE=true`。完整配置见[配置示例](./.env.example)。
 
+**预构建镜像。** 每次发布都会由 `docker-image` 工作流构建多架构镜像（`linux/amd64` 与 `linux/arm64`）并推送到 GitHub Container Registry。直接拉取发布版本（把版本号换成你要用的）即可跳过编译：
+
+```sh
+docker pull ghcr.io/webmonitor/webmonitor-agent-api:0.1.0
+docker pull ghcr.io/webmonitor/webmonitor-agent-web:0.1.0
+```
+
+通过覆盖两个服务的镜像让 Compose 使用它们；数据库、对象存储、出网代理与反向代理仍来自仓库（`s3` 与 `egress` 只是薄封装，仍在本地构建）：
+
+```sh
+docker compose -f compose.yaml -f images.yaml up -d --wait
+```
+
+`images.yaml` 内容：
+
+```yaml
+services:
+  api: {image: "ghcr.io/webmonitor/webmonitor-agent-api:0.1.0"}
+  web: {image: "ghcr.io/webmonitor/webmonitor-agent-web:0.1.0"}
+```
+
+这些包默认是私有的；在包设置里一次性改为公开（GitHub 没有容器可见性的 API），或先执行 `docker login ghcr.io`。不加覆盖文件时 Compose 仍从源码构建。
+
 ## 关于 WebMonitor
 
 WebMonitor-Agent 是 WebMonitor 当前持续开发的版本，采用对话创建、预览确认与按条件通知的使用方式。

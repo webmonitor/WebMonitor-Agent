@@ -88,6 +88,29 @@ Open **[localhost:8080](http://localhost:8080/)**, sign in with the administrato
 
 Access is local-only by default. If you change the port, update both `WEBMONITOR_HTTP_PORT` and `APP_ORIGIN`; keep `DEVELOPMENT_MODE=true` for local HTTP. See the [configuration example](./.env.example) for all settings.
 
+**Prebuilt images.** Every release publishes multi-architecture images (`linux/amd64` and `linux/arm64`) to GitHub Container Registry, built by the `docker-image` workflow. Pull a release (substitute the version you want) and skip compiling:
+
+```sh
+docker pull ghcr.io/webmonitor/webmonitor-agent-api:0.1.0
+docker pull ghcr.io/webmonitor/webmonitor-agent-web:0.1.0
+```
+
+Point Compose at them by overriding the two service images; the database, object store, egress proxy and reverse proxy still come from the repository (the `s3` and `egress` helper images are thin wrappers and are still built locally):
+
+```sh
+docker compose -f compose.yaml -f images.yaml up -d --wait
+```
+
+with `images.yaml`:
+
+```yaml
+services:
+  api: {image: "ghcr.io/webmonitor/webmonitor-agent-api:0.1.0"}
+  web: {image: "ghcr.io/webmonitor/webmonitor-agent-web:0.1.0"}
+```
+
+The packages are private by default; either set them public once in the package settings (GitHub has no API for container visibility) or `docker login ghcr.io` first. Compose without the override file keeps building from source.
+
 ## About WebMonitor
 
 WebMonitor-Agent is the actively developed WebMonitor product, built around conversational setup, preview and confirmation, and notifications based on your conditions.
