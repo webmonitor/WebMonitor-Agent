@@ -1,80 +1,48 @@
 <h1 align="center">WebMonitor-Agent</h1>
 
 <p align="center">
-  <strong>Describe what to watch. Get notified when it changes.</strong>
+  <strong>Tell it what to watch. Get an email when it changes.</strong>
 </p>
 
 <p align="center">
-  Follow prices, restocks, announcements, and deadlines.<br>
-  Create a monitor through conversation, review a real preview, and receive email updates.
+  Describe the page in your own words. The assistant opens it, takes one real sample, and you confirm before any schedule starts.<br>
+  After that it checks on time and emails you when your condition is met.
 </p>
 
 <p align="center">
-  <a href="#what-you-can-follow">Use cases</a> ·
-  <a href="#how-it-works">How it works</a> ·
-  <a href="#deploy-the-published-image">Get started</a> ·
-  <a href="#operate-the-stack">Operations</a> ·
-  <a href="#data-lifetime-upgrades-and-rollbacks">Data and upgrades</a> ·
-  <a href="https://github.com/webmonitor/WebMonitor-Agent/blob/main/.env.example">Configuration reference</a> ·
+  <a href="#install-in-three-steps">Quick start</a> ·
+  <a href="#your-first-monitor">Your first monitor</a> ·
+  <a href="#email-alerts">Email alerts</a> ·
+  <a href="#faq">FAQ</a> ·
+  <a href="#update-roll-back-and-your-data">Updates and data</a> ·
   <a href="./README.zh-CN.md">简体中文</a>
 </p>
 
-WebMonitor-Agent is a self-hosted web monitoring assistant. Paste a link and describe what matters, how often to check, and when to notify you. The assistant analyzes the live page and prepares a monitor. You see the actual collection result before enabling it, without writing selectors yourself. Scheduled checks compare later content and send email only when your rules match.
+## What it watches
 
-## What you can follow
-
-| Keep an eye on | Describe what you need |
+| Situation | Say something like |
 | --- | --- |
-| Price changes | “Check this product every 10 minutes and email me when its price drops below ¥200.” |
-| Restocks | “Watch this product's availability and notify me when it changes from out of stock to in stock.” |
-| Announcements | “Check this announcement list every hour and email me when a new item appears.” |
-| Deadline changes | “Track the registration deadline on this page and tell me if it changes.” |
+| Price drop | “Watch this page's price and email me when it drops 10%” |
+| New announcement | “Tell me when a new notice appears on the announcement board” |
+| Stock change | “Check the stock count daily and let me know when it changes” |
+| Deadline | “Track the registration deadline on this page and tell me if it moves” |
 
-## How it works
+A rule can watch text, a keyword appearing or disappearing, a number against a threshold, a percentage or absolute change, or new, updated and removed items in a list.
 
-1. **Describe your goal.** Start a conversation with the page URL, what to watch, a check interval, and the conditions for a notification.
-2. **Review a real preview.** The assistant opens the page and collects its content. Check the extracted values, coverage, notification rules, recipients, and email preview.
-3. **Confirm and start.** Approve the monitor to begin scheduled checks. Review changes, pause or resume monitoring, and use the conversation to adjust what you need.
+It checks public `http://` and `https://` pages on ports 80 or 443, every 1 minute to 24 hours. Pages behind a sign-in, and content inside iframes or Shadow DOM, are outside what the collector can read. The preview tells you when it only covers part of a page.
 
-The first successful scheduled check saves the starting content for later comparisons and sends no change notification. Previews do not send email either. Later changes trigger alerts only when they meet your rules.
+## Before you start
 
-## From a change to the details
+- Docker Engine with Docker Compose v2, on Linux, macOS or Windows.
+- A model service that speaks OpenAI Chat Completions: API key, base URL, model name. The conversation cannot run without it.
+- An SMTP mailbox if you want email alerts. Optional, but without it no mail leaves the machine.
+- A page URL you can open in a private window without signing in.
 
-- **Choose when to hear about it.** Set rules for text, keywords, numeric changes, thresholds, and new or updated list items. Removed items can also be tracked when complete list coverage is confirmed.
-- **See the evidence.** Compare previous and current content and open the page archive saved from that check. Browser-based collection also captures a screenshot.
-- **Notify the right people.** Select from notification groups maintained by the administrator. One monitor can notify multiple email addresses.
-- **Keep track of activity.** Manage conversations, monitors, and events in one workspace, with recent check results and email delivery status. The interface is available in English and Chinese.
-- **Review changes before applying them.** Preview and confirm monitor edits. A failed check preserves the last successful content as the comparison baseline.
+## Install in three steps
 
-By default, monitoring supports public HTTP/HTTPS pages with check intervals from 1 minute to 24 hours. The preview explains what was actually collected and any coverage limitations. Content inside iframes or Shadow DOM is not currently extracted.
+You do not clone the repository. Make a folder, download the runtime files into it, add one `.env`, start once.
 
-## Requirements
-
-- Docker Engine with Docker Compose v2 on Linux, macOS, or Windows.
-- An OpenAI Chat Completions-compatible model service for the conversation. Set its API key, base URL, and model name.
-- An SMTP service if you want email alerts.
-- The published application image is available for `linux/amd64` and `linux/arm64`.
-- No Git checkout is required for the published-image deployment.
-
-## Deploy the published image
-
-WebMonitor-Agent publishes one application image to GitHub Container Registry:
-
-```text
-ghcr.io/webmonitor/webmonitor-agent
-```
-
-That single image contains the Python API and worker loops, the built Next.js frontend, and Chromium. Compose runs it as two services with different entrypoints: `api` and `web`. The public image is available on both `linux/amd64` and `linux/arm64`:
-
-```sh
-docker pull ghcr.io/webmonitor/webmonitor-agent:latest
-```
-
-> **A pull is not a deployment.** The command above only confirms that the public image can be downloaded anonymously. It does not create configuration, start PostgreSQL or evidence storage, run the worker, or serve the interface. A runnable deployment also needs `compose.yaml`, the nginx and seccomp files it mounts, the Dockerfiles for the locally built `s3` and `egress` helper images, and an `.env` file.
-
-The normal installation creates an empty deployment directory and downloads only those runtime files. Do not clone the repository for this path.
-
-### 1. Download the runtime files
+### 1. Download the deployment files
 
 ```sh
 mkdir -p webmonitor-agent/deploy/proxy webmonitor-agent/deploy/egress
@@ -102,9 +70,7 @@ do
 done
 ```
 
-If any download fails, the loop exits with an error. Do not start Compose until every file is present.
-
-The loop preserves the directory layout that `compose.yaml` expects:
+If a download fails the loop stops and names the file; run it again before starting. Keep every file — `compose.yaml` mounts the nginx, seccomp and egress files, and builds two small local helper images from the Dockerfiles:
 
 ```text
 webmonitor-agent/
@@ -113,9 +79,9 @@ webmonitor-agent/
 ├── compose.yaml
 └── deploy/
     ├── browser-seccomp.json
+    ├── egress.Dockerfile
     ├── minio.Dockerfile
     ├── minio-artifacts.json
-    ├── egress.Dockerfile
     ├── egress/
     │   ├── entrypoint.sh
     │   ├── squid.conf
@@ -124,178 +90,226 @@ webmonitor-agent/
         └── nginx.conf
 ```
 
-`deploy/minio-artifacts.json` records the MinIO binary provenance; its digests are already embedded in the helper Dockerfile. `.dockerignore` keeps `.env` and other local files out of helper build contexts. The downloaded deployment files come from `main`, while `WEBMONITOR_IMAGE` selects the application release. For repeatable deployments, retain a reviewed copy of these files and pin the application image; old source tags may use an earlier Compose layout.
-
 ### 2. Create `.env`
 
-Create `.env` in the deployment directory with at least these values:
+Create `.env` next to `compose.yaml` with these values:
 
 ```dotenv
-# latest follows stable releases; replace with 1.0.0 to pin a version.
+# :latest follows stable releases. Pin a version such as 1.0.0 for repeatable installs.
 WEBMONITOR_IMAGE=ghcr.io/webmonitor/webmonitor-agent:latest
 WEBMONITOR_HTTP_PORT=8080
 
+# The address you open in the browser. Keep the same port as above.
 APP_ORIGIN=http://localhost:8080
 DEVELOPMENT_MODE=true
 
+# Database password and session signing key. Generate both; do not reuse.
 POSTGRES_PASSWORD=replace-with-a-strong-database-password
 SECRET_KEY=replace-with-at-least-32-random-characters
 
+# The first account, created on first start when no user exists yet.
 ADMIN_EMAIL=admin@example.com
 ADMIN_PASSWORD=replace-with-a-12-to-128-character-password
 
+# Model service for the assistant. Any OpenAI Chat Completions endpoint works.
 OPENAI_API_KEY=replace-with-your-model-api-key
 OPENAI_BASE_URL=https://api.openai.com/v1
 OPENAI_MODEL=replace-with-your-model-name
+
+# Email alerts (optional). Rules are under "Email alerts" below.
+# SMTP_HOST=
+# SMTP_PORT=465
+# SMTP_USERNAME=
+# SMTP_PASSWORD=
+# SMTP_USE_SSL=true
+# SMTP_STARTTLS=false
+# MAIL_FROM=
 ```
 
-Replace every `replace-with-...` value before starting; these are placeholders, not credentials. Generate `SECRET_KEY` and the database password with a password manager or a command such as `openssl rand -hex 32`. The administrator password must be 12–128 characters. The account is created on first startup only when the users table is empty; otherwise create one later with `admin-create`.
+Replace every `replace-with-...` value; these are placeholders, not credentials. `openssl rand -hex 32` is enough for `SECRET_KEY` and the database password. The administrator password must be 12–128 characters.
 
-`compose.yaml` defaults to `ghcr.io/webmonitor/webmonitor-agent:latest` and always pulls that image, but keeping `WEBMONITOR_IMAGE` explicit makes the chosen version visible. Pin `1.0.0` when you need a repeatable release; `latest` follows stable releases and changes over time.
+If you leave `ADMIN_PASSWORD` empty, no account is created at startup; create one later with the command in the [FAQ](#faq).
 
-Email alerts are optional. To enable them, add `SMTP_HOST`, `SMTP_PORT`, `SMTP_USERNAME`, `SMTP_PASSWORD`, and `MAIL_FROM`. Exactly one of `SMTP_USE_SSL` and `SMTP_STARTTLS` must be `true`; match the mode supported by your mail provider.
+Keep `DEVELOPMENT_MODE=true` while the address is plain `http://`; an `http://` origin is rejected otherwise. If you change `WEBMONITOR_HTTP_PORT`, change `APP_ORIGIN` to the same host and port. The full list of settings is in [`.env.example`](https://github.com/webmonitor/WebMonitor-Agent/blob/main/.env.example).
 
-### 3. Start and open
+### 3. Start everything
 
 ```sh
 docker compose up -d --wait
 ```
 
-The application image is pulled from GHCR. On the first start, Compose builds the `s3` and `egress` helper images from the downloaded Dockerfiles and pulls the upstream `postgres` and `nginx` images; this requires network access but does not download Chromium again. `--wait` returns after the health checks pass. If it fails, the stack is not ready: inspect `docker compose ps` and `docker compose logs` instead of assuming the deployment started.
+One command starts the whole stack: the application, its database, the evidence store, the proxy and an outbound proxy for page collection. It pulls the published image, builds the two helper images locally on the first run (network needed, Chromium is not downloaded again), and returns only when every service is up — the ones with health checks have passed them.
 
-The stack has six services:
+You should see a clean exit, and in `docker compose ps` no service restarting or exited. Then open **[http://localhost:8080](http://localhost:8080/)**.
 
-| Service | Role |
-| --- | --- |
-| `api` | FastAPI, the scheduler, and every background loop: agent, HTTP collection, browser collection, and mail. |
-| `web` | The Next.js frontend server. It uses the same image as `api`. |
-| `proxy` | nginx on `127.0.0.1:8080` in front of the API and the frontend. |
-| `postgres` | Application database. |
-| `s3` | MinIO evidence storage for page archives and screenshots. |
-| `egress` | Squid proxy that enforces the target policy and provides controlled outbound access. |
+If the command fails or a container stays unhealthy, the site is not ready: inspect `docker compose ps` and `docker compose logs` (append a service name to narrow it) instead of retrying blindly. `curl --fail http://localhost:8080/api/v1/health/ready` should answer `{"status":"ready"}`.
 
-Open **[localhost:8080](http://localhost:8080/)** and sign in with the administrator email and password from `.env`. If no administrator was created, see [Create an administrator or invitation](#create-an-administrator-or-invitation).
+The site is published on `127.0.0.1` only, on the machine running Docker. Use that machine's browser, or an SSH tunnel from yours.
 
-Access is bound to the local machine by default. If you change `WEBMONITOR_HTTP_PORT`, update `APP_ORIGIN` to the same scheme, host, and port. Keep `DEVELOPMENT_MODE=true` for local HTTP; an `http://` origin is rejected otherwise. See the [configuration reference](https://github.com/webmonitor/WebMonitor-Agent/blob/main/.env.example) for all settings.
+## Your first monitor
 
-## Operate the stack
+Sign in with the `ADMIN_EMAIL` and `ADMIN_PASSWORD` from `.env`. The first start creates that account automatically. If it was not created, see the [FAQ](#faq). The **EN / 中文** switch at the top of the sidebar changes the interface language.
 
-Run every command from the deployment directory. The normal installation has one `compose.yaml`, so no `-f` flags are required.
+### Create a notification group
 
-### Pull, start, inspect, and follow logs
+**Notifications** → **Notification groups** → **New**. Give it a name, add recipients one per line (commas or spaces also work), then **Save**.
 
-```sh
-docker compose pull api web
-docker compose up -d --wait
-docker compose ps
-docker compose logs -f api web proxy
-curl --fail http://localhost:8080/api/v1/health/ready
+Only an administrator can create groups; members ask an administrator. Every monitor sends through a group, and a group can hold several addresses. If you later change a group's recipients, confirm the monitor again before the new list is used.
+
+### Describe what you want
+
+Click **New conversation** and type what you need, for example one of the sentences in [What it watches](#what-it-watches). Press Enter to send, Shift+Enter for a new line, and the square button to stop a run that is taking too long.
+
+Two things happen next:
+
+- The assistant opens the page and shows a work log — **View N steps** — listing what it did: read the page, checked your notification groups, prepared the settings.
+- If a decision is missing (how often to check, when exactly to alert, who should receive the mail) it asks instead of guessing. Answer in the same conversation.
+
+### Check the preview, then create
+
+Before anything is scheduled, a confirmation card appears — in the right-hand column on a wide screen, inline in the chat on a narrow one. It shows:
+
+- monitor name, check frequency, page host and timezone, and how long the preview stays valid
+- **Extracted content** — the fields it read and their actual values on this page
+- **Notify when** — the rule that will trigger an email
+- **Recipients** — the addresses that will be notified
+- **Page screenshot** / **Page archive** when the sample saved them
+- **Preview notification email** — the real email body
+- warnings such as “The check covers only part of the page”
+
+If something is wrong, say so in the chat: the assistant takes a new sample and the card updates. **Preview again** samples the same settings again; **Take a sample** runs the first sample when none exists yet.
+
+**Create monitor** is the click that starts scheduled checking. If the card has expired, preview again — a preview stays valid for 60 minutes.
+
+### After it starts
+
+- The monitor appears under **Monitors** in the left sidebar with its name and interval. Its page shows **Last check**, **Next check**, **Check frequency**, **Collection method**, then **Recent checks**, **Current content** and **Recent events**.
+- **Pause** / **Resume** stops and restarts the schedule. **Check now** runs one check immediately.
+- **Edit settings** opens the conversation that owns the monitor. Describe the change, review the new preview, then **Save changes**; saving rebuilds the baseline.
+- **Events** lists everything detected, with **All** / **Unread** filters and **Mark as read**.
+- **Notifications** → **Delivery log** lists each email: recipient, status, attempts, body, and the error if it failed.
+
+The first successful check only records the starting content and sends no email; comparisons begin with the second check. Previews never send email. A failed check keeps the last successful content as the comparison baseline.
+
+## Email alerts
+
+Add these to `.env` and apply them:
+
+```dotenv
+SMTP_HOST=smtp.example.com
+SMTP_PORT=465
+SMTP_USERNAME=alert@example.com
+SMTP_PASSWORD=your-smtp-password
+SMTP_USE_SSL=true
+SMTP_STARTTLS=false
+MAIL_FROM=WebMonitor <alert@example.com>
 ```
 
-`docker compose restart api` restarts only the application process and leaves PostgreSQL and MinIO running. Stopping, restarting, or recreating those two containers discards their data; see [Data lifetime](#data-lifetime-upgrades-and-rollbacks).
+```sh
+docker compose up -d --wait
+```
 
-### Create an administrator or invitation
+Rules that matter:
 
-The first startup creates an administrator only when `ADMIN_EMAIL` and `ADMIN_PASSWORD` are both set and the users table is empty. To create an administrator interactively at any time, for example when neither value was configured:
+- Exactly one of `SMTP_USE_SSL` and `SMTP_STARTTLS` must be `true`. Use the mode your provider documents; port 465 usually means SSL, port 587 usually means STARTTLS.
+- `MAIL_FROM` must contain a real address, and most providers require it to match the account you sign in with.
+- If the provider requires authentication, set both `SMTP_USERNAME` and `SMTP_PASSWORD`. Leaving one empty disables authentication.
+
+There is no SMTP form inside the app — this file is the only place to configure it. Without it, monitors still run and events are still recorded; only deliveries fail, and **Delivery log** shows why.
+
+`Sent` means the mail server accepted the message. Whether it reaches the inbox depends on the receiving side, so check spam first when a colleague says nothing arrived. Temporary delivery failures are retried up to three times; configuration errors are reported as failed straight away.
+
+## FAQ
+
+**The page does not load.**
+In `docker compose ps`, the services with a health check must say `healthy` and none may be restarting or exited. `docker compose logs api web proxy` shows what stopped. If the port is taken, change `WEBMONITOR_HTTP_PORT` *and* `APP_ORIGIN` to the same port, then `docker compose up -d --wait`.
+
+**I cannot open it from another computer.**
+The site is bound to `127.0.0.1` on the Docker host by design. Open it there, or change the port binding in `compose.yaml` and set `APP_ORIGIN` to the address you will actually use. Put your own HTTPS proxy in front before exposing it to a network.
+
+**Sign-in says the email or password is incorrect, or no administrator exists.**
+Create one now:
 
 ```sh
 docker compose exec api webmonitor admin-create --email admin@example.com
 ```
 
-The command prompts twice for a 12–128 character password. There is no default password.
+It asks twice for a 12–128 character password. `ADMIN_EMAIL` and `ADMIN_PASSWORD` only take effect on the very first start with an empty users table.
 
-To invite a member, issue a single-use, email-bound invitation link:
+**How do I give a colleague access?**
 
 ```sh
 docker compose exec api webmonitor invite-create --email member@example.com --ttl-hours 24
 ```
 
-The printed URL uses `APP_ORIGIN` and expires after the requested number of hours (1–168, default 24). An active administrator must already exist. If `REGISTRATION_ALLOWED_EMAILS` is non-empty, the invited address must also appear in that comma-separated list.
+Send the printed link over a safe channel. It works once, is bound to that address, expires after 24 hours (1–168 allowed), and requires an existing administrator. The colleague opens it, sets a display name and a 12–128 character password.
 
-Recipients live in notification groups managed by an administrator. After signing in, create a group and add addresses; select that group when creating a monitor. A delivery status of `sent` means the mail server accepted the message; it does not confirm arrival in the recipient's inbox.
+**The chat says the target address is not allowed.**
+Only public `http://` or `https://` pages on ports 80 or 443 are accepted. Intranet and localhost addresses, other ports, and pages that need a sign-in cannot be monitored.
 
-## Data lifetime, upgrades, and rollbacks
+**The sample is empty, or only part of the page.**
+The assistant reads the HTML first and opens the page in a real browser when the data needs JavaScript. It still cannot read iframe or Shadow DOM content, anything behind a login, or pages that block automation. Coverage warnings on the preview card say when the read was partial; if the values there are empty, the monitor would have nothing to compare — describe the target more precisely, or choose another page or another value on it.
 
-> **This deployment is temporary by design.** It declares no persistent volumes. Stopping, restarting, or recreating the PostgreSQL or MinIO container erases its data, including accounts, monitors, drafts, events, and saved page evidence. Restarting only `api` does not touch those containers.
+**Create monitor is greyed out.**
+There is no valid preview yet: click **Take a sample**, or **Preview again** if it expired. If **Recipients** says “No recipients yet”, add addresses to a notification group first.
 
-The limits are explicit in `compose.yaml`: PostgreSQL data is a 512 MiB tmpfs, MinIO data is a 512 MiB tmpfs, and application containers get a 128 MiB `/tmp` tmpfs. Data therefore lasts only as long as those containers. There is no backup job, export command, or migration tool in the distributed files.
+**No email arrived.**
+Open **Notifications** → **Delivery log**. `Sent` means the server accepted it — check spam. `Failed` shows the SMTP error. A monitor's first check sends nothing by design. When checks keep failing, one failure email goes out for that cause, and one recovery email when checks succeed again.
 
-The schema is created on startup with SQLAlchemy `create_all`; there are no Alembic migrations. Existing databases are not migrated across releases, and schema compatibility between versions is not guaranteed.
+**I changed the recipients but nothing happened.**
+Recipients come from notification groups. After editing a group, confirm the monitor again with **Edit settings** → **Save changes**; the next successful check establishes a new baseline.
 
-### Upgrade
+**How often can a monitor check?**
+Between 1 minute and 24 hours. Short intervals mean more requests to the target site and more load on this machine.
 
-1. Change `WEBMONITOR_IMAGE` in `.env` to the new release tag.
-2. Pull and recreate the application services.
+**Can it watch a page I have to log in to?**
+No. Collection uses no cookies or credentials of yours.
+
+## Update, roll back, and your data
+
+### Update
+
+Set `WEBMONITOR_IMAGE` in `.env` to the new tag, for example `ghcr.io/webmonitor/webmonitor-agent:1.0.0`, then apply it:
 
 ```sh
 docker compose pull api web
 docker compose up -d --wait
 ```
 
-An application-only image change may leave PostgreSQL running, but that does not make it a supported in-place upgrade. No migration path exists. If a release changes the schema, start from empty storage instead of carrying a previous database forward.
+`:latest` follows stable releases; a pinned version keeps an install repeatable. Deployment files come from `main`, so keep the copies you actually started with.
+
+The stored data format is created at startup and is not migrated between versions. If a release changes it, start from empty storage instead of carrying an old database forward.
 
 ### Roll back
 
-Set `WEBMONITOR_IMAGE` back to the previous tag, then run:
+Set the previous tag in `.env` and run the same two commands. Older versions may not read data written by a newer one.
 
-```sh
-docker compose pull api web
-docker compose up -d --wait
-```
+> **Your data lasts only as long as these containers.** The deployment uses no persistent volumes: the database and the evidence store are memory-backed. Stopping, restarting, or removing the `postgres` or `s3` container erases accounts, monitors, drafts, events, screenshots and page archives. That includes `docker compose down`, which removes the containers. `docker compose restart api` alone is safe. There is no backup job, export command or restore tool here — if the data matters, keep it elsewhere and rebuild from `.env`.
 
-A rollback is subject to the same limits: no downgrade migration is provided, newer data may be incompatible, and any stop or recreation of the data containers erases it. For repeatable deployments, pin an exact version such as `1.0.0` and record that tag in your deployment configuration; `latest` follows stable releases and changes over time.
+## Development
 
-## Build from source
+<details>
+<summary>Build from source, image releases, internals</summary>
 
-Source development is the only path that needs a repository checkout. The published-image installation above deliberately avoids it.
+Source work is the only path that needs a checkout:
 
 ```sh
 git clone https://github.com/webmonitor/WebMonitor-Agent.git
 cd WebMonitor-Agent
-```
-
-Create `.env` using the template above; the checkout's `.env.example` lists the full development settings for reference. Then build and start with the build overlay:
-
-```sh
+cp .env.example .env
 docker compose -f compose.yaml -f compose.build.yaml up --build -d --wait
 ```
 
-`compose.build.yaml` adds the application build; `compose.yaml` is the runtime definition used by the published image. Do not use the build overlay for a normal installation with the published image. For the development stack, keep both `-f` flags on later commands.
+Fill `.env` with the same values as above; `.env.example` lists every development setting. Keep both `-f` flags on later commands. The build installs Chromium and takes several minutes. The running `web` container contains only the compiled frontend server, so run frontend tooling outside it.
 
-The build uses `deploy/Dockerfile`, installs Chromium, and takes several minutes. The resulting runtime image is not a frontend development environment: the `web` service contains the compiled Next.js standalone server and Node, not pnpm or the frontend source tree. Run frontend tooling outside the runtime container.
+Pushes to `main` build `:main` and `:sha-<short>` development images. `vX.Y.Z` tags verify the version declared in `pyproject.toml`, `src/webmonitor/__init__.py` and `web/package.json`, publish `:X.Y.Z`, `:X.Y` and `:latest`, and create a release. The application image is built for `linux/amd64` and `linux/arm64` and runs both the API and the frontend; the two helper images are built locally from `deploy/`.
 
-## Deployment boundary and limitations
+The stack is meant for local use — it binds to `127.0.0.1`, terminates no TLS, and keeps no durable state.
 
-The downloaded Compose stack is intended for local evaluation and development, not as a production platform. It binds the proxy to `127.0.0.1`, terminates no TLS, keeps all state in tmpfs, and provides no backups, migration path, high availability, or horizontal scaling. Put it behind your own TLS reverse proxy and operational controls if you expose it, and set `APP_ORIGIN` and `DEVELOPMENT_MODE` accordingly.
-
-Functional limits:
-
-- Targets must be public `http://` or `https://` URLs on ports 80 or 443. Private, loopback, link-local, metadata, and container-internal addresses are rejected.
-- `TARGET_POLICY` defaults to `public`. `allowlist` and `any` require `DEVELOPMENT_MODE=true` and are intended for controlled environments such as the separate mocksite project; do not enable them for an Internet-facing deployment.
-- Check intervals are 1 minute to 24 hours.
-- Content inside iframes and Shadow DOM is not extracted. The preview reports these and other coverage limitations.
-- Email is the only notification channel. Notification recipients are administrator-managed groups.
-- The first successful check only establishes a baseline, and failed checks keep the last successful baseline. Previews never send email.
-- Two services share the published image, but the `s3` and `egress` helper images and the nginx configuration are built or loaded from the downloaded files, not from that image.
-
-## Release and versioning
-
-- `main` is the development branch. Pushes build `:main` and `:sha-<short>` images; these are development artifacts, not releases, and never move `:latest`.
-- The base `compose.yaml` defaults to `:latest` and pulls it on start. Set `WEBMONITOR_IMAGE=ghcr.io/webmonitor/webmonitor-agent:1.0.0` for a fixed version.
-- A `vX.Y.Z` tag first verifies that the tag matches the versions declared in `pyproject.toml`, `src/webmonitor/__init__.py`, and `web/package.json`.
-- Stable tags publish `:X.Y.Z`, `:X.Y`, and `:latest`, then create a GitHub Release. `latest` moves only for stable releases; a prerelease such as `v1.2.3-rc.1` never moves it.
-- Images are built natively for `linux/amd64` and `linux/arm64` and merged into one multi-architecture manifest.
-- The public package is `ghcr.io/webmonitor/webmonitor-agent`. The former `agent-api` and `agent-web` packages, including their `main` tags, have been removed; do not reference them.
-- Bootstrap files are fetched from `main`. Record the reviewed deployment files alongside the chosen image version; changing the image tag alone does not update those files.
-
-## About WebMonitor
-
-WebMonitor-Agent is the actively developed WebMonitor product, built around conversational setup, preview and confirmation, and notifications based on your conditions.
-
-If you prefer to enter an XPath directly to watch a page region, try the [original WebMonitor](https://github.com/webmonitor/WebMonitor). It supports public tasks and subscriptions and is maintained for fixes.
+</details>
 
 ## License
 
-[MIT](./LICENSE) — Use, modify, and distribute, including commercially, with the copyright and license notice retained.
+[MIT](./LICENSE) — use, modify and distribute, including commercially, with the copyright and license notice retained.
 
 Created by 秋风飘起黄叶落.

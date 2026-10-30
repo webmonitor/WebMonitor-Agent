@@ -1,80 +1,48 @@
 <h1 align="center">WebMonitor-Agent</h1>
 
 <p align="center">
-  <strong>告诉它看什么，让变化找到你。</strong>
+  <strong>告诉它看什么，变化会发到你的邮箱。</strong>
 </p>
 
 <p align="center">
-  关注价格、补货、公告与截止日期。<br>
-  通过对话创建监控，预览确认后，让它按时检查并发送邮件。
+  用一句话描述网页上你在意的内容。助手打开页面试采集一次，你确认之后再开始定时检查。<br>
+  之后它按点运行，符合条件时发邮件给你。
 </p>
 
 <p align="center">
-  <a href="#可以关注什么">使用场景</a> ·
-  <a href="#如何使用">如何使用</a> ·
-  <a href="#部署发布镜像">开始使用</a> ·
-  <a href="#运维">运维</a> ·
-  <a href="#数据寿命升级与回退">数据与升级</a> ·
-  <a href="https://github.com/webmonitor/WebMonitor-Agent/blob/main/.env.example">配置参考</a> ·
+  <a href="#三步装好">快速开始</a> ·
+  <a href="#第一次使用">第一次使用</a> ·
+  <a href="#邮件提醒">邮件提醒</a> ·
+  <a href="#常见问题">常见问题</a> ·
+  <a href="#更新回退与数据保留">更新与数据</a> ·
   <a href="./README.md">English</a>
 </p>
 
-WebMonitor-Agent 是一个可自行部署的网页监控助手。粘贴链接，用自然语言说明关心的内容、检查频率和通知条件，助手会分析实时页面并准备监控。你可以先看到实际采集结果，再决定是否启用，无需手写选择器。后续定时检查会比较内容，并且只在命中规则时发送邮件。
+## 它能帮你盯什么
 
-## 可以关注什么
-
-| 关注的内容 | 可以这样描述需求 |
+| 想关注的情况 | 可以这样输入 |
 | --- | --- |
-| 价格变化 | “每 10 分钟检查这个商品，价格降到 200 元以下时通知我。” |
-| 商品补货 | “关注这个商品的库存，从缺货变成有货时发邮件。” |
-| 公告发布 | “每小时检查这个公告列表，有新公告就通知我。” |
-| 日期调整 | “跟踪这个页面的报名截止日期，有变化就告诉我。” |
+| 商品降价 | “监控这个页面的价格，降价 10% 时邮件提醒我” |
+| 公告发布 | “关注公告栏有没有出现新的通知” |
+| 库存变化 | “每天检查一次库存数量，有变化就告诉我” |
+| 截止日期 | “跟踪这个页面的报名截止日期，有变化就告诉我” |
 
-## 如何使用
+通知条件可以看一段文本，也可以看关键词出现或消失、数值超过阈值、涨跌幅、以及列表里新增、更新或消失的条目。
 
-1. **描述需求。** 新建对话，提供网页地址，告诉助手要看什么、多久检查一次、什么情况下通知。
-2. **核对预览。** 助手打开页面并执行真实采集。确认提取内容、检查范围、通知规则、收件人和邮件样式是否符合预期。
-3. **确认启用。** 点击创建监控后开始定时检查。后续可在工作台查看变化，暂停或恢复监控，也可通过对话调整需求。
+默认检查公网 `http://` / `https://` 页面（80 或 443 端口），间隔为 1 分钟到 24 小时。需要登录才能看的页面、iframe 和 Shadow DOM 里的内容目前采集不到；预览卡片会写明只覆盖了页面的一部分这类限制。
 
-首次成功检查会记录初始内容，作为后续比较的起点，不发送变化通知。预览也不会发送邮件；真正满足通知规则的后续变化才会触发提醒。
+## 开始前需要准备
 
-## 从发现变化到查看详情
+- Docker Engine 与 Docker Compose v2，Linux、macOS、Windows 都可以。
+- 一个兼容 OpenAI Chat Completions 的模型服务：API 密钥、接口地址和模型名称。没有它对话无法工作。
+- 一个可用的 SMTP 邮箱（可选）。不配也能用，只是发不出邮件。
+- 一个复制到无痕窗口也能直接打开的网页地址。
 
-- **按条件提醒。** 支持文本与关键词、数值变化与阈值、列表新增与更新；确认完整采集列表后，也可监控条目删除。
-- **看清变化依据。** 对照变化前后的内容，查看当次检查保存的页面存档；浏览器采集还会留下截图。
-- **通知需要的人。** 从管理员维护的通知组中选择收件人，一项监控可以通知多个邮箱。
-- **掌握运行状态。** 在一个工作台管理对话、监控和事件，查看最近检查结果与邮件发送情况；界面支持中英文切换。
-- **调整前先确认。** 修改监控后重新预览，确认结果再应用；采集失败时保留上一次成功的内容作为比较依据。
+## 三步装好
 
-默认支持公网 HTTP/HTTPS 页面，检查间隔为 1 分钟至 24 小时。预览会说明本次实际采集的范围与限制；iframe 和 Shadow DOM 内的内容暂不提取。
+不需要克隆仓库。建一个空目录，把运行文件下进去，写一个 `.env`，启动一次。
 
-## 运行要求
-
-- Docker Engine 与 Docker Compose v2，可运行于 Linux、macOS 或 Windows。
-- 兼容 OpenAI Chat Completions 的模型服务，用于对话。需要填写其 API 密钥、接口地址和模型名称。
-- 如需邮件提醒，还需要可用的 SMTP 服务。
-- 发布的应用镜像提供 `linux/amd64` 与 `linux/arm64` 两种架构。
-- 使用发布镜像部署不需要 Git，也不需要克隆仓库。
-
-## 部署发布镜像
-
-WebMonitor-Agent 在 GitHub Container Registry 上发布一个应用镜像：
-
-```text
-ghcr.io/webmonitor/webmonitor-agent
-```
-
-同一个镜像包含 Python API 与后台任务、构建好的 Next.js 前端以及 Chromium。Compose 用不同入口把它运行成两个服务：`api` 与 `web`。镜像提供 `linux/amd64` 与 `linux/arm64` 两种架构：
-
-```sh
-docker pull ghcr.io/webmonitor/webmonitor-agent:latest
-```
-
-> **拉取不等于运行。** 上面的命令只确认公开镜像可以被匿名下载；它不会创建配置、启动 PostgreSQL 或证据存储、运行后台任务，也不会提供界面。可运行的部署还需要 `compose.yaml`、它挂载的 nginx 与 seccomp 文件、本地构建 `s3` 与 `egress` 辅助镜像所需的 Dockerfile，以及一个 `.env`。
-
-正常安装会创建一个空部署目录，只下载这些运行文件；这条路径不要克隆仓库。
-
-### 1. 下载运行文件
+### 1. 下载部署文件
 
 ```sh
 mkdir -p webmonitor-agent/deploy/proxy webmonitor-agent/deploy/egress
@@ -102,9 +70,7 @@ do
 done
 ```
 
-任一下载失败时循环会报错退出。请在所有文件就绪后再启动 Compose。
-
-循环会按 `compose.yaml` 期望的目录结构下载：
+任何一次下载失败，循环会停下并告诉你缺哪个文件；再跑一次，等全部就位后继续。这些文件请全部保留：`compose.yaml` 会挂载 nginx、seccomp 和 egress 配置，并用下载到的 Dockerfile 在本地构建两个小辅助镜像。
 
 ```text
 webmonitor-agent/
@@ -113,9 +79,9 @@ webmonitor-agent/
 ├── compose.yaml
 └── deploy/
     ├── browser-seccomp.json
+    ├── egress.Dockerfile
     ├── minio.Dockerfile
     ├── minio-artifacts.json
-    ├── egress.Dockerfile
     ├── egress/
     │   ├── entrypoint.sh
     │   ├── squid.conf
@@ -124,175 +90,223 @@ webmonitor-agent/
         └── nginx.conf
 ```
 
-`deploy/minio-artifacts.json` 记录 MinIO 二进制来源，其校验摘要已内置在辅助 Dockerfile 中。`.dockerignore` 可避免 `.env` 等本地文件进入辅助镜像构建上下文。部署文件来自 `main`，应用发布版本由 `WEBMONITOR_IMAGE` 单独选择。需要可重复部署时，请保留审阅后的部署文件并固定应用镜像；旧源码标签可能仍采用早期 Compose 布局。
+### 2. 自建 `.env`
 
-### 2. 创建 `.env`
-
-在部署目录中创建 `.env`，至少包含以下内容：
+在 `compose.yaml` 旁边新建 `.env`，写入：
 
 ```dotenv
-# latest 跟随稳定版发布；需要固定版本时改为 1.0.0。
+# :latest 跟随稳定版；需要可重复部署时改成 1.0.0 这样的固定版本。
 WEBMONITOR_IMAGE=ghcr.io/webmonitor/webmonitor-agent:latest
 WEBMONITOR_HTTP_PORT=8080
 
+# 你在浏览器里打开的地址，端口要和上面一致。
 APP_ORIGIN=http://localhost:8080
 DEVELOPMENT_MODE=true
 
+# 数据库密码与会话签名密钥，各自生成，不要复用。
 POSTGRES_PASSWORD=replace-with-a-strong-database-password
 SECRET_KEY=replace-with-at-least-32-random-characters
 
+# 第一个账户。首次启动且系统里还没有用户时会自动创建。
 ADMIN_EMAIL=admin@example.com
 ADMIN_PASSWORD=replace-with-a-12-to-128-character-password
 
+# 助手使用的模型服务，任何 OpenAI Chat Completions 接口都可以。
 OPENAI_API_KEY=replace-with-your-model-api-key
 OPENAI_BASE_URL=https://api.openai.com/v1
 OPENAI_MODEL=replace-with-your-model-name
+
+# 邮件提醒（可选），规则见下面「邮件提醒」。
+# SMTP_HOST=
+# SMTP_PORT=465
+# SMTP_USERNAME=
+# SMTP_PASSWORD=
+# SMTP_USE_SSL=true
+# SMTP_STARTTLS=false
+# MAIL_FROM=
 ```
 
-启动前请替换所有 `replace-with-...` 占位值；它们只是示例，不是可用凭据。请用密码管理器或 `openssl rand -hex 32` 之类的命令生成 `SECRET_KEY` 和数据库密码。管理员密码必须为 12–128 字符。仅当首次启动时用户表为空才会创建该账户；否则可稍后用 `admin-create` 创建。
+把每一个 `replace-with-...` 换掉，它们只是占位符，不是可用凭据。`SECRET_KEY` 和数据库密码用 `openssl rand -hex 32` 生成即可；管理员密码必须 12–128 个字符。
 
-`compose.yaml` 默认使用 `ghcr.io/webmonitor/webmonitor-agent:latest`，并且每次启动都会拉取该镜像。仍然建议显式保留 `WEBMONITOR_IMAGE`，让实际使用的版本一目了然。需要可重复部署时固定 `1.0.0`；`latest` 会随稳定版发布移动。
+`ADMIN_PASSWORD` 留空的话，启动时不会创建账户，之后可以用[常见问题](#常见问题)里的命令补建。
 
-邮件提醒是可选项。要启用，请在 `.env` 中加入 `SMTP_HOST`、`SMTP_PORT`、`SMTP_USERNAME`、`SMTP_PASSWORD` 和 `MAIL_FROM`。`SMTP_USE_SSL` 与 `SMTP_STARTTLS` 必须恰有一个为 `true`，并按邮件服务支持的模式选择。
+地址还是 `http://` 时请保留 `DEVELOPMENT_MODE=true`，否则会被拒绝启动。改了 `WEBMONITOR_HTTP_PORT`，就把 `APP_ORIGIN` 改成同一个主机和端口。完整配置项见 [`.env.example`](https://github.com/webmonitor/WebMonitor-Agent/blob/main/.env.example)。
 
-### 3. 启动并打开
+### 3. 一条命令启动
 
 ```sh
 docker compose up -d --wait
 ```
 
-应用镜像从 GHCR 拉取。首次启动时，Compose 会用下载的 Dockerfile 在本地构建 `s3` 与 `egress` 辅助镜像，并拉取上游 `postgres` 与 `nginx` 镜像；这需要网络，但不会重新下载 Chromium。`--wait` 会在健康检查通过后返回。若命令失败，说明栈尚未就绪：请检查 `docker compose ps` 与 `docker compose logs`，不要假定部署已经启动。
+这一条命令负责整套服务：应用、数据库、证据存储、入口代理和用于抓取页面的出站代理。它会拉取发布镜像，第一次运行时用下载到的文件在本地构建两个小辅助镜像（需要联网，不会重新下载浏览器），等所有服务就绪——配置了健康检查的必须通过——才返回。
 
-整套栈包含六个服务：
+顺利时命令正常结束，`docker compose ps` 里没有服务在反复重启或已退出。然后打开 **[http://localhost:8080](http://localhost:8080/)**。
 
-| 服务 | 作用 |
-| --- | --- |
-| `api` | FastAPI、调度器以及全部后台循环：对话、HTTP 采集、浏览器采集和邮件。 |
-| `web` | Next.js 前端服务，与 `api` 使用同一个镜像。 |
-| `proxy` | nginx，监听 `127.0.0.1:8080`，转发 API 与前端请求。 |
-| `postgres` | 应用数据库。 |
-| `s3` | MinIO 证据存储，保存页面存档与截图。 |
-| `egress` | Squid 代理，执行目标策略并提供受控的出站访问。 |
+如果命令报错，或者有容器一直不健康，说明还没就绪，页面也打不开：先看 `docker compose ps` 和 `docker compose logs`（后面加上服务名可以缩小范围），不要反复重试。`curl --fail http://localhost:8080/api/v1/health/ready` 应当返回 `{"status":"ready"}`。
 
-打开 **[localhost:8080](http://localhost:8080/)**，使用 `.env` 中的管理员邮箱和密码登录。若未创建管理员，请参阅[创建管理员或邀请](#创建管理员或邀请)。
+站点只绑定在运行 Docker 这台机器的 `127.0.0.1` 上。用这台机器的浏览器打开，或者从你自己的机器建一条 SSH 隧道。
 
-默认仅绑定本机访问。更改 `WEBMONITOR_HTTP_PORT` 时，请把 `APP_ORIGIN` 同步改为相同的协议、主机和端口。本地 HTTP 部署需保留 `DEVELOPMENT_MODE=true`，否则 `http://` 源地址会被拒绝。完整配置见[配置参考](https://github.com/webmonitor/WebMonitor-Agent/blob/main/.env.example)。
+## 第一次使用
 
-## 运维
+用 `.env` 里的 `ADMIN_EMAIL` 和 `ADMIN_PASSWORD` 登录。首次启动会自动创建这个账户；如果没创建成功，见[常见问题](#常见问题)。侧栏顶部的 **EN / 中文** 可以切换界面语言。
 
-所有命令都在部署目录执行。正常安装只有一个 `compose.yaml`，因此不需要 `-f` 参数。
+### 先建一个通知组
 
-### 拉取、启动、检查与日志
+**通知** → **通知组** → **新建**，填名称，收件人每行一个（用逗号或空格分隔也可以），点 **保存**。
 
-```sh
-docker compose pull api web
-docker compose up -d --wait
-docker compose ps
-docker compose logs -f api web proxy
-curl --fail http://localhost:8080/api/v1/health/ready
+通知组只有管理员能建，成员需要请管理员创建。监控通过通知组发信，一个组可以放多个邮箱。之后如果改了组里的收件人，需要再确认一次监控，新名单才会生效。
+
+### 描述你要什么
+
+点 **新对话**，把需求写进去，例如[它能帮你盯什么](#它能帮你盯什么)里的句子。Enter 发送，Shift+Enter 换行；跑得太久就点方块按钮停止。
+
+接下来会看到两件事：
+
+- 助手打开页面，并出现一条 **查看 N 步操作** 的记录，说明它做了什么：读取页面、确认通知组、整理设置。
+- 如果还缺关键信息（多久检查一次、什么条件下提醒、通知给谁），它会先问你，而不是自己编。在同一个对话里回答就行。
+
+### 核对预览再创建
+
+在开始定时检查之前，右侧（窄屏时在对话里）会出现一张确认卡片，包含：
+
+- 监控名称、检查频率、页面地址和时区，以及这张预览的有效期
+- **采集到的内容**：它读到的字段，以及这个页面上真实的取值
+- **满足条件时通知**：触发邮件的规则
+- **收件人**：会收到邮件的地址
+- 采集时留下的 **页面截图** / **页面存档**
+- **预览通知邮件**：真实邮件正文
+- 只读到部分页面时的提醒，例如 **检查范围覆盖页面的一部分**
+
+哪里不对就在对话里说，助手会重新采集一张新的卡片。**重新预览** 用同样的设置再采一次；还没有采集结果时点 **试采集一次**。
+
+**创建监控** 这一下才是开始定时检查的动作。卡片显示 **预览已过期** 时，先重新预览——一张预览的有效期是 60 分钟。
+
+### 创建之后
+
+- 左侧 **监控** 里出现这项监控，并显示它的检查间隔。点进去可以看到 **上次检查**、**下次检查**、**检查频率**、**采集方式**，往下是 **最近检查**、**当前内容** 和 **最近事件**。
+- **暂停** / **恢复** 停下或继续计划；**立即检查** 马上跑一次。
+- **修改设置** 会打开这项监控对应的对话。说清楚要改什么，核对新预览后点 **保存修改**；保存会重新建立基线。
+- **事件** 汇总所有发现，可以切换 **全部** / **未读**，也可以 **标为已读**。
+- **通知** → **投递记录** 列出每一封邮件：收件人、状态、尝试次数、正文，失败时还有原因。
+
+第一次成功检查只记录起始内容，不发邮件；从第二次检查开始比较变化。预览从不发邮件。某次检查失败时，监控继续用上一次成功的内容作比较基线。
+
+## 邮件提醒
+
+把下面几行加进 `.env`，然后重新应用：
+
+```dotenv
+SMTP_HOST=smtp.example.com
+SMTP_PORT=465
+SMTP_USERNAME=alert@example.com
+SMTP_PASSWORD=你的 SMTP 密码
+SMTP_USE_SSL=true
+SMTP_STARTTLS=false
+MAIL_FROM=WebMonitor <alert@example.com>
 ```
 
-`docker compose restart api` 只重启应用进程，不会停止 PostgreSQL 和 MinIO。停止、重启或重建这两个容器会丢失数据，详见[数据寿命](#数据寿命升级与回退)。
+```sh
+docker compose up -d --wait
+```
 
-### 创建管理员或邀请
+几条关键规则：
 
-首次启动只有在 `ADMIN_EMAIL` 与 `ADMIN_PASSWORD` 均已设置且用户表为空时创建管理员。若没有配置，可随时交互式创建：
+- `SMTP_USE_SSL` 与 `SMTP_STARTTLS` 必须恰好一个为 `true`，选邮件服务商文档里写的那种；465 通常是 SSL，587 通常是 STARTTLS。
+- `MAIL_FROM` 必须是真实地址，多数服务商要求它与登录账号一致。
+- 服务商要求认证时，`SMTP_USERNAME` 和 `SMTP_PASSWORD` 要同时填；只填一个等于不启用认证。
+
+应用里没有 SMTP 设置页，这个文件是唯一的配置位置。不配也能用：监控照常运行、事件照常记录，只是邮件发不出去，原因会写在 **投递记录** 里。
+
+`已发送` 表示邮件服务器已经接收这封信，是否进入收件箱由收件方决定，同事说没收到时先看垃圾邮件。临时性的发送失败会自动重试，最多三次；配置错误则直接记为失败。
+
+## 常见问题
+
+**页面打不开。**
+`docker compose ps` 里配置了健康检查的服务必须显示 `healthy`，也不能有服务在反复重启或已退出；`docker compose logs api web proxy` 能看出是哪一个停了。端口被占用时，把 `WEBMONITOR_HTTP_PORT` **和** `APP_ORIGIN` 一起改到新端口，再执行 `docker compose up -d --wait`。
+
+**在另一台电脑上打不开。**
+站点只绑定在 Docker 主机的 `127.0.0.1`，这是有意的。请在那台机器上打开，或者修改 `compose.yaml` 里的端口绑定，并把 `APP_ORIGIN` 改成你实际使用的地址；对外提供前请自行加上 HTTPS 反向代理。
+
+**登录提示邮箱或密码不正确，或者根本没有管理员。**
+现在补建一个：
 
 ```sh
 docker compose exec api webmonitor admin-create --email admin@example.com
 ```
 
-命令会两次提示输入 12–128 字符的密码；没有默认密码。
+命令会两次提示输入 12–128 个字符的密码。`.env` 里的 `ADMIN_EMAIL` 和 `ADMIN_PASSWORD` 只在首次启动、用户表为空时生效。
 
-要邀请成员，请签发一个绑定邮箱、只能使用一次的邀请链接：
+**怎么给同事开账号？**
 
 ```sh
 docker compose exec api webmonitor invite-create --email member@example.com --ttl-hours 24
 ```
 
-打印出的链接基于 `APP_ORIGIN`，并在指定小时数后过期（1–168，默认 24）。系统中必须已有活跃管理员。若 `REGISTRATION_ALLOWED_EMAILS` 非空，被邀请地址还必须出现在该逗号分隔列表中。
+把打印出来的链接用可靠渠道发给对方。链接只能使用一次，绑定这个邮箱，24 小时后过期（可设 1–168 小时），并且系统中必须已有管理员。对方打开后设置显示名称和 12–128 个字符的密码。
 
-收件人由管理员在通知组中维护。登录后创建通知组并添加邮箱，创建监控时再选择该通知组。投递记录中的 `sent` 表示邮件服务器已接收，不代表目标收件箱已经收到。
+**对话里说目标地址不在允许范围内。**
+只接受公网 `http://` 或 `https://` 页面，端口限 80 或 443。内网和 localhost 地址、其他端口、需要登录的页面都不能监控。
 
-## 数据寿命、升级与回退
+**采集到的内容是空的，或者只有页面的一部分。**
+助手先读 HTML，遇到需要 JavaScript 才出现的数据会改用浏览器打开页面。它仍然读不到 iframe 与 Shadow DOM 里的内容、登录之后的内容，以及拦截自动化的页面。预览卡片上的提醒会说明只读到了一部分；如果卡片里的值本身就是空的，监控就没有可比较的内容——把要关注的位置描述得更具体，或者换一个页面、换一个字段。
 
-> **该部署按临时环境设计。** 它没有声明任何持久卷。停止、重启或重建 PostgreSQL 或 MinIO 容器会丢失其数据，包括账户、监控、草稿、事件和已保存的页面证据。仅重启 `api` 不会影响这两个容器。
+**创建监控按钮是灰的。**
+还没有可用的预览：点 **试采集一次**；过期了就点 **重新预览**。如果 **收件人** 显示「还没有收件人」，先到通知组里加收件人。
 
-`compose.yaml` 中的限制是明确的：PostgreSQL 数据位于 512 MiB 的 tmpfs，MinIO 数据位于 512 MiB 的 tmpfs，应用容器的 `/tmp` 为 128 MiB tmpfs。因此数据寿命等同于这些容器的寿命。分发的文件中没有备份任务、导出命令或迁移工具。
+**邮件没收到。**
+打开 **通知** → **投递记录**。`已发送` 表示服务器已接收，去垃圾邮件里找；`失败` 后面写着 SMTP 返回的错误。监控的第一次检查本来就不发信。检查持续失败时，同一个原因只会发一封失败通知，恢复正常后再发一封恢复通知。
 
-数据库结构在启动时通过 SQLAlchemy `create_all` 创建，没有 Alembic 迁移。现有数据库不会跨版本迁移，版本之间的 schema 兼容性也不作保证。
+**改了收件人却没生效。**
+收件人来自通知组。改完组之后，用 **修改设置** → **保存修改** 再确认一次监控；之后第一次成功检查会重建基线。
 
-### 升级
+**检查频率能设多快？**
+1 分钟到 24 小时。间隔越短，对目标站点的请求越多，这台机器的负载也越高。
 
-1. 把 `.env` 中的 `WEBMONITOR_IMAGE` 改为新版本标签。
-2. 拉取并重建应用服务。
+**需要登录才能看的页面能监控吗？**
+不能。采集不会使用你的账号、Cookie 或凭证。
+
+## 更新、回退与数据保留
+
+### 更新
+
+把 `.env` 里的 `WEBMONITOR_IMAGE` 改成新版本标签，例如 `ghcr.io/webmonitor/webmonitor-agent:1.0.0`，然后应用：
 
 ```sh
 docker compose pull api web
 docker compose up -d --wait
 ```
 
-仅更换应用镜像时 PostgreSQL 可能继续运行，但这并不构成受支持的原位升级；不存在迁移路径。如果新版本改变了数据库结构，应从空存储开始，不要把旧数据库带入新版本。
+`:latest` 跟随稳定版；固定版本号才能让部署可重复。部署文件来自 `main` 分支，请保留你实际启动时用的那一份。
+
+数据格式在启动时创建，不会跨版本迁移。新版本如果改了存储方式，请从空数据开始，不要沿用旧数据库。
 
 ### 回退
 
-把 `WEBMONITOR_IMAGE` 改回之前的标签，再执行：
+把 `WEBMONITOR_IMAGE` 改回上一个标签，执行同样两条命令。旧版本不一定能读新版本写下的数据。
 
-```sh
-docker compose pull api web
-docker compose up -d --wait
-```
+> **数据只在容器活着的时候存在。** 这套部署没有持久卷：数据库和证据存储都是内存支撑的临时目录。停止、重启或重建 `postgres` 或 `s3` 容器，账号、监控、草稿、事件、截图和页面存档都会消失；`docker compose down` 会移除这些容器，数据也随之消失。只执行 `docker compose restart api` 不受影响。这里没有备份任务、导出命令或恢复工具——数据重要的话，请自己另存，并保留 `.env` 以便重建同样的栈。
 
-回退同样受这些限制：没有降级迁移，较新版本写入的数据可能不兼容，停止或重建数据容器也会将其清空。需要可重复部署时，请固定 `1.0.0` 这样的确切版本，并在部署配置中记录该标签；`latest` 会随稳定版发布移动。
+## 开发说明
 
-## 从源码构建
+<details>
+<summary>从源码构建、镜像发布与内部结构</summary>
 
-只有源码开发路径需要克隆仓库；上面的发布镜像安装有意不依赖仓库。
+只有改源码才需要克隆仓库：
 
 ```sh
 git clone https://github.com/webmonitor/WebMonitor-Agent.git
 cd WebMonitor-Agent
-```
-
-按上面的模板创建 `.env`；仓库中的 `.env.example` 列出了完整的开发配置，可作参考。然后使用构建覆盖文件构建并启动：
-
-```sh
+cp .env.example .env
 docker compose -f compose.yaml -f compose.build.yaml up --build -d --wait
 ```
 
-`compose.build.yaml` 为应用添加上构建配置；`compose.yaml` 是发布镜像使用的运行定义。正常使用发布镜像安装时不要加入该构建覆盖文件。开发栈后续命令需保留两个 `-f` 参数。
+`.env` 按上面的说明填写，`.env.example` 列出了全部开发配置。后续命令都要保留两个 `-f` 参数。构建会安装 Chromium，耗时数分钟。运行中的 `web` 容器里只有编译好的前端服务，前端工具请在容器外使用。
 
-构建使用 `deploy/Dockerfile`，会安装 Chromium，耗时数分钟。构建出的运行镜像不是前端开发环境：`web` 服务只包含编译后的 Next.js standalone 服务与 Node，不包含 pnpm 或前端源码。前端工具应在运行容器之外使用。
+推送到 `main` 会构建 `:main` 和 `:sha-<短哈希>` 开发镜像。`vX.Y.Z` 标签会先校验 `pyproject.toml`、`src/webmonitor/__init__.py` 和 `web/package.json` 中声明的版本，再发布 `:X.Y.Z`、`:X.Y` 与 `:latest` 并创建 Release。应用镜像同时构建 `linux/amd64` 与 `linux/arm64`，承载 API 与前端；两个辅助镜像由 `deploy/` 下的文件在本地构建。
 
-## 部署边界与功能限制
+这套栈面向本机使用：只绑定 `127.0.0.1`，不做 TLS，不保存持久状态。
 
-下载得到的 Compose 栈面向本机试用与开发，不是生产平台。代理只绑定 `127.0.0.1`，不终止 TLS，全部状态位于 tmpfs，也没有备份、迁移路径、高可用或水平扩展。若要对外提供服务，应置于自己的 TLS 反向代理与运维控制之后，并相应设置 `APP_ORIGIN` 与 `DEVELOPMENT_MODE`。
-
-功能限制：
-
-- 目标必须是公网 `http://` 或 `https://` 地址，端口限 80 或 443。私有、环回、链路本地、元数据和容器内部地址都会被拒绝。
-- `TARGET_POLICY` 默认为 `public`。`allowlist` 与 `any` 需要 `DEVELOPMENT_MODE=true`，只适用于受控环境（例如独立的 mocksite 项目）；不要在面向公网的部署中启用。
-- 检查间隔为 1 分钟至 24 小时。
-- iframe 和 Shadow DOM 内的内容不会被提取，预览会报告这些及其他采集范围限制。
-- 邮件是唯一通知渠道；收件人来自管理员维护的通知组。
-- 首次成功检查只建立基线，失败的检查保留上一次成功的基线；预览从不发送邮件。
-- 两个服务共用发布镜像，但 `s3`、`egress` 辅助镜像与 nginx 配置由下载的文件构建或加载，不包含在该镜像中。
-
-## 发布与版本策略
-
-- `main` 是开发分支。推送到该分支会构建 `:main` 与 `:sha-<短哈希>` 镜像；它们是开发产物，不是发布版本，也永远不会移动 `:latest`。
-- 基础 `compose.yaml` 默认使用 `:latest`，并在启动时拉取。需要固定版本时，设置 `WEBMONITOR_IMAGE=ghcr.io/webmonitor/webmonitor-agent:1.0.0`。
-- 推送 `vX.Y.Z` 标签时，先校验标签与 `pyproject.toml`、`src/webmonitor/__init__.py`、`web/package.json` 中声明的版本是否一致。
-- 稳定版标签发布 `:X.Y.Z`、`:X.Y` 和 `:latest`，并创建 GitHub Release。`latest` 只随稳定版移动；`v1.2.3-rc.1` 这类预发布版不会移动它。
-- 镜像在 `linux/amd64` 与 `linux/arm64` 上原生构建，再合并为一个多架构 manifest。
-- 公开包为 `ghcr.io/webmonitor/webmonitor-agent`。旧的 `agent-api`、`agent-web` 包（包括其 `main` 标签）已删除，不要继续引用。
-- 引导文件来自 `main`。请同时记录审阅后的部署文件与所选镜像版本；只修改镜像标签不会更新这些文件。
-
-## 关于 WebMonitor
-
-WebMonitor-Agent 是 WebMonitor 当前持续开发的版本，采用对话创建、预览确认与按条件通知的使用方式。
-
-如果你希望直接填写 XPath 来跟踪页面区域，可使用[原版 WebMonitor](https://github.com/webmonitor/WebMonitor)。原版支持公开任务与订阅，目前以维护和问题修复为主。
+</details>
 
 ## 许可证
 
