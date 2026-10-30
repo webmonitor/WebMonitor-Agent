@@ -91,8 +91,8 @@ services:
 
   api:
     <<: *runtime
-    image: ${WEBMONITOR_IMAGE:-webmonitor-agent:local}
-    build: {context: ., dockerfile: deploy/Dockerfile}
+    image: ${WEBMONITOR_IMAGE:-ghcr.io/webmonitor/webmonitor-agent:latest}
+    pull_policy: always
     command: [serve]
     cpus: 2
     mem_limit: 2g
@@ -117,8 +117,8 @@ services:
   # /app/web/.next/cache and /tmp, which the read-only root plus tmpfs provides.
   web:
     <<: *runtime
-    image: ${WEBMONITOR_IMAGE:-webmonitor-agent:local}
-    build: {context: ., dockerfile: deploy/Dockerfile}
+    image: ${WEBMONITOR_IMAGE:-ghcr.io/webmonitor/webmonitor-agent:latest}
+    pull_policy: always
     entrypoint: [node, /app/web/server.js]
     networks: [frontend]
     depends_on:

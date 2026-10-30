@@ -1,0 +1,14 @@
+# Source development only. Normal deployments use `docker compose up -d --wait`.
+#
+#   docker compose -f compose.yaml -f compose.build.yaml up --build -d --wait
+#
+# Fixed local tags prevent source builds from overwriting a published image tag.
+services:
+  api:
+    image: webmonitor-agent:local
+    pull_policy: build
+    build: {context: ., dockerfile: deploy/Dockerfile}
+  web:
+    image: webmonitor-agent:local
+    pull_policy: build
+    build: {context: ., dockerfile: deploy/Dockerfile}

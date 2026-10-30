@@ -16,9 +16,8 @@
 #   pull request        -> build only, never push (paths filter below)
 #   workflow_dispatch   -> build and push :main (no :latest)
 #
-# Packages are published private. Making them public is a one-time manual step in
-# the package settings UI: GitHub exposes no API for container visibility. Once a
-# package is public it cannot be made private again.
+# This package is public and supports anonymous pulls. Visibility is managed in
+# the package settings UI, separately from this publishing workflow.
 name: docker-image
 
 on:
@@ -32,7 +31,7 @@ on:
       - "src/**"
       - "web/**"
       - "tests/**"
-      - "compose.yaml"
+      - "compose*.yaml"
       - "pyproject.toml"
       - "requirements.txt"
   workflow_dispatch:
@@ -203,21 +202,26 @@ jobs:
           set -eu
           version="${TAG#v}"
           notes=$(cat <<'EOF'
-          Container image (linux/amd64 + linux/arm64), one artifact for both Compose services:
+          Public container image (linux/amd64 + linux/arm64), shared by the API and frontend:
 
-          ```
+          ```sh
           docker pull ghcr.io/REPO:VERSION
           ```
 
-          Run it instead of building from source — the checkout still supplies
-          compose.yaml, the proxy config and the seccomp profile:
+          No registry login or repository clone is required. Follow the README to
+          download the deployment files and create your own `.env`. Set its image:
 
-          ```
-          echo "WEBMONITOR_IMAGE=ghcr.io/REPO:VERSION" >> .env
-          docker compose -f compose.yaml -f compose.ghcr.yaml up -d --wait
+          ```dotenv
+          WEBMONITOR_IMAGE=ghcr.io/REPO:VERSION
           ```
 
-          See the README for the required .env values.
+          Start from the deployment directory:
+
+          ```sh
+          docker compose up -d --wait
+          ```
+
+          Setup, configuration and data-retention limits: https://github.com/REPO#readme
           EOF
           )
           repo_lower=$(printf '%s' "$REPO" | tr '[:upper:]' '[:lower:]')
