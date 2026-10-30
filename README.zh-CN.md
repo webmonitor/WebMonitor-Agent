@@ -50,7 +50,9 @@ WebMonitor-Agent 是一个可自行部署的网页监控助手。粘贴链接，
 
 **已有部署？** 使用管理员提供的地址登录。新成员需要管理员签发的邀请链接。
 
-**自行部署？** 需要 Docker Engine、Docker Compose，以及兼容 OpenAI Chat Completions 的模型服务。邮件提醒还需要可用的 SMTP 服务。
+**自行部署？** 需要 Docker Engine、Docker Compose，以及兼容 OpenAI Chat Completions 的模型服务。邮件提醒还需要可用的 SMTP 服务。镜像提供 `linux/amd64` 与 `linux/arm64` 两种架构。
+
+### 使用发布镜像
 
 ```sh
 git clone https://github.com/webmonitor/WebMonitor-Agent.git
@@ -58,16 +60,23 @@ cd WebMonitor-Agent
 cp .env.example .env
 ```
 
-已有 `.env` 时保留原文件。启动前设置：
+仓库提供 `compose.yaml`、反向代理配置与浏览器 seccomp 配置，应用本体来自 GitHub Container Registry。启动前在 `.env` 中设置：
 
 | 配置项 | 填写内容 |
 | --- | --- |
+| `WEBMONITOR_IMAGE` | 要使用的版本，例如 `ghcr.io/webmonitor/webmonitor-agent:0.1.0`；留空则改为从源码构建 |
 | `ADMIN_EMAIL`、`ADMIN_PASSWORD` | 初始管理员邮箱与密码，密码为 12–128 字符 |
 | `SECRET_KEY` | 至少 32 字符的随机密钥 |
 | `POSTGRES_PASSWORD` | 数据库密码 |
 | `OPENAI_API_KEY`、`OPENAI_BASE_URL`、`OPENAI_MODEL` | 模型服务的密钥、接口地址与模型名称 |
 
 请将示例中的模型地址和名称改为实际可用的服务。首次启动会在没有用户时创建管理员；修改配置不会重置已有账户。
+
+```sh
+docker compose -f compose.yaml -f compose.ghcr.yaml up -d --wait
+```
+
+两个应用服务共用同一个镜像：`api` 运行 FastAPI 与全部后台循环，`web` 运行 Next.js 前端。`docker compose pull` 会更新镜像；只执行 `docker compose up` 时仍从源码构建。
 
 <details>
 <summary>启用邮件提醒</summary>
@@ -78,38 +87,22 @@ cp .env.example .env
 
 </details>
 
-> **保留数据：** 随附部署用于本机试用与开发，数据库和页面存档存储均为临时存储。停止、重启或重建 PostgreSQL、MinIO 数据容器会丢失账户、监控和历史记录。长期使用前需配置持久存储与备份。
+<details>
+<summary>改为从源码构建</summary>
 
 ```sh
 docker compose up --build -d --wait
 ```
 
+该命令在本地构建 `deploy/Dockerfile`，需要下载 Chromium，耗时数分钟。基于代码仓库的开发仍走这条路径；`compose.ghcr.yaml` 只是发布镜像的覆盖文件。
+
+</details>
+
+> **保留数据：** 随附部署用于本机试用与开发，数据库和页面存档存储均为临时存储。停止、重启或重建 PostgreSQL、MinIO 数据容器会丢失账户、监控和历史记录。长期使用前需配置持久存储与备份。
+
 打开 **[localhost:8080](http://localhost:8080/)**，使用管理员邮箱和密码登录，开始第一个对话。
 
 默认仅向本机开放访问。更改端口时同步调整 `WEBMONITOR_HTTP_PORT` 与 `APP_ORIGIN`；本地 HTTP 部署保留 `DEVELOPMENT_MODE=true`。完整配置见[配置示例](./.env.example)。
-
-**预构建镜像。** 每次发布都会由 `docker-image` 工作流构建多架构镜像（`linux/amd64` 与 `linux/arm64`）并推送到 GitHub Container Registry。直接拉取发布版本（把版本号换成你要用的）即可跳过编译：
-
-```sh
-docker pull ghcr.io/webmonitor/webmonitor-agent-api:0.1.0
-docker pull ghcr.io/webmonitor/webmonitor-agent-web:0.1.0
-```
-
-通过覆盖两个服务的镜像让 Compose 使用它们；数据库、对象存储、出网代理与反向代理仍来自仓库（`s3` 与 `egress` 只是薄封装，仍在本地构建）：
-
-```sh
-docker compose -f compose.yaml -f images.yaml up -d --wait
-```
-
-`images.yaml` 内容：
-
-```yaml
-services:
-  api: {image: "ghcr.io/webmonitor/webmonitor-agent-api:0.1.0"}
-  web: {image: "ghcr.io/webmonitor/webmonitor-agent-web:0.1.0"}
-```
-
-这些包默认是私有的；在包设置里一次性改为公开（GitHub 没有容器可见性的 API），或先执行 `docker login ghcr.io`。不加覆盖文件时 Compose 仍从源码构建。
 
 ## 关于 WebMonitor
 

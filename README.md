@@ -50,7 +50,9 @@ By default, monitoring supports public HTTP/HTTPS pages with check intervals fro
 
 **Joining an existing instance?** Sign in at the address provided by your administrator. New members need an invitation link issued by the administrator.
 
-**Hosting your own?** You need Docker Engine, Docker Compose, and a model service compatible with OpenAI Chat Completions. Email alerts also require an SMTP service.
+**Hosting your own?** You need Docker Engine, Docker Compose, and a model service compatible with OpenAI Chat Completions. Email alerts also require an SMTP service. Images are published for `linux/amd64` and `linux/arm64`.
+
+### Run the released image
 
 ```sh
 git clone https://github.com/webmonitor/WebMonitor-Agent.git
@@ -58,16 +60,23 @@ cd WebMonitor-Agent
 cp .env.example .env
 ```
 
-Keep your existing `.env` if you already have one. Set these values before starting:
+The checkout supplies `compose.yaml`, the reverse-proxy configuration and the browser seccomp profile; the application itself comes from GitHub Container Registry. Set these values in `.env` before starting:
 
 | Setting | What to enter |
 | --- | --- |
+| `WEBMONITOR_IMAGE` | The release you want, e.g. `ghcr.io/webmonitor/webmonitor-agent:0.1.0`; leave it empty to build from source instead |
 | `ADMIN_EMAIL`, `ADMIN_PASSWORD` | Your initial administrator email and password; the password must be 12–128 characters |
 | `SECRET_KEY` | A random key of at least 32 characters |
 | `POSTGRES_PASSWORD` | Your database password |
 | `OPENAI_API_KEY`, `OPENAI_BASE_URL`, `OPENAI_MODEL` | Your model service's API key, endpoint, and model name |
 
 Replace the example model endpoint and name with those of your service. The first startup creates an administrator when there are no users. Changing these settings does not reset existing accounts.
+
+```sh
+docker compose -f compose.yaml -f compose.ghcr.yaml up -d --wait
+```
+
+The two application services share one image: `api` runs the FastAPI server and every background loop, `web` runs the Next.js frontend. `docker compose pull` picks up the image; `docker compose up` alone keeps building from source.
 
 <details>
 <summary>Enable email alerts</summary>
@@ -78,38 +87,22 @@ After signing in, an administrator creates notification groups and adds recipien
 
 </details>
 
-> **Keep your data:** The included deployment is for local evaluation and development, with temporary database and page archive storage. Stopping, restarting, or recreating the PostgreSQL or MinIO containers loses their data, including accounts, monitors, and history. Configure persistent storage and backups before long-term use.
+<details>
+<summary>Build from source instead</summary>
 
 ```sh
 docker compose up --build -d --wait
 ```
 
+This builds `deploy/Dockerfile` locally, which downloads Chromium and takes several minutes. Development against a checkout still uses this path; `compose.ghcr.yaml` is only the released-image overlay.
+
+</details>
+
+> **Keep your data:** The included deployment is for local evaluation and development, with temporary database and page archive storage. Stopping, restarting, or recreating the PostgreSQL or MinIO containers loses their data, including accounts, monitors, and history. Configure persistent storage and backups before long-term use.
+
 Open **[localhost:8080](http://localhost:8080/)**, sign in with the administrator email and password, and start your first conversation.
 
 Access is local-only by default. If you change the port, update both `WEBMONITOR_HTTP_PORT` and `APP_ORIGIN`; keep `DEVELOPMENT_MODE=true` for local HTTP. See the [configuration example](./.env.example) for all settings.
-
-**Prebuilt images.** Every release publishes multi-architecture images (`linux/amd64` and `linux/arm64`) to GitHub Container Registry, built by the `docker-image` workflow. Pull a release (substitute the version you want) and skip compiling:
-
-```sh
-docker pull ghcr.io/webmonitor/webmonitor-agent-api:0.1.0
-docker pull ghcr.io/webmonitor/webmonitor-agent-web:0.1.0
-```
-
-Point Compose at them by overriding the two service images; the database, object store, egress proxy and reverse proxy still come from the repository (the `s3` and `egress` helper images are thin wrappers and are still built locally):
-
-```sh
-docker compose -f compose.yaml -f images.yaml up -d --wait
-```
-
-with `images.yaml`:
-
-```yaml
-services:
-  api: {image: "ghcr.io/webmonitor/webmonitor-agent-api:0.1.0"}
-  web: {image: "ghcr.io/webmonitor/webmonitor-agent-web:0.1.0"}
-```
-
-The packages are private by default; either set them public once in the package settings (GitHub has no API for container visibility) or `docker login ghcr.io` first. Compose without the override file keeps building from source.
 
 ## About WebMonitor
 

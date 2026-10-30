@@ -7,6 +7,13 @@
 !tests/**
 !deploy/
 !deploy/**
+!web/
+!web/**
+# Build inputs of the Next.js stage only; the build reinstall from the lockfile.
+web/node_modules
+web/.next
+web/.env*
+web/*.tsbuildinfo
 **/__pycache__/
 **/*.pyc
 .env

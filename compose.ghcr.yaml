@@ -1,0 +1,19 @@
+# Runs the released image instead of building the application from source.
+#
+#   docker compose -f compose.yaml -f compose.ghcr.yaml up -d --wait
+#
+# Set WEBMONITOR_IMAGE in .env to pin a release, e.g.
+#   WEBMONITOR_IMAGE=ghcr.io/webmonitor/webmonitor-agent:0.1.0
+#
+# One image backs both `api` and `web`; only the entrypoint differs.
+# `pull_policy: always` keeps Compose from rebuilding that image from the
+# checkout. The `s3` and `egress` helper images still build locally — they are
+# thin wrappers around upstream images that carry their own attribution
+# metadata, and the `proxy` service mounts this repository's nginx.conf.
+services:
+  api:
+    image: ${WEBMONITOR_IMAGE:-ghcr.io/webmonitor/webmonitor-agent:main}
+    pull_policy: always
+  web:
+    image: ${WEBMONITOR_IMAGE:-ghcr.io/webmonitor/webmonitor-agent:main}
+    pull_policy: always

@@ -91,7 +91,7 @@ services:
 
   api:
     <<: *runtime
-    image: webmonitor-agent:local
+    image: ${WEBMONITOR_IMAGE:-webmonitor-agent:local}
     build: {context: ., dockerfile: deploy/Dockerfile}
     command: [serve]
     cpus: 2
@@ -113,10 +113,13 @@ services:
       timeout: 3s
       retries: 60
 
+  # Same image as `api`: one artifact, two entrypoints. Next.js needs a writable
+  # /app/web/.next/cache and /tmp, which the read-only root plus tmpfs provides.
   web:
     <<: *runtime
-    image: webmonitor-web:local
-    build: {context: ./web, dockerfile: ../deploy/web.Dockerfile}
+    image: ${WEBMONITOR_IMAGE:-webmonitor-agent:local}
+    build: {context: ., dockerfile: deploy/Dockerfile}
+    entrypoint: [node, /app/web/server.js]
     networks: [frontend]
     depends_on:
       api: {condition: service_healthy}
