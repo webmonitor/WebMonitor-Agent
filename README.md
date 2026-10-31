@@ -275,18 +275,17 @@ Currently supported targets are public pages accessible without signing in.
 Set `WEBMONITOR_IMAGE` in `.env` to the new tag, for example `ghcr.io/webmonitor/webmonitor-agent:1.0.2`, then apply it:
 
 ```sh
-docker compose down
 docker compose pull api web
-docker compose up -d --wait
+docker compose up -d --wait --no-deps api web
 ```
 
 `:latest` follows stable releases; a pinned version keeps an install repeatable. Deployment files come from `main`, so keep the copies you actually started with.
 
-This version starts with a fresh database and evidence store. Do not reuse an older version's storage: accounts, notification groups and monitors must be created again. The default temporary storage is cleared by `docker compose down`; deployments with custom persistent storage must point to empty storage. No data migration or compatibility path is provided. Approved recipients and their notification-group sources are stored directly with each monitor when its preview is confirmed.
+Record the current image version and back up data you need to retain before updating. Check database-format changes between versions: the project does not provide automatic schema migration or downgrade. The commands above update only the application services while leaving the running database and evidence services in place.
 
 ### Roll back
 
-Set `WEBMONITOR_IMAGE` to the previous tag, repeat the commands above and start with fresh storage.
+Set `WEBMONITOR_IMAGE` to the previous tag and repeat the commands above. Use data matching that version; rollback does not convert the database schema.
 
 The default database and evidence store use temporary memory-backed directories. Stopping, restarting or recreating `postgres` or `s3`, or running `docker compose down`, clears accounts, monitors, events and saved pages. `docker compose restart api` preserves the running data services. Configure persistent storage and backups for long-term use, and retain `.env` and deployment files.
 

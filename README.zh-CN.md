@@ -275,18 +275,17 @@ docker compose exec api webmonitor invite-create --email member@example.com --tt
 把 `.env` 里的 `WEBMONITOR_IMAGE` 改成新版本标签，例如 `ghcr.io/webmonitor/webmonitor-agent:1.0.2`，然后应用：
 
 ```sh
-docker compose down
 docker compose pull api web
-docker compose up -d --wait
+docker compose up -d --wait --no-deps api web
 ```
 
 `:latest` 跟随稳定版；固定版本号才能让部署可重复。部署文件来自 `main` 分支，请保留你实际启动时用的那一份。
 
-本版本使用全新的数据库和证据存储，不复用旧版本存储，账户、通知组和监控需要重新创建。默认临时存储会在 `docker compose down` 时清空；使用自定义持久存储的部署需改用空存储。不提供旧数据迁移或兼容路径。预览确认后，已批准的收件人及其通知组来源直接保存在监控记录中。
+更新前记录当前镜像版本，并备份需要保留的数据。跨版本更新时核对数据库格式变化：项目不提供自动表结构迁移或降级。上面的命令只更新应用服务，保留仍在运行的数据库和证据存储服务。
 
 ### 回退
 
-把 `WEBMONITOR_IMAGE` 改回上一个标签，执行上面的命令，并使用空存储重新开始。
+把 `WEBMONITOR_IMAGE` 改回上一个标签，执行上面的命令。使用与该版本匹配的数据；回退不会自动转换数据库结构。
 
 默认数据库和证据存储使用临时内存目录。停止、重启或重建 `postgres`、`s3`，以及执行 `docker compose down`，会清空账户、监控、事件和页面证据。`docker compose restart api` 保留仍在运行的数据服务。长期使用前配置持久存储和备份，并保存 `.env` 与部署文件。
 
