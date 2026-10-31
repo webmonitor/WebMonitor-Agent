@@ -4,7 +4,7 @@ import { AlertTriangle, CheckCircle2, ExternalLink, Mail, RefreshCw } from "luci
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { ApiError } from "@/lib/api/client";
-import { useApproveDraft, useStartPreview, type DraftView } from "@/lib/api/hooks";
+import { useApproveDraft, useConversation, useJobDetail, useStartPreview, type DraftView, type JobView } from "@/lib/api/hooks";
 import { parsePreview, parseSpec, type DraftPreview } from "@/lib/api/preview";
 import { formatBytes, useFormat } from "@/lib/format";
 import { useI18n } from "@/lib/i18n";
@@ -69,6 +69,7 @@ export function CreateMonitorCard({
     formatTimezone,
     formatValue,
     warningText,
+    statusLabel,
   } = useFormat();
   const preview = parsePreview(draft.preview);
   const spec = parseSpec(draft.spec);
@@ -77,6 +78,24 @@ export function CreateMonitorCard({
   // Errors are kept as codes/kinds so the visible text follows the locale.
   const [error, setError] = useState<CardError | null>(null);
   const [approving, setApproving] = useState(false);
+  const conversation = useConversation(conversationId);
+  const [requestedJob, setRequestedJob] = useState<JobView | null>(null);
+  const jobDetail = useJobDetail(requestedJob?.id ?? null);
+  const snapshotJob = conversation.data?.jobs.filter(
+    (job) => job.kind === "preview" && job.draft_id === draft.id && job.revision === draft.revision,
+  ).at(-1);
+  const requested = jobDetail.data ?? requestedJob;
+  const trackedJob = requested?.draft_id === draft.id && requested.revision === draft.revision ? requested : null;
+  const previewJob = trackedJob && (!snapshotJob || trackedJob.created_at >= snapshotJob.created_at)
+    ? trackedJob : snapshotJob;
+  const previewBusy = repreview.isPending || Boolean(previewJob && ["queued", "running"].includes(previewJob.status));
+  const feedback = previewJob && previewJob.status !== "succeeded" ? (
+    <p role={previewJob.status === "failed" ? "alert" : "status"}
+      className={previewJob.status === "failed" ? "text-xs text-error" : "meta"}>
+      {statusLabel(previewJob.status)}
+      {previewJob.error_code ? ` · ${errorText(previewJob.error_code)}` : ""}
+    </p>
+  ) : null;
 
   function describeError(failure: CardError): string {
     switch (failure.kind) {
@@ -94,7 +113,7 @@ export function CreateMonitorCard({
   async function onRepreview() {
     setError(null);
     try {
-      await repreview.mutateAsync(draft.id);
+      setRequestedJob(await repreview.mutateAsync(draft.id));
     } catch (failure) {
       setError(
         failure instanceof ApiError
@@ -108,7 +127,8 @@ export function CreateMonitorCard({
     setError(null);
     setApproving(true);
     try {
-      await approve.mutateAsync({ draftId: draft.id, revision: draft.revision });
+      if (!draft.preview_hash) return;
+      await approve.mutateAsync({ draftId: draft.id, revision: draft.revision, previewHash: draft.preview_hash });
     } catch (failure) {
       setError(
         failure instanceof ApiError
@@ -125,7 +145,7 @@ export function CreateMonitorCard({
   const labels = fieldLabels(spec?.fields ?? []);
   const editing = Boolean(draft.monitor_id);
   const expired = preview ? new Date(preview.expires_at).getTime() <= Date.now() : false;
-  const disabled = approving || approve.isPending || expired || !preview;
+  const disabled = approving || approve.isPending || previewBusy || expired || !preview || !draft.preview_hash;
   const approveLabel = approving
     ? editing
       ? t("chat.approve.savingEdit")
@@ -143,10 +163,11 @@ export function CreateMonitorCard({
           </h2>
           <p className="meta">{t("chat.preview.body")}</p>
         </div>
-        <Button variant="outline" className="w-full" onClick={() => void onRepreview()} disabled={repreview.isPending}>
+        <Button variant="outline" className="w-full" onClick={() => void onRepreview()} disabled={previewBusy}>
           <RefreshCw />
-          {repreview.isPending ? t("chat.preview.opening") : t("chat.preview.run")}
+          {previewBusy ? t("chat.preview.opening") : t("chat.preview.run")}
         </Button>
+        {feedback}
         {error && (
           <p className="text-xs text-error" role="alert">
             {describeError(error)}
@@ -278,12 +299,13 @@ export function CreateMonitorCard({
           variant="ghost"
           className="w-full text-muted-foreground"
           onClick={() => void onRepreview()}
-          disabled={repreview.isPending}
+          disabled={previewBusy || approving}
         >
           <RefreshCw />
-          {repreview.isPending ? t("chat.approve.repreviewing") : t("chat.approve.repreview")}
+          {previewBusy ? t("chat.approve.repreviewing") : t("chat.approve.repreview")}
         </Button>
       </div>
+      {feedback}
 
       {expired && <p className="text-xs text-warning">{t("chat.approve.expired")}</p>}
       {error && (

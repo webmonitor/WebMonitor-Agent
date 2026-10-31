@@ -72,7 +72,7 @@ async def cancel(conversation_id: UUID, session: DatabaseSession, user: Authenti
 async def approve(conversation_id: UUID, payload: ApproveRequest, session: DatabaseSession,
                   user: AuthenticatedUser):
     monitor = await conversations.approve(session, user, conversation_id,
-        draft_id=payload.draft_id, revision=payload.revision)
+        draft_id=payload.draft_id, revision=payload.revision, preview_hash=payload.preview_hash)
     result = drafts.monitor_result(monitor)
     await session.commit()
     return result

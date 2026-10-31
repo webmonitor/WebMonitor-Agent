@@ -2,6 +2,7 @@
 from uuid import UUID
 
 from sqlalchemy import func, select
+from sqlalchemy.dialects.postgresql import distinct_on
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from webmonitor.config import get_settings
@@ -38,7 +39,7 @@ async def list_conversations(session: AsyncSession, user: CurrentUser, limit: in
     query = select(Conversation)
     if user.role != "admin":
         query = query.where(Conversation.user_id == user.user_id)
-    rows = (await session.scalars(query.order_by(Conversation.updated_at.desc())
+    rows = (await session.scalars(query.order_by(Conversation.updated_at.desc(), Conversation.id.desc())
         .limit(limit).offset(offset))).all()
     total = await session.scalar(select(func.count()).select_from(query.subquery()))
     return Page[ConversationView](items=[_conversation_view(row) for row in rows],
@@ -75,7 +76,7 @@ def job_view(job: Job) -> JobView:
 def draft_view(draft: Draft) -> DraftView:
     return DraftView(id=draft.id, conversation_id=draft.conversation_id,
         revision=draft.revision, status=draft.status, spec=draft.spec,
-        spec_hash=draft.spec_hash, preview=draft.preview,
+        spec_hash=draft.spec_hash, preview=draft.preview, preview_hash=draft.preview_hash,
         preview_expires_at=draft.preview_expires_at, monitor_id=draft.monitor_id,
         created_at=draft.created_at, updated_at=draft.updated_at)
 
@@ -90,13 +91,18 @@ async def snapshot(session: AsyncSession, user: CurrentUser,
         .limit(AGENT_HISTORY))).all()
     drafts = (await session.scalars(select(Draft).where(
         Draft.conversation_id == conversation.id).order_by(Draft.created_at, Draft.id))).all()
+    previews = (await session.scalars(select(Job).where(
+        Job.conversation_id == conversation.id, Job.kind == "preview")
+        .ext(distinct_on(Job.draft_id, Job.revision))
+        .order_by(Job.draft_id, Job.revision, Job.created_at.desc(), Job.id.desc()))).all()
+    visible_jobs = sorted([*runs, *previews], key=lambda job: (job.created_at, job.id))
     settings = get_settings()
     return ConversationSnapshot(
         conversation=_conversation_view(conversation),
         messages=[MessageView(id=row.id, role=row.role, content=row.content, job_id=row.job_id,
                               client_message_id=row.client_message_id, created_at=row.created_at)
                   for row in messages],
-        jobs=[job_view(row) for row in reversed(runs)],
+        jobs=[job_view(row) for row in visible_jobs],
         drafts=[draft_view(row) for row in drafts],
         limits=Limits(message_max_chars=settings.message_max_chars,
                       preview_ttl_minutes=settings.preview_ttl_minutes))
@@ -156,8 +162,9 @@ async def cancel(session: AsyncSession, user: CurrentUser, conversation_id: UUID
 
 
 async def approve(session: AsyncSession, user: CurrentUser, conversation_id: UUID, *,
-                  draft_id: UUID, revision: int) -> Monitor:
+                  draft_id: UUID, revision: int, preview_hash: str) -> Monitor:
     from webmonitor.services import drafts
     await require_conversation(session, user, conversation_id)
     return await drafts.publish_draft(session, user, conversation_id=conversation_id,
-                                      draft_id=draft_id, revision=revision)
+                                      draft_id=draft_id, revision=revision,
+                                      preview_hash=preview_hash)

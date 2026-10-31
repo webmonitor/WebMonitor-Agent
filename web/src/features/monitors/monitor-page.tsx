@@ -22,6 +22,7 @@ import { parseSpec } from "@/lib/api/preview";
 import { formatBytes, useFormat } from "@/lib/format";
 import { useI18n } from "@/lib/i18n";
 import { ChangeRows } from "@/features/events/event-card";
+import { ListPagination } from "@/components/list-pagination";
 
 function hostOf(url: string): string {
   try {
@@ -64,7 +65,7 @@ export function MonitorPage({ monitorId }: { monitorId: string }) {
   } = useFormat();
   const monitor = useMonitor(monitorId);
   const jobs = useMonitorJobs(monitorId, 10);
-  const events = useEvents();
+  const events = useEvents(monitorId);
   const pause = usePauseMonitor();
   const resume = useResumeMonitor();
   const run = useRunNow();
@@ -132,17 +133,17 @@ export function MonitorPage({ monitorId }: { monitorId: string }) {
           actions={
             <>
               {row.status === "active" ? (
-                <Button variant="outline" size="sm" onClick={() => void pause.mutateAsync(row.id)} disabled={busy}>
+                <Button variant="outline" size="sm" onClick={() => pause.mutate(row.id)} disabled={busy}>
                   <Pause className="size-3.5" />
                   {t("monitors.action.pause")}
                 </Button>
               ) : (
-                <Button variant="outline" size="sm" onClick={() => void resume.mutateAsync(row.id)} disabled={busy}>
+                <Button variant="outline" size="sm" onClick={() => resume.mutate(row.id)} disabled={busy}>
                   <Play className="size-3.5" />
                   {t("monitors.action.resume")}
                 </Button>
               )}
-              <Button size="sm" onClick={() => void run.mutateAsync(row.id)} disabled={busy}>
+              <Button size="sm" onClick={() => run.mutate(row.id)} disabled={busy || row.status !== "active"}>
                 <Zap className="size-3.5" />
                 {t("monitors.action.runNow")}
               </Button>
@@ -151,10 +152,9 @@ export function MonitorPage({ monitorId }: { monitorId: string }) {
                 size="sm"
                 className="text-muted-foreground"
                 disabled={derive.isPending}
-                onClick={async () => {
-                  const result = await derive.mutateAsync(row.id);
-                  router.push(`/app?conversation=${result.conversation_id}`);
-                }}
+                onClick={() => derive.mutate(row.id, {
+                  onSuccess: (result) => router.push(`/app?conversation=${result.conversation_id}`),
+                })}
               >
                 <Settings2 className="size-3.5" />
                 {t("monitors.action.editSettings")}
@@ -168,6 +168,9 @@ export function MonitorPage({ monitorId }: { monitorId: string }) {
             {row.baseline_status !== "ready" && <Badge tone="warning">{t("monitors.badge.baselinePending")}</Badge>}
           </div>
         </PageHeader>
+        {(pause.error || resume.error || run.error || derive.error) && (
+          <p role="alert" className="mb-4 text-sm text-error">{errorText(pause.error || resume.error || run.error || derive.error)}</p>
+        )}
 
         <dl className="mb-6 grid grid-cols-2 gap-3 lg:grid-cols-4">
           {stats.map((stat) => (
@@ -182,7 +185,7 @@ export function MonitorPage({ monitorId }: { monitorId: string }) {
           <section className="space-y-2">
             <h2 className="section-title">{t("monitors.jobs.title")}</h2>
             {jobs.isPending && <p className="meta">{t("monitors.loadingShort")}</p>}
-            {!jobs.isPending && (jobs.data?.items.length ?? 0) === 0 && (
+            {!jobs.isPending && !jobs.error && (jobs.data?.items.length ?? 0) === 0 && (
               <EmptyState
                 title={t("monitors.jobs.emptyTitle")}
                 description={t("monitors.jobs.emptyBody")}
@@ -219,6 +222,7 @@ export function MonitorPage({ monitorId }: { monitorId: string }) {
                 </li>
               ))}
             </ul>
+            <ListPagination query={jobs} />
           </section>
 
           <aside className="space-y-4">
@@ -259,7 +263,8 @@ export function MonitorPage({ monitorId }: { monitorId: string }) {
                   {t("monitors.events.all")}
                 </Link>
               </div>
-              {monitorEvents.length === 0 ? (
+              {events.error && <p role="alert" className="text-xs text-error">{t("common.listError")}</p>}
+              {!events.error && monitorEvents.length === 0 ? (
                 <p className="meta">{t("monitors.events.empty")}</p>
               ) : (
                 <ul className="space-y-2">
@@ -286,6 +291,7 @@ export function MonitorPage({ monitorId }: { monitorId: string }) {
             <DialogTitle className="text-base">{t("monitors.dialog.title")}</DialogTitle>
           </DialogHeader>
           {detail.isPending && <p className="meta">{t("monitors.loadingShort")}</p>}
+          {detail.error && <p role="alert" className="text-sm text-error">{errorText(detail.error)}</p>}
           {detail.data && (
             <div className="space-y-4 text-[13px]">
               <dl className="grid grid-cols-2 gap-3">

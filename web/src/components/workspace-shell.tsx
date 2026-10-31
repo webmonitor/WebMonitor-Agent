@@ -17,6 +17,7 @@ import { useConversations, useMonitors } from "@/lib/api/hooks";
 import { useAuth } from "@/lib/providers";
 import { useI18n } from "@/lib/i18n";
 import { useFormat } from "@/lib/format";
+import { ListPagination } from "@/components/list-pagination";
 
 const CONVERSATION_PREVIEW = 8;
 
@@ -33,6 +34,7 @@ function ConversationList() {
   if (conversations.isPending) {
     return <p className="px-2 py-1 text-xs text-muted-foreground">{t("common.loading")}</p>;
   }
+  if (conversations.error && items.length === 0) return <ListPagination query={conversations} />;
   if (items.length === 0) {
     return <p className="px-2 py-1 text-xs text-muted-foreground">{t("common.noConversations")}</p>;
   }
@@ -93,6 +95,7 @@ function ConversationList() {
         {expanded ? t("common.collapse") : t("common.allConversations", { count: items.length })}
       </button>
     )}
+    {expanded && <ListPagination query={conversations} />}
     </>
   );
 }
@@ -107,10 +110,12 @@ function MonitorList({ onNavigate }: { onNavigate: () => void }) {
   if (monitors.isPending) {
     return <p className="px-2 py-1 text-xs text-muted-foreground">{t("common.loading")}</p>;
   }
+  if (monitors.error && items.length === 0) return <ListPagination query={monitors} />;
   if (items.length === 0) {
     return <p className="px-2 py-1 text-xs text-muted-foreground">{t("common.noMonitors")}</p>;
   }
   return (
+    <>
     <ul className="space-y-0.5">
       {items.map((monitor) => {
         const active = pathname === `/app/monitors/${monitor.id}`;
@@ -141,6 +146,8 @@ function MonitorList({ onNavigate }: { onNavigate: () => void }) {
         );
       })}
     </ul>
+    <ListPagination query={monitors} />
+    </>
   );
 }
 
@@ -165,6 +172,8 @@ export function WorkspaceShell({ children }: { children: ReactNode }) {
   const pathname = usePathname();
   const router = useRouter();
   const [open, setOpen] = useState(false);
+  const [logoutError, setLogoutError] = useState<Error | null>(null);
+  const { errorText } = useFormat();
   const monitors = useMonitors();
 
   const links = [
@@ -310,11 +319,12 @@ export function WorkspaceShell({ children }: { children: ReactNode }) {
             size="icon"
             className="size-8 text-muted-foreground"
             aria-label={t("common.logout")}
-            onClick={() => void logout()}
+            onClick={() => { setLogoutError(null); void logout().catch(setLogoutError); }}
           >
             <LogOut className="size-4" />
           </Button>
         </div>
+        {logoutError && <p role="alert" className="px-3 pb-2 text-xs text-error">{errorText(logoutError)}</p>}
       </aside>
 
       <div className="flex min-w-0 flex-1 flex-col">

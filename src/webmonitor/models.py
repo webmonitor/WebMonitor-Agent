@@ -1,4 +1,4 @@
-"""The complete relational model: twelve tables, no multi-tenant layer.
+"""The complete relational model, with explicit recipient approvals per monitor.
 
 `jobs` replaces runs, attempts, collection jobs, agent runs and the outbox. A job row
 carries its own lease, attempt history and result, so every asynchronous operation
@@ -201,6 +201,7 @@ class Monitor(UUIDPrimaryKey, Created, Updated, Base):
     interval_seconds: Mapped[int] = mapped_column(Integer)
     timezone: Mapped[str] = mapped_column(String(100))
     notification_group_ids: Mapped[list[str]] = mapped_column(JSONB, default=list, server_default="[]")
+    approved_recipients: Mapped[list[dict[str, Any]]] = mapped_column(JSONB)
     baseline_snapshot_id: Mapped[UUID | None] = mapped_column(index=True)
     baseline_status: Mapped[str] = mapped_column(String(32), default="pending_first_success",
                                                  server_default="pending_first_success")

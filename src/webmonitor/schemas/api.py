@@ -38,6 +38,7 @@ class ConversationCreate(Input):
 class ApproveRequest(Input):
     draft_id: UUID
     revision: int = Field(ge=1, strict=True)
+    preview_hash: str = Field(pattern=r"^[0-9a-f]{64}$")
 
 
 class MemberSpec(Input):
@@ -138,6 +139,7 @@ class DraftView(BaseModel):
     spec: dict[str, Any] | None
     spec_hash: str | None
     preview: dict[str, Any] | None
+    preview_hash: str | None
     preview_expires_at: datetime | None
     monitor_id: UUID | None
     created_at: datetime

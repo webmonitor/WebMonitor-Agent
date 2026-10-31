@@ -46,7 +46,7 @@ async def list_monitors(session: AsyncSession, user: CurrentUser, limit: int,
     query = select(Monitor)
     if user.role != "admin":
         query = query.where(Monitor.user_id == user.user_id)
-    rows = (await session.scalars(query.order_by(Monitor.created_at.desc())
+    rows = (await session.scalars(query.order_by(Monitor.created_at.desc(), Monitor.id.desc())
         .limit(limit).offset(offset))).all()
     total = await session.scalar(select(func.count()).select_from(query.subquery()))
     return Page[MonitorView](items=[monitor_view(row) for row in rows], total=total or 0)
@@ -102,7 +102,7 @@ async def list_monitor_jobs(session: AsyncSession, user: CurrentUser, monitor_id
                             limit: int, offset: int) -> Page:
     monitor = await read_monitor_row(session, user, monitor_id)
     query = select(Job).where(Job.monitor_id == monitor.id, Job.kind == "production")
-    rows = (await session.scalars(query.order_by(Job.created_at.desc())
+    rows = (await session.scalars(query.order_by(Job.created_at.desc(), Job.id.desc())
         .limit(limit).offset(offset))).all()
     total = await session.scalar(select(func.count()).select_from(query.subquery()))
     from webmonitor.services.conversations import job_view

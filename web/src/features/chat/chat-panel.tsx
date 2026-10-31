@@ -141,8 +141,9 @@ export function ChatPanel({
   const composer = useRef<HTMLTextAreaElement>(null);
 
   const snapshot = conversation.data;
-  const running = snapshot?.jobs.filter((job) => ACTIVE.includes(job.status)).at(-1);
-  const lastJob = snapshot?.jobs.at(-1);
+  const agentJobs = snapshot?.jobs.filter((job) => job.kind === "agent");
+  const running = agentJobs?.filter((job) => ACTIVE.includes(job.status)).at(-1);
+  const lastJob = agentJobs?.at(-1);
   const failed = lastJob?.status === "failed" ? lastJob : undefined;
   const stopped = lastJob?.status === "cancelled" ? lastJob : undefined;
   const limit = snapshot?.limits.message_max_chars ?? 32000;
@@ -397,7 +398,9 @@ export function ChatPanel({
                 size="icon"
                 aria-label={t("chat.composer.stop")}
                 className="size-9 shrink-0 rounded-full"
-                onClick={() => void cancel.mutateAsync()}
+                onClick={() => cancel.mutate(undefined, {
+                  onError: (failure) => setError({ code: failure instanceof ApiError ? failure.code : null }),
+                })}
                 disabled={cancel.isPending}
               >
                 <Square className="size-3.5" />

@@ -59,6 +59,7 @@ async def make_monitor(session, user, group) -> Monitor:
         status="active", spec=spec.model_dump(mode="json"), spec_version=1,
         spec_hash=content_hash(spec), collection_mode="http", interval_seconds=60,
         timezone="UTC", notification_group_ids=[str(group.id)],
+        approved_recipients=[{"email": "ops@example.com", "group_ids": [str(group.id)]}],
         baseline_status="pending_first_success", rule_state={}, next_run_at=utc_now())
     session.add(monitor)
     await session.flush()

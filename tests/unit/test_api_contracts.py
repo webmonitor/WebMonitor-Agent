@@ -17,12 +17,16 @@ def test_message_requires_content_and_a_client_id():
     assert PostMessageRequest(content="hello", client_message_id="abc").content == "hello"
 
 
-def test_approval_requires_a_positive_revision_and_no_extra_fields():
-    assert ApproveRequest(draft_id=uuid4(), revision=3).revision == 3
+def test_approval_requires_the_preview_the_user_confirmed():
+    assert ApproveRequest(draft_id=uuid4(), revision=3, preview_hash="a" * 64).revision == 3
     with pytest.raises(ValidationError):
-        ApproveRequest(draft_id=uuid4(), revision=0)
+        ApproveRequest(draft_id=uuid4(), revision=0, preview_hash="a" * 64)
     with pytest.raises(ValidationError):
-        ApproveRequest(draft_id=str(uuid4()), revision=1, preview_id=str(uuid4()))
+        ApproveRequest(draft_id=uuid4(), revision=1)
+    with pytest.raises(ValidationError):
+        ApproveRequest(draft_id=uuid4(), revision=1, preview_hash="not-a-preview-hash")
+    with pytest.raises(ValidationError):
+        ApproveRequest(draft_id=uuid4(), revision=1, preview_hash="a" * 64, preview_id=str(uuid4()))
 
 
 def test_group_members_are_unique_and_normalized():

@@ -1,5 +1,6 @@
 "use client";
-import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
+import { useInfiniteQuery, useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
+import { useMemo } from "react";
 import { api } from "@/lib/api/client";
 import type { components } from "@/lib/api/schema";
 
@@ -26,16 +27,28 @@ function newClientMessageId(): string {
   return random ?? `${Date.now()}-${Math.random().toString(16).slice(2)}`;
 }
 
-function page<T>(path: string, limit = 50): Promise<Page<T>> {
-  return api<Page<T>>(`${path}${path.includes("?") ? "&" : "?"}limit=${limit}&offset=0`);
+function usePagedQuery<T extends { id: string }>(key: readonly unknown[], path: string,
+                                                interval: number, limit = 50) {
+  const query = useInfiniteQuery({
+    queryKey: key,
+    initialPageParam: 0,
+    queryFn: ({ pageParam, signal }) => api<Page<T>>(
+      `${path}${path.includes("?") ? "&" : "?"}limit=${limit}&offset=${pageParam}`, { signal }),
+    getNextPageParam: (last, pages) => {
+      const loaded = pages.reduce((count, page) => count + page.items.length, 0);
+      return loaded < last.total && last.items.length > 0 ? loaded : undefined;
+    },
+    refetchInterval: interval,
+  });
+  const data = useMemo(() => query.data ? {
+    items: [...new Map(query.data.pages.flatMap((page) => page.items).map((row) => [row.id, row])).values()],
+    total: query.data.pages[0]?.total ?? 0,
+  } : undefined, [query.data]);
+  return { ...query, data };
 }
 
 export function useConversations() {
-  return useQuery({
-    queryKey: ["conversations"],
-    queryFn: () => page<ConversationView>("/conversations"),
-    refetchInterval: 15000,
-  });
+  return usePagedQuery<ConversationView>(["conversations"], "/conversations", 15000);
 }
 
 export function useConversation(id: string | null) {
@@ -49,11 +62,7 @@ export function useConversation(id: string | null) {
 }
 
 export function useMonitors() {
-  return useQuery({
-    queryKey: ["monitors"],
-    queryFn: () => page<MonitorView>("/monitors"),
-    refetchInterval: 15000,
-  });
+  return usePagedQuery<MonitorView>(["monitors"], "/monitors", 15000);
 }
 
 export function useMonitor(id: string) {
@@ -65,11 +74,7 @@ export function useMonitor(id: string) {
 }
 
 export function useMonitorJobs(id: string, limit = 10) {
-  return useQuery({
-    queryKey: ["monitor-jobs", id, limit],
-    queryFn: () => page<JobView>(`/monitors/${id}/jobs`, limit),
-    refetchInterval: 5000,
-  });
+  return usePagedQuery<JobView>(["monitor-jobs", id, limit], `/monitors/${id}/jobs`, 5000, limit);
 }
 
 export function useJobDetail(id: string | null) {
@@ -77,31 +82,21 @@ export function useJobDetail(id: string | null) {
     queryKey: ["job", id],
     queryFn: () => api<JobDetail>(`/jobs/${id}`),
     enabled: Boolean(id),
+    refetchInterval: (query) => ACTIVE.includes(query.state.data?.status ?? "") ? 1000 : false,
   });
 }
 
-export function useEvents() {
-  return useQuery({
-    queryKey: ["events"],
-    queryFn: () => page<EventView>("/events"),
-    refetchInterval: 15000,
-  });
+export function useEvents(monitorId?: string) {
+  return usePagedQuery<EventView>(["events", monitorId ?? "all"],
+    monitorId ? `/events?monitor_id=${encodeURIComponent(monitorId)}` : "/events", 15000);
 }
 
 export function useGroups() {
-  return useQuery({
-    queryKey: ["groups"],
-    queryFn: () => page<Group>("/notification-groups"),
-    refetchInterval: 30000,
-  });
+  return usePagedQuery<Group>(["groups"], "/notification-groups", 30000);
 }
 
 export function useDeliveries() {
-  return useQuery({
-    queryKey: ["deliveries"],
-    queryFn: () => page<Delivery>("/email-deliveries"),
-    refetchInterval: 15000,
-  });
+  return usePagedQuery<Delivery>(["deliveries"], "/email-deliveries", 15000);
 }
 
 export function useStartConversation() {
@@ -147,10 +142,10 @@ export function useCancelRun(conversationId: string) {
 export function useApproveDraft(conversationId: string) {
   const cache = useQueryClient();
   return useMutation({
-    mutationFn: ({ draftId, revision }: { draftId: string; revision: number }) =>
+    mutationFn: ({ draftId, revision, previewHash }: { draftId: string; revision: number; previewHash: string }) =>
       api<CreateMonitorResult>(`/conversations/${conversationId}/approve`, {
         method: "POST",
-        body: JSON.stringify({ draft_id: draftId, revision }),
+        body: JSON.stringify({ draft_id: draftId, revision, preview_hash: previewHash }),
       }),
     onSuccess: () => {
       void cache.invalidateQueries({ queryKey: ["conversation", conversationId] });

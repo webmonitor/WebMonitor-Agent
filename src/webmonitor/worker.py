@@ -5,14 +5,12 @@ network or S3 I/O outside any transaction, and stops local work the moment the l
 can no longer be proven.
 """
 import asyncio
-import contextlib
 import logging
 import os
 import socket
 from contextlib import asynccontextmanager
 from uuid import UUID, uuid4
 
-from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from webmonitor.agent.orchestration import execute_job as execute_agent_job
@@ -45,13 +43,13 @@ async def _session():
 
 
 async def _locked(session: AsyncSession, job_id: UUID) -> Job | None:
-    return await session.scalar(select(Job).where(Job.id == job_id).with_for_update()
-        .execution_options(populate_existing=True))
+    _, job = await jobs.lock(session, job_id)
+    return job
 
 
-def _owned(job: Job | None, worker_id: str) -> bool:
+def _owned(job: Job | None, worker_id: str, *, terminal: bool = False) -> bool:
     return (job is not None and job.status == "running" and job.lease_owner == worker_id
-            and job.cancel_requested_at is None)
+            and (terminal or job.cancel_requested_at is None))
 
 
 async def _renew(job_id: UUID, worker_id: str, task: asyncio.Task) -> None:
@@ -80,9 +78,12 @@ def _prefix(job: Job) -> str:
 
 
 async def _collect(job_id: UUID, worker_id: str) -> None:
-    async with _session() as session:
-        job = await session.get(Job, job_id)
-        if not _owned(job, worker_id):
+    async with _session() as session, session.begin():
+        job = await _locked(session, job_id)
+        if not _owned(job, worker_id, terminal=True):
+            return
+        if job.cancel_requested_at is not None:
+            await jobs.finish(session, job, "cancelled", error_code="collection_cancelled")
             return
         kind, url, stored = job.kind, job.url, job.spec
     spec = (DraftSpec.model_validate(stored)
@@ -105,7 +106,10 @@ async def _collect(job_id: UUID, worker_id: str) -> None:
                    "analysis": result.analysis}
         async with _session() as session, session.begin():
             live = await _locked(session, job_id)
-            if not _owned(live, worker_id):
+            if not _owned(live, worker_id, terminal=True):
+                return
+            if live.cancel_requested_at is not None:
+                await jobs.finish(session, live, "cancelled", error_code="collection_cancelled")
                 return
             if live.kind == "production":
                 await runs.commit_success(session, live, payload)
@@ -113,7 +117,7 @@ async def _collect(job_id: UUID, worker_id: str) -> None:
                 live.result = payload
                 if live.kind == "preview":
                     draft = await session.get(Draft, live.draft_id,
-                                              with_for_update=True, populate_existing=True)
+                                              populate_existing=True)
                     if draft is None:
                         raise DomainError("draft_missing", 409)
                     await drafts.build_preview(session, draft, live)
@@ -121,7 +125,7 @@ async def _collect(job_id: UUID, worker_id: str) -> None:
     except asyncio.CancelledError:
         async with _session() as session, session.begin():
             live = await _locked(session, job_id)
-            if _owned(live, worker_id):
+            if _owned(live, worker_id, terminal=True):
                 await jobs.finish(session, live, "cancelled",
                                   error_code="collection_cancelled")
         raise
@@ -131,14 +135,16 @@ async def _collect(job_id: UUID, worker_id: str) -> None:
         await _fail(job_id, worker_id, code=code, details=details)
     finally:
         renewal.cancel()
-        with contextlib.suppress(asyncio.CancelledError):
-            await renewal
+        await asyncio.gather(renewal, return_exceptions=True)
 
 
 async def _fail(job_id: UUID, worker_id: str, *, code: str, details: dict) -> None:
     async with _session() as session, session.begin():
         live = await _locked(session, job_id)
-        if not _owned(live, worker_id):
+        if not _owned(live, worker_id, terminal=True):
+            return
+        if live.cancel_requested_at is not None:
+            await jobs.finish(session, live, "cancelled", error_code="collection_cancelled")
             return
         if live.kind == "production":
             await runs.fail_run(session, live, error_code=code,
@@ -184,10 +190,10 @@ async def _agent_slot(worker_id: str) -> None:
                 await execution
             finally:
                 renewal.cancel()
-                with contextlib.suppress(asyncio.CancelledError):
-                    await renewal
+                await asyncio.gather(renewal, return_exceptions=True)
         except asyncio.CancelledError:
-            raise
+            if asyncio.current_task().cancelling():
+                raise
         except Exception:
             logger.error("Agent slot iteration failed; durable state retained")
             await asyncio.sleep(2)
@@ -209,9 +215,11 @@ async def _collection_slot(worker_id: str, mode: str) -> None:
             if job_id is None:
                 await asyncio.sleep(1)
                 continue
-            await _collect(job_id, worker_id)
+            execution = asyncio.create_task(_collect(job_id, worker_id))
+            await execution
         except asyncio.CancelledError:
-            raise
+            if asyncio.current_task().cancelling():
+                raise
         except Exception:
             logger.error("Collection slot iteration failed")
             await asyncio.sleep(2)

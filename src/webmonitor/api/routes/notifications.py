@@ -50,7 +50,7 @@ async def list_deliveries(session: DatabaseSession, user: AuthenticatedUser,
     query = select(EmailDelivery)
     if user.role != "admin":
         query = query.where(EmailDelivery.user_id == user.user_id)
-    rows = (await session.scalars(query.order_by(EmailDelivery.created_at.desc())
+    rows = (await session.scalars(query.order_by(EmailDelivery.created_at.desc(), EmailDelivery.id.desc())
         .limit(limit).offset(offset))).all()
     total = await session.scalar(select(func.count()).select_from(query.subquery()))
     return Page[Delivery](items=[_delivery(row) for row in rows], total=total or 0)

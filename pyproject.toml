@@ -4,7 +4,7 @@ build-backend = "hatchling.build"
 
 [project]
 name = "webmonitor-agent"
-version = "1.0.1"
+version = "1.0.2"
 description = "AI-driven web monitoring application"
 requires-python = ">=3.12,<3.13"
 license = "CC-BY-NC-4.0"

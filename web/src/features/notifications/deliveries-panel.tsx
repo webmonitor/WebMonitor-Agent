@@ -5,9 +5,10 @@ import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { EmptyState } from "@/components/empty-state";
-import { useDeliveries, type Delivery } from "@/lib/api/hooks";
+import { useDeliveries } from "@/lib/api/hooks";
 import { useFormat } from "@/lib/format";
 import { useI18n } from "@/lib/i18n";
+import { ListPagination } from "@/components/list-pagination";
 
 const TONES = { sent: "success", failed: "error", retrying: "warning", sending: "warning" } as const;
 
@@ -19,8 +20,9 @@ export function DeliveriesPanel() {
   const { t } = useI18n();
   const { statusLabel, errorText, formatDateTime, formatTime } = useFormat();
   const deliveries = useDeliveries();
-  const [open, setOpen] = useState<Delivery | null>(null);
+  const [openId, setOpenId] = useState<string | null>(null);
   const items = deliveries.data?.items ?? [];
+  const open = items.find((delivery) => delivery.id === openId) ?? null;
 
   return (
     <section className="space-y-3">
@@ -31,7 +33,7 @@ export function DeliveriesPanel() {
 
       {deliveries.isPending && <p className="meta">{t("activity.deliveries.loading")}</p>}
 
-      {!deliveries.isPending && items.length === 0 && (
+      {!deliveries.isPending && !deliveries.error && items.length === 0 && (
         <EmptyState
           title={t("activity.deliveries.emptyTitle")}
           description={t("activity.deliveries.emptyDescription")}
@@ -43,7 +45,7 @@ export function DeliveriesPanel() {
           <li key={delivery.id}>
             <button
               className="surface flex w-full items-start gap-3 p-3 text-left transition-colors hover:border-ring/40"
-              onClick={() => setOpen(delivery)}
+              onClick={() => setOpenId(delivery.id)}
             >
               <Mail className="mt-0.5 size-4 shrink-0 text-muted-foreground" />
               <span className="min-w-0 flex-1">
@@ -62,8 +64,9 @@ export function DeliveriesPanel() {
           </li>
         ))}
       </ul>
+      <ListPagination query={deliveries} />
 
-      <Dialog open={Boolean(open)} onOpenChange={(value) => !value && setOpen(null)}>
+      <Dialog open={Boolean(open)} onOpenChange={(value) => !value && setOpenId(null)}>
         <DialogContent>
           <DialogHeader>
             <DialogTitle className="pr-6 text-base">{open?.subject}</DialogTitle>

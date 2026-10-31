@@ -53,6 +53,8 @@ def preview_payload(spec: DraftSpec, draft: Draft, recipients: list[str], price:
         "rule_simulation": {"triggered": False},
         "rendered_emails": [],
         "recipients": recipients,
+        "recipient_sources": [{"email": email, "group_ids": sorted(str(group_id)
+                               for group_id in spec.notification_group_ids)} for email in recipients],
         "warnings": [],
     }
 
@@ -74,7 +76,7 @@ async def test_publish_creates_one_monitor_and_repeats_idempotently(session):
     await session.commit()
 
     monitor = await drafts.publish_draft(session, current,
-        conversation_id=conversation.id, draft_id=draft.id, revision=draft.revision)
+        conversation_id=conversation.id, draft_id=draft.id, revision=draft.revision, preview_hash=draft.preview_hash or '0' * 64)
     await session.commit()
 
     assert await session.scalar(select(func.count()).select_from(Monitor)) == 1
@@ -89,7 +91,7 @@ async def test_publish_creates_one_monitor_and_repeats_idempotently(session):
     assert stored.monitor_id == monitor.id
 
     again = await drafts.publish_draft(session, current,
-        conversation_id=conversation.id, draft_id=draft.id, revision=draft.revision)
+        conversation_id=conversation.id, draft_id=draft.id, revision=draft.revision, preview_hash=draft.preview_hash or '0' * 64)
     await session.commit()
     assert again.id == monitor.id
     assert await session.scalar(select(func.count()).select_from(Monitor)) == 1
@@ -115,13 +117,11 @@ async def test_editing_the_spec_invalidates_the_previous_preview(session):
     assert edited.preview is None
 
     with pytest.raises(DomainError) as raised:
-        await drafts.publish_draft(session, current, conversation_id=conversation.id,
-                                   draft_id=draft.id, revision=2)
+        await drafts.publish_draft(session, current, conversation_id=conversation.id, draft_id=draft.id, revision=2, preview_hash=draft.preview_hash or '0' * 64)
     assert raised.value.code == "preview_missing"
 
     with pytest.raises(DomainError) as stale:
-        await drafts.publish_draft(session, current, conversation_id=conversation.id,
-                                   draft_id=draft.id, revision=1)
+        await drafts.publish_draft(session, current, conversation_id=conversation.id, draft_id=draft.id, revision=1, preview_hash=draft.preview_hash or '0' * 64)
     assert stale.value.code == "stale_revision"
 
 
@@ -142,8 +142,7 @@ async def test_recipient_change_after_preview_blocks_publication(session):
     await session.flush()
 
     with pytest.raises(DomainError) as raised:
-        await drafts.publish_draft(session, current, conversation_id=conversation.id,
-                                   draft_id=draft.id, revision=draft.revision)
+        await drafts.publish_draft(session, current, conversation_id=conversation.id, draft_id=draft.id, revision=draft.revision, preview_hash=draft.preview_hash or '0' * 64)
     assert raised.value.code == "preview_stale"
 
 
@@ -159,8 +158,7 @@ async def test_editing_a_published_draft_starts_a_new_baseline(session):
     await drafts.save_preview(session, draft, preview_payload(spec, draft, recipients, "100"),
                               ttl_minutes=60)
     await session.commit()
-    monitor = await drafts.publish_draft(session, current, conversation_id=conversation.id,
-                                         draft_id=draft.id, revision=draft.revision)
+    monitor = await drafts.publish_draft(session, current, conversation_id=conversation.id, draft_id=draft.id, revision=draft.revision, preview_hash=draft.preview_hash or '0' * 64)
     monitor.baseline_status = "ready"
     monitor.rule_state = {"predicates": {"0": True}, "aggregate": True}
     monitor.baseline_snapshot_id = uuid4()
@@ -181,8 +179,7 @@ async def test_editing_a_published_draft_starts_a_new_baseline(session):
     await session.commit()
 
     published = await drafts.publish_draft(session, current,
-        conversation_id=derived_conversation.id, draft_id=derived.id,
-        revision=derived.revision)
+        conversation_id=derived_conversation.id, draft_id=derived.id, revision=derived.revision, preview_hash=derived.preview_hash or '0' * 64)
     await session.commit()
 
     assert published.id == monitor.id
@@ -217,6 +214,7 @@ async def test_preview_reports_a_template_that_cannot_render(session):
     draft = await drafts.save_draft(session, current, conversation_id=conversation.id, spec=spec)
     job = Job(user_id=user.id, kind="preview", status="running", draft_id=draft.id,
               revision=draft.revision, url=spec.url, lease_owner="w",
+              spec=spec.model_dump(mode="json"),
               lease_expires_at=utc_now() + timedelta(seconds=90), attempt_count=1,
               result={"fields": {"current_fee": {"amount": "100.00", "currency": "CNY"}},
                       "coverage": {"scope": "bounded", "description": "fee node"},

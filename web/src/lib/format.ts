@@ -3,6 +3,7 @@
 import { useMemo } from "react";
 import { useI18n } from "@/lib/i18n";
 import type { Locale, MessageKey } from "@/lib/i18n/messages";
+import { ApiError } from "@/lib/api/client";
 
 function toDate(value?: string | null): Date | null {
   if (!value) return null;
@@ -55,6 +56,11 @@ const STEP_KEYS: Partial<Record<string, MessageKey>> = {
 };
 
 const ERROR_KEYS: Partial<Record<string, MessageKey>> = {
+  monitor_not_active: "format.error.monitor_not_active",
+  preview_not_ready: "format.error.preview_not_ready",
+  collection_invalid: "format.error.collection_invalid",
+  collection_failed: "format.error.collection_failed",
+  notification_routes_invalid: "format.error.notification_routes_invalid",
   url_forbidden: "format.error.url_forbidden",
   target_unavailable: "format.error.target_unavailable",
   target_http_error: "format.error.target_http_error",
@@ -259,8 +265,9 @@ export function useFormat() {
       return key ? t(key) : name;
     }
 
-    function errorText(code?: string | null): string {
-      if (!code) return t("format.unknownReason");
+    function errorText(failure?: string | Error | null): string {
+      const code = failure instanceof ApiError ? failure.code : typeof failure === "string" ? failure : undefined;
+      if (!code) return failure ? t("format.operationFailed") : t("format.unknownReason");
       const key = ERROR_KEYS[code];
       return key ? t(key) : t("format.operationFailed");
     }

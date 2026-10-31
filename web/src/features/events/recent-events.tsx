@@ -9,7 +9,7 @@ import { ChangeRows } from "@/features/events/event-card";
 export function RecentEvents({ monitorId }: { monitorId: string }) {
   const { t } = useI18n();
   const { eventLabel, formatTime } = useFormat();
-  const events = useEvents();
+  const events = useEvents(monitorId);
   const items = (events.data?.items ?? [])
     .filter((event) => event.monitor_id === monitorId)
     .slice(0, 3);

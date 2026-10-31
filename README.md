@@ -95,7 +95,7 @@ webmonitor-agent/
 Create `.env` next to `compose.yaml` with these values:
 
 ```dotenv
-# :latest follows stable releases. Pin a version such as 1.0.1 for repeatable installs.
+# :latest follows stable releases. Pin a version such as 1.0.2 for repeatable installs.
 WEBMONITOR_IMAGE=ghcr.io/webmonitor/webmonitor-agent:latest
 WEBMONITOR_HTTP_PORT=8080
 
@@ -154,7 +154,7 @@ Sign in with the `ADMIN_EMAIL` and `ADMIN_PASSWORD` from `.env`. The first start
 
 **Notifications** → **Notification groups** → **New**. Give it a name, add recipients one per line (commas or spaces also work), then **Save**.
 
-Only an administrator can create groups; members ask an administrator. Every monitor sends through a group, and a group can hold several addresses. If you later change a group's recipients, confirm the monitor again before the new list is used.
+Only an administrator can create groups; members ask an administrator. Every monitor sends through a group, and a group can hold several addresses. Adding recipients requires a new preview and confirmation for each monitor. Removing or deactivating a member, or disabling its approved group, revokes that source for pending and future mail. An unrelated group never restores authorization; another group approved for the same monitor may still authorize the address.
 
 ### Describe what you want
 
@@ -179,15 +179,18 @@ Before anything is scheduled, a confirmation card appears — in the right-hand 
 
 If something is wrong, say so in the chat: the assistant takes a new sample and the card updates. **Preview again** samples the same settings again; **Take a sample** runs the first sample when none exists yet.
 
+The card shows a preview's queued, running or failed status. Failed previews retain their error and can be retried. Creating or saving a monitor confirms the exact preview shown; another preview replacing it requires refreshing and confirming the new result.
+
 **Create monitor** is the click that starts scheduled checking. If the card has expired, preview again — a preview stays valid for 60 minutes.
 
 ### After it starts
 
 - The monitor appears under **Monitors** in the left sidebar with its name and interval. Its page shows **Last check**, **Next check**, **Check frequency**, **Collection method**, then **Recent checks**, **Current content** and **Recent events**.
-- **Pause** / **Resume** stops and restarts the schedule. **Check now** runs one check immediately.
-- **Edit settings** opens the conversation that owns the monitor. Describe the change, review the new preview, then **Save changes**; saving rebuilds the baseline.
+- **Pause** / **Resume** stops and restarts the schedule. Pausing cancels queued or running collection; **Check now** is available while the monitor is active.
+- **Edit settings** opens a new conversation with the existing monitor's full settings. Describe the change, review the new preview, then **Save changes**; saving updates that monitor and rebuilds its baseline.
 - **Events** lists everything detected, with **All** / **Unread** filters and **Mark as read**.
 - **Notifications** → **Delivery log** lists each email: recipient, status, attempts, body, and the error if it failed.
+- Use **Load more** to reach older conversations, monitors, checks, events, groups and deliveries. Monitor detail pages show events filtered for that monitor.
 
 The first successful check only records the starting content and sends no email; comparisons begin with the second check. Previews never send email. A failed check keeps the last successful content as the comparison baseline.
 
@@ -269,20 +272,21 @@ Currently supported targets are public pages accessible without signing in.
 
 ### Update
 
-Set `WEBMONITOR_IMAGE` in `.env` to the new tag, for example `ghcr.io/webmonitor/webmonitor-agent:1.0.1`, then apply it:
+Set `WEBMONITOR_IMAGE` in `.env` to the new tag, for example `ghcr.io/webmonitor/webmonitor-agent:1.0.2`, then apply it:
 
 ```sh
+docker compose down
 docker compose pull api web
 docker compose up -d --wait
 ```
 
 `:latest` follows stable releases; a pinned version keeps an install repeatable. Deployment files come from `main`, so keep the copies you actually started with.
 
-Check data-format compatibility before updating between versions. A release with a changed format requires fresh storage.
+This version starts with a fresh database and evidence store. Do not reuse an older version's storage: accounts, notification groups and monitors must be created again. The default temporary storage is cleared by `docker compose down`; deployments with custom persistent storage must point to empty storage. No data migration or compatibility path is provided. Approved recipients and their notification-group sources are stored directly with each monitor when its preview is confirmed.
 
 ### Roll back
 
-Set `WEBMONITOR_IMAGE` to the previous tag, repeat the two commands and use data matching that version.
+Set `WEBMONITOR_IMAGE` to the previous tag, repeat the commands above and start with fresh storage.
 
 The default database and evidence store use temporary memory-backed directories. Stopping, restarting or recreating `postgres` or `s3`, or running `docker compose down`, clears accounts, monitors, events and saved pages. `docker compose restart api` preserves the running data services. Configure persistent storage and backups for long-term use, and retain `.env` and deployment files.
 

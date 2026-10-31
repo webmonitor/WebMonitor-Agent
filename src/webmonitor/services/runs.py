@@ -48,13 +48,7 @@ async def schedule_due(session: AsyncSession, *, now=None, limit: int = 200) -> 
 
 
 async def _locked(session: AsyncSession, job_id: UUID) -> tuple[Monitor | None, Job]:
-    monitor_id = await session.scalar(select(Job.monitor_id).where(Job.id == job_id))
-    monitor = None
-    if monitor_id is not None:
-        monitor = await session.scalar(select(Monitor).where(Monitor.id == monitor_id)
-            .with_for_update().execution_options(populate_existing=True))
-    job = await session.scalar(select(Job).where(Job.id == job_id).with_for_update()
-        .execution_options(populate_existing=True))
+    monitor, job = await jobs.lock(session, job_id)
     return monitor, job
 
 
@@ -164,6 +158,12 @@ async def fail_run(session: AsyncSession, job: Job, *, error_code: str,
     now = utc_now()
     if job.status not in ("running", "queued"):
         return False
+    if job.cancel_requested_at is not None:
+        await jobs.finish(session, job, "cancelled", error_code="collection_cancelled")
+        return True
+    if _stale(monitor, job):
+        await jobs.discard(session, job)
+        return True
     transient = error_code in RETRYABLE or (
         error_code == "target_http_error" and int((details or {}).get("status_code", 0)) >= 500)
     if retryable and transient and job.attempt_count < get_settings().max_attempts:

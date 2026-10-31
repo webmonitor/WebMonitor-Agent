@@ -14,7 +14,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from webmonitor.config import get_settings
 from webmonitor.db import get_session_factory
 from webmonitor.errors import DomainError
-from webmonitor.models import Job, utc_now
+from webmonitor.models import Draft, Job, Monitor, utc_now
 
 LEASE_SECONDS = 90
 TERMINAL = frozenset({"succeeded", "failed", "cancelled", "discarded"})
@@ -55,6 +55,22 @@ async def wait(job_id: UUID, *, timeout: float = 70.0) -> Job:
         await asyncio.sleep(0.25)
 
 
+async def lock(session: AsyncSession, job_id: UUID) -> tuple[Monitor | Draft | None, Job | None]:
+    """Lock a collection's parent before its job, matching edits and cancellation."""
+    metadata = (await session.execute(select(Job.kind, Job.monitor_id, Job.draft_id)
+                                      .where(Job.id == job_id))).one_or_none()
+    parent = None
+    if metadata is not None:
+        model, parent_id = ((Monitor, metadata.monitor_id) if metadata.kind == "production"
+                            else (Draft, metadata.draft_id))
+        if parent_id is not None and metadata.kind in ("production", "preview"):
+            parent = await session.get(model, parent_id, with_for_update=True,
+                                       populate_existing=True)
+    job = await session.scalar(select(Job).where(Job.id == job_id).with_for_update()
+                               .execution_options(populate_existing=True))
+    return parent, job
+
+
 async def claim(session: AsyncSession, *, kind: str, worker_id: str,
                 condition=None) -> Job | None:
     """Claim one due job. An expired lease is reaped before anything is re-claimed."""
@@ -66,8 +82,23 @@ async def claim(session: AsyncSession, *, kind: str, worker_id: str,
     )
     if condition is not None:
         query = query.where(condition)
+    if kind in ("production", "preview"):
+        parent = Monitor if kind == "production" else Draft
+        parent_id = Job.monitor_id if kind == "production" else Job.draft_id
+        query = query.join(parent, parent.id == parent_id)
+        query = query.with_for_update(of=parent, skip_locked=True)
+    else:
+        query = query.with_for_update(skip_locked=True)
     job = await session.scalar(query.order_by(Job.available_at, Job.created_at)
-        .with_for_update(skip_locked=True).limit(1).execution_options(populate_existing=True))
+        .limit(1).execution_options(populate_existing=True))
+    if job is not None and kind in ("production", "preview"):
+        _, job = await lock(session, job.id)
+        if job is not None and not (
+            (job.status == "queued" and job.available_at <= now)
+            or (job.status == "running" and job.lease_expires_at is not None
+                and job.lease_expires_at <= now)
+        ):
+            return None
     if job is None:
         return None
     if job.status == "running":
@@ -86,14 +117,12 @@ async def claim(session: AsyncSession, *, kind: str, worker_id: str,
 
 async def _reap(session: AsyncSession, job: Job, now) -> None:
     """A lease that expired without a terminal write is a failed attempt."""
+    if job.cancel_requested_at is not None:
+        await finish(session, job, "cancelled", error_code="run_cancelled")
+        return
     if job.kind == "production":
         from webmonitor.services import runs
         await runs.lease_expired(session, job)
-        return
-    if job.cancel_requested_at is not None:
-        # The owner died before it could write the cancellation; retrying a run the
-        # user stopped would send a second message after they stopped waiting.
-        await finish(session, job, "cancelled", error_code="run_cancelled")
         return
     job.attempts = [attempt if index != len(job.attempts) - 1 else
                     {**attempt, "status": "failed", "finished_at": now.isoformat(),

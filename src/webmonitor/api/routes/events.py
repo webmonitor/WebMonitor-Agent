@@ -21,12 +21,15 @@ def _view(event: Event, monitor_name: str) -> EventView:
 
 @router.get("", response_model=Page[EventView])
 async def list_events(session: DatabaseSession, user: AuthenticatedUser,
-                      limit: int = Query(50, ge=1, le=100), offset: int = Query(0, ge=0)):
+                      limit: int = Query(50, ge=1, le=100), offset: int = Query(0, ge=0),
+                      monitor_id: UUID | None = None):
     query = select(Event)
+    if monitor_id is not None:
+        query = query.where(Event.monitor_id == monitor_id)
     if user.role != "admin":
         query = query.join(Monitor, Monitor.id == Event.monitor_id).where(
             Monitor.user_id == user.user_id)
-    rows = (await session.scalars(query.order_by(Event.created_at.desc())
+    rows = (await session.scalars(query.order_by(Event.created_at.desc(), Event.id.desc())
         .limit(limit).offset(offset))).all()
     total = await session.scalar(select(func.count()).select_from(query.subquery()))
     names = {row.id: row.name for row in (await session.scalars(select(Monitor).where(

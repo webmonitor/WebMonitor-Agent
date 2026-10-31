@@ -581,6 +581,8 @@ export interface components {
             draft_id: string;
             /** Revision */
             revision: number;
+            /** Preview Hash */
+            preview_hash: string;
         };
         /** Availability */
         Availability: {
@@ -598,6 +600,7 @@ export interface components {
         ConversationCreate: {
             /** Title */
             title?: string | null;
+            message?: components["schemas"]["PostMessageRequest"] | null;
         };
         /** ConversationSnapshot */
         ConversationSnapshot: {
@@ -716,6 +719,8 @@ export interface components {
             preview: {
                 [key: string]: unknown;
             } | null;
+            /** Preview Hash */
+            preview_hash: string | null;
             /** Preview Expires At */
             preview_expires_at: string | null;
             /** Monitor Id */
@@ -1970,6 +1975,7 @@ export interface operations {
             query?: {
                 limit?: number;
                 offset?: number;
+                monitor_id?: string | null;
             };
             header?: never;
             path?: never;

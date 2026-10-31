@@ -16,8 +16,9 @@ from webmonitor.security.auth import CurrentUser, require_owner
 from webmonitor.security.egress import validate_url
 from webmonitor.services import jobs, notifications
 
-PREVIEW_KEYS = ("revision", "spec_hash", "extracted_data", "coverage", "evidence_refs",
-                "rule_simulation", "rendered_emails", "recipients", "warnings")
+PREVIEW_KEYS = ("preview_id", "revision", "spec_hash", "extracted_data", "coverage",
+                "final_url", "evidence_refs", "rule_simulation", "rendered_emails",
+                "recipients", "recipient_sources", "warnings")
 
 
 async def require_draft(session: AsyncSession, user: CurrentUser, draft_id: UUID,
@@ -113,11 +114,13 @@ def preview_hash(payload: dict) -> str:
 
 async def build_preview(session: AsyncSession, draft: Draft, job: Job) -> dict:
     """Worker-side: freeze the real collection result into the draft's preview."""
+    if draft.status != "draft" or job.revision != draft.revision or job.spec != draft.spec:
+        raise DomainError("stale_revision", 409)
     spec = _spec(draft)
     result = job.result or {}
     fields = result.get("fields") or {}
     recipients = await notifications.load_recipients(
-        session, spec.notification_group_ids or [])
+        session, spec.notification_group_ids or [], lock=True)
     emails = notifications.recipients_emails(recipients)
     simulation = evaluate_rules(spec, None, fields, {})
     event_id = uuid4()
@@ -158,6 +161,7 @@ async def build_preview(session: AsyncSession, draft: Draft, job: Job) -> dict:
         "rule_simulation": simulation,
         "rendered_emails": rendered,
         "recipients": emails,
+        "recipient_sources": recipients,
         "warnings": warnings,
         "created_at": now.isoformat(),
         "expires_at": None,
@@ -168,6 +172,7 @@ async def build_preview(session: AsyncSession, draft: Draft, job: Job) -> dict:
 async def save_preview(session: AsyncSession, draft: Draft, preview: dict, *,
                        ttl_minutes: int) -> dict:
     now = utc_now()
+    preview["preview_id"] = str(uuid4())
     preview["created_at"] = now.isoformat()
     preview["expires_at"] = (now + timedelta(minutes=ttl_minutes)).isoformat()
     draft.preview = preview
@@ -191,28 +196,44 @@ async def validate_preview(session: AsyncSession, draft: Draft) -> dict:
         raise DomainError("stale_revision", 409)
     if preview_hash(preview) != draft.preview_hash:
         raise DomainError("preview_stale", 409, "Preview result changed; preview again")
-    recipients = await notifications.load_recipients(session, spec.notification_group_ids or [])
-    if notifications.recipients_emails(recipients) != preview.get("recipients"):
+    recipients = await notifications.load_recipients(
+        session, spec.notification_group_ids or [], lock=True)
+    if (notifications.recipients_emails(recipients) != preview.get("recipients")
+            or recipients != preview.get("recipient_sources")):
         raise DomainError("preview_stale", 409, "Notification recipients changed; preview again")
     return preview
 
 
 async def publish_draft(session: AsyncSession, user: CurrentUser, *, conversation_id: UUID,
-                        draft_id: UUID, revision: int) -> Monitor:
+                        draft_id: UUID, revision: int, preview_hash: str) -> Monitor:
+    conversation = await session.get(Conversation, conversation_id,
+                                     with_for_update=True, populate_existing=True)
+    require_owner(user, conversation)
+    row = await require_draft(session, user, draft_id)
+    monitor = None
+    if row.monitor_id is not None:
+        monitor = require_owner(user, await session.get(Monitor, row.monitor_id,
+            with_for_update=True, populate_existing=True))
     draft = await require_draft(session, user, draft_id, lock=True)
     if draft.conversation_id != conversation_id:
         raise DomainError("not_found", 404)
-    if draft.monitor_id is not None:
-        monitor = await session.get(Monitor, draft.monitor_id)
-        if monitor is not None and draft.status == "published" and revision == draft.revision:
-            return monitor
     if draft.revision != revision:
         raise DomainError("stale_revision", 409)
-    await validate_preview(session, draft)
+    if draft.preview is None:
+        raise DomainError("preview_missing", 409)
+    if preview_hash != draft.preview_hash:
+        raise DomainError("preview_stale", 409)
+    if draft.status == "published" and monitor is not None:
+        return monitor
+    pending = await session.scalar(select(Job.id).where(
+        Job.draft_id == draft.id, Job.kind == "preview", Job.revision == revision,
+        Job.status.in_(("queued", "running"))))
+    if pending is not None:
+        raise DomainError("preview_not_ready", 409)
+    preview = await validate_preview(session, draft)
     spec = DraftSpec.model_validate(draft.spec)
     validate_url(spec.url)
-    if draft.monitor_id is not None:
-        monitor = require_owner(user, await session.get(Monitor, draft.monitor_id))
+    if monitor is not None:
         monitor.spec = spec.model_dump(mode="json")
         monitor.spec_hash = draft.spec_hash
         monitor.spec_version += 1
@@ -221,9 +242,8 @@ async def publish_draft(session: AsyncSession, user: CurrentUser, *, conversatio
         monitor.interval_seconds = spec.schedule.interval_seconds
         monitor.timezone = spec.schedule.timezone
         monitor.notification_group_ids = [str(item) for item in spec.notification_group_ids]
+        monitor.approved_recipients = preview["recipient_sources"]
         monitor.next_run_at = utc_now()
-        # A new spec version starts a new baseline: the previous snapshot, rule
-        # indexes and failure fingerprint describe a different contract.
         monitor.baseline_status = "pending_first_success"
         monitor.baseline_snapshot_id = None
         monitor.rule_state = {}
@@ -236,6 +256,7 @@ async def publish_draft(session: AsyncSession, user: CurrentUser, *, conversatio
             spec_hash=draft.spec_hash, collection_mode=spec.collection_mode,
             interval_seconds=spec.schedule.interval_seconds, timezone=spec.schedule.timezone,
             notification_group_ids=[str(item) for item in spec.notification_group_ids],
+            approved_recipients=preview["recipient_sources"],
             baseline_status="pending_first_success", rule_state={}, next_run_at=utc_now())
         session.add(monitor)
         await session.flush()

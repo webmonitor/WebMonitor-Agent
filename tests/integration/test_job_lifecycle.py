@@ -3,7 +3,7 @@ from uuid import uuid4
 
 import pytest
 
-from webmonitor.models import Job, User
+from webmonitor.models import Conversation, Draft, Job, User
 from webmonitor.services import jobs
 
 
@@ -75,7 +75,13 @@ async def test_expired_lease_is_reaped_and_requeued_with_history(session):
 @pytest.mark.asyncio
 async def test_requeue_keeps_the_attempt_and_schedules_the_next_try(session):
     user = await seed(session)
-    await jobs.enqueue(session, user_id=user.id, kind="preview", draft_id=None,
+    conversation = Conversation(user_id=user.id, title="Preview retry")
+    session.add(conversation)
+    await session.flush()
+    draft = Draft(user_id=user.id, conversation_id=conversation.id, revision=1)
+    session.add(draft)
+    await session.flush()
+    await jobs.enqueue(session, user_id=user.id, kind="preview", draft_id=draft.id,
                        spec={"collection_mode": "http"})
     await session.commit()
     claimed = await jobs.claim(session, kind="preview", worker_id="w1")

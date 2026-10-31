@@ -12,6 +12,7 @@ import { useDeleteGroup, useGroups, useWriteGroup, type Group } from "@/lib/api/
 import { useAuth } from "@/lib/providers";
 import { useFormat } from "@/lib/format";
 import { useI18n } from "@/lib/i18n";
+import { ListPagination } from "@/components/list-pagination";
 
 function memberText(members: Group["members"]): string {
   return members.map((member) => member.email).join("\n");
@@ -82,8 +83,9 @@ export function GroupsPanel() {
       </header>
 
       {groups.isPending && <p className="meta">{t("activity.groups.loading")}</p>}
+      {remove.error && <p role="alert" className="text-xs text-error">{errorText(remove.error)}</p>}
 
-      {!groups.isPending && items.length === 0 && (
+      {!groups.isPending && !groups.error && items.length === 0 && (
         <EmptyState
           title={t("activity.groups.emptyTitle")}
           description={
@@ -116,7 +118,7 @@ export function GroupsPanel() {
                     size="sm"
                     className="h-7 px-2 text-xs text-muted-foreground"
                     disabled={remove.isPending || !group.enabled}
-                    onClick={() => void remove.mutateAsync(group.id)}
+                    onClick={() => remove.mutate(group.id)}
                   >
                     {t("activity.groups.disable")}
                   </Button>
@@ -137,6 +139,7 @@ export function GroupsPanel() {
           </li>
         ))}
       </ul>
+      <ListPagination query={groups} />
 
       <Dialog open={editing !== null} onOpenChange={(value) => !value && setEditing(null)}>
         <DialogContent className="max-w-md">

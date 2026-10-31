@@ -9,7 +9,13 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from webmonitor.config import get_settings
 from webmonitor.errors import DomainError
-from webmonitor.models import EmailDelivery, Event, Monitor, NotificationGroup, utc_now
+from webmonitor.models import (
+    EmailDelivery,
+    Event,
+    Monitor,
+    NotificationGroup,
+    utc_now,
+)
 from webmonitor.notifications.rendering import render_email
 from webmonitor.schemas.api import Group, MemberSpec, Page
 from webmonitor.security.auth import CurrentUser, require_admin
@@ -83,20 +89,43 @@ async def disable_group(session: AsyncSession, user: CurrentUser, group_id: UUID
     return group
 
 
-async def load_recipients(session: AsyncSession, group_ids: list[UUID] | list[str]) -> list[dict]:
-    """Deduplicated recipients of the enabled groups a monitor references."""
-    ids = [UUID(str(item)) for item in group_ids]
-    groups = (await session.scalars(select(NotificationGroup).where(
+async def load_recipients(session: AsyncSession, group_ids: list[UUID] | list[str], *,
+                          lock: bool = False) -> list[dict]:
+    """Freeze every authorized source, deduplicating email delivery addresses."""
+    ids = {UUID(str(item)) for item in group_ids}
+    query = select(NotificationGroup).where(
         NotificationGroup.id.in_(ids), NotificationGroup.enabled.is_(True),
-        NotificationGroup.deleted_at.is_(None)))).all()
-    if len(groups) != len(set(ids)):
+        NotificationGroup.deleted_at.is_(None)).order_by(NotificationGroup.id)
+    if lock:
+        query = query.with_for_update(read=True)
+    groups = (await session.scalars(query)).all()
+    if len(groups) != len(ids):
         raise DomainError("notification_routes_invalid", 409)
-    recipients = {item["email"]: {"email": item["email"], "group_id": str(group.id)}
-                  for group in groups for item in group.members or []
-                  if item.get("active", True)}
-    if not recipients:
+    sources: dict[str, list[str]] = {}
+    for group in groups:
+        for member in group.members or []:
+            if member.get("active", True):
+                sources.setdefault(member["email"], []).append(str(group.id))
+    if not sources:
         raise DomainError("notification_recipients_empty", 409)
-    return [recipients[email] for email in sorted(recipients)]
+    return [{"email": email, "group_ids": sorted(set(sources[email]))}
+            for email in sorted(sources)]
+
+
+async def approved_recipients(session: AsyncSession, monitor: Monitor) -> list[dict]:
+    """Current memberships may revoke an approval, but never expand one."""
+    groups = (await session.scalars(select(NotificationGroup).where(
+        NotificationGroup.id.in_([UUID(item) for item in monitor.notification_group_ids]),
+        NotificationGroup.enabled.is_(True), NotificationGroup.deleted_at.is_(None)))).all()
+    active = {str(group.id): {member["email"] for member in group.members or []
+                             if member.get("active", True)} for group in groups}
+    recipients = []
+    for recipient in monitor.approved_recipients:
+        sources = [source for source in recipient["group_ids"]
+                   if recipient["email"] in active.get(source, set())]
+        if sources:
+            recipients.append({"email": recipient["email"], "group_ids": sources})
+    return recipients
 
 
 def recipients_emails(recipients: list[dict]) -> list[str]:
@@ -119,7 +148,9 @@ def _payload(monitor: Monitor, event: Event, fields: dict) -> dict:
 async def enqueue_event_deliveries(session: AsyncSession, monitor: Monitor, event: Event,
                                    fields: dict) -> None:
     """Flush only. Disabled or empty routes never undo a valid snapshot."""
-    recipients = await load_recipients(session, monitor.notification_group_ids or [])
+    recipients = await approved_recipients(session, monitor)
+    if not recipients:
+        raise DomainError("notification_recipients_empty", 409)
     payload = _payload(monitor, event, fields)
     event.payload = payload
     rendered = render_email(event.type, payload)
@@ -128,7 +159,8 @@ async def enqueue_event_deliveries(session: AsyncSession, monitor: Monitor, even
         session.add(EmailDelivery(id=delivery_id, user_id=monitor.user_id,
             monitor_id=monitor.id, event_id=event.id, recipient=recipient["email"],
             subject=rendered["subject"], html=rendered["html"], body_text=rendered["text"],
-            payload=payload, status="queued", attempt_count=0,
+            payload={**payload, "recipient_sources": recipient["group_ids"]},
+            status="queued", attempt_count=0,
             available_at=event.created_at, message_id=f"<{delivery_id}@webmonitor.local>"))
     await session.flush()
 
@@ -153,12 +185,14 @@ async def claim_delivery(session: AsyncSession, worker_id: str) -> EmailDelivery
 
 
 async def authorized(session: AsyncSession, delivery: EmailDelivery) -> bool:
-    """The recipient must still be active in some enabled group."""
-    found = await session.scalar(select(NotificationGroup.id).where(
-        NotificationGroup.enabled.is_(True), NotificationGroup.deleted_at.is_(None),
-        NotificationGroup.members.contains([{"email": delivery.recipient, "active": True}]),
-    ).limit(1))
-    return found is not None
+    """Only this monitor's approved, still-active sources authorize a queued mail."""
+    monitor = await session.get(Monitor, delivery.monitor_id)
+    sources = set(delivery.payload["recipient_sources"])
+    if monitor is None or not sources:
+        return False
+    recipients = await approved_recipients(session, monitor)
+    return any(recipient["email"] == delivery.recipient
+               and sources.intersection(recipient["group_ids"]) for recipient in recipients)
 
 
 async def finish_delivery(session: AsyncSession, delivery: EmailDelivery, *, worker_id: str,

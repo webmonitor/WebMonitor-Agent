@@ -9,12 +9,12 @@ from agents.tool_context import ToolContext
 from pydantic import ValidationError
 from sqlalchemy import select
 
-from webmonitor.agent.runtime import RuntimeContext
+from webmonitor.agent.runtime import RuntimeContext, current_draft
 from webmonitor.db import get_session_factory
 from webmonitor.errors import DomainError
 from webmonitor.models import Draft, Job, NotificationGroup, utc_now
 from webmonitor.schemas.monitors import DraftSpec
-from webmonitor.services import drafts, jobs
+from webmonitor.services import conversations, drafts, jobs
 
 
 def _validation_details(errors) -> list[dict]:
@@ -50,6 +50,9 @@ def safe_tool_error(context, error):
 
 async def _check(session, ctx, *, lock=False):
     runtime = ctx.context
+    # Conversation mutations (including stop) take this lock before any job lock.
+    await conversations.require_conversation(session, runtime.user,
+                                             runtime.conversation_id, lock=lock)
     query = select(Job).where(Job.id == runtime.job_id)
     if lock:
         query = query.with_for_update()
@@ -154,16 +157,24 @@ def coerce_spec(value):
 @function_tool(failure_error_function=safe_tool_error, strict_mode=False)
 async def save_monitor_draft(ctx: ToolContext[RuntimeContext], spec: DraftSpec | str,
                              draft_id: str | None = None) -> dict:
-    """Save a validated revision derived from actual analysis. Pass spec as a JSON object. No arbitrary JS/XPath. Explicit numeric separators, currency, date format/timezone. Use only listed group IDs."""
+    """Save the current draft's full validated spec. Omitted draft_id updates the current draft; create a draft only when the conversation has none. Preserve unchanged settings and use only observed selectors and listed groups."""
     async def operation():
         parsed = coerce_spec(spec)
         async with get_session_factory()() as session:
             job = await _check(session, ctx, lock=True)
+            runtime = ctx.context
+            current = await current_draft(session, job.conversation_id, lock=True)
+            if ((current.id if current is not None else None) != runtime.draft_id
+                    or (current is not None and current.revision != runtime.draft_revision)):
+                raise DomainError("stale_revision", 409)
+            if draft_id is not None and UUID(draft_id) != runtime.draft_id:
+                raise DomainError("not_found", 404)
             async with session.begin_nested():
-                draft = await drafts.save_draft(session, ctx.context.user,
+                draft = await drafts.save_draft(session, runtime.user,
                     conversation_id=job.conversation_id, spec=parsed,
-                    draft_id=UUID(draft_id) if draft_id else None)
+                    draft_id=runtime.draft_id)
             await session.commit()
+            runtime.update_draft(draft)
             return {"draft_id": str(draft.id), "revision": draft.revision,
                     "spec_hash": draft.spec_hash, "spec": draft.spec}
     return await _observed(ctx, operation)

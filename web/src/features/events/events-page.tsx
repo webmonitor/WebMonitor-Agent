@@ -7,6 +7,7 @@ import { useAckEvent, useEvents } from "@/lib/api/hooks";
 import { useFormat } from "@/lib/format";
 import { useI18n } from "@/lib/i18n";
 import { EventCard } from "@/features/events/event-card";
+import { ListPagination } from "@/components/list-pagination";
 
 type Filter = "all" | "unread";
 
@@ -17,6 +18,7 @@ export function EventsPage() {
   const acknowledge = useAckEvent();
   const { t } = useI18n();
   const { dayLabel } = useFormat();
+  const { errorText } = useFormat();
   const [filter, setFilter] = useState<Filter>("all");
 
   const items = events.data?.items ?? [];
@@ -60,6 +62,7 @@ export function EventsPage() {
             </div>
           }
         />
+        {acknowledge.error && <p className="text-sm text-error" role="alert">{errorText(acknowledge.error)}</p>}
 
         {events.isPending && <p className="meta">{t("activity.events.loading")}</p>}
         {events.error && (
@@ -68,7 +71,7 @@ export function EventsPage() {
           </p>
         )}
 
-        {!events.isPending && visible.length === 0 && (
+        {!events.isPending && !events.error && visible.length === 0 && !events.hasNextPage && (
           <EmptyState
             title={
               filter === "unread"
@@ -94,7 +97,7 @@ export function EventsPage() {
                   <EventCard
                     key={event.id}
                     event={event}
-                    onAcknowledge={(id) => void acknowledge.mutateAsync(id)}
+                    onAcknowledge={(id) => acknowledge.mutate(id)}
                     acknowledging={acknowledge.isPending}
                   />
                 ))}
@@ -102,6 +105,7 @@ export function EventsPage() {
             </section>
           ))}
         </div>
+        <ListPagination query={events} />
       </PageBody>
     </div>
   );
