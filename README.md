@@ -1,7 +1,7 @@
 <h1 align="center">WebMonitor-Agent</h1>
 
 <p align="center">
-  <strong>Tell it what to watch. Get an email when it changes.</strong>
+  <strong>Describe what to watch. Review it before creating.</strong>
 </p>
 
 <p align="center">
@@ -95,7 +95,7 @@ webmonitor-agent/
 Create `.env` next to `compose.yaml` with these values:
 
 ```dotenv
-# :latest follows stable releases. Pin a version such as 1.0.2 for repeatable installs.
+# :latest follows stable releases. Pin a version such as 1.0.3 for repeatable installs.
 WEBMONITOR_IMAGE=ghcr.io/webmonitor/webmonitor-agent:latest
 WEBMONITOR_HTTP_PORT=8080
 
@@ -272,7 +272,7 @@ Currently supported targets are public pages accessible without signing in.
 
 ### Update
 
-Set `WEBMONITOR_IMAGE` in `.env` to the new tag, for example `ghcr.io/webmonitor/webmonitor-agent:1.0.2`, then apply it:
+Set `WEBMONITOR_IMAGE` in `.env` to the new tag, for example `ghcr.io/webmonitor/webmonitor-agent:1.0.3`, then apply it:
 
 ```sh
 docker compose pull api web

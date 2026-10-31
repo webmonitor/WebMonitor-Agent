@@ -1,7 +1,7 @@
 <h1 align="center">WebMonitor-Agent</h1>
 
 <p align="center">
-  <strong>告诉它看什么，变化会发到你的邮箱。</strong>
+  <strong>说清要监控什么，预览确认后开始。</strong>
 </p>
 
 <p align="center">
@@ -95,7 +95,7 @@ webmonitor-agent/
 在 `compose.yaml` 旁边新建 `.env`，写入：
 
 ```dotenv
-# :latest 跟随稳定版；需要可重复部署时改成 1.0.2 这样的固定版本。
+# :latest 跟随稳定版；需要可重复部署时改成 1.0.3 这样的固定版本。
 WEBMONITOR_IMAGE=ghcr.io/webmonitor/webmonitor-agent:latest
 WEBMONITOR_HTTP_PORT=8080
 
@@ -272,7 +272,7 @@ docker compose exec api webmonitor invite-create --email member@example.com --tt
 
 ### 更新
 
-把 `.env` 里的 `WEBMONITOR_IMAGE` 改成新版本标签，例如 `ghcr.io/webmonitor/webmonitor-agent:1.0.2`，然后应用：
+把 `.env` 里的 `WEBMONITOR_IMAGE` 改成新版本标签，例如 `ghcr.io/webmonitor/webmonitor-agent:1.0.3`，然后应用：
 
 ```sh
 docker compose pull api web

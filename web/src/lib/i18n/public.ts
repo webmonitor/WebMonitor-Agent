@@ -4,8 +4,8 @@ export const en = {
   "public.nav.workspace": "Open workspace",
 
   "public.hero.eyebrow": "Web change monitoring",
-  "public.hero.titleLine1": "The changes you care about,",
-  "public.hero.titleLine2": "deserve a closer look.",
+  "public.hero.titleLine1": "Describe what to watch.",
+  "public.hero.titleLine2": "Review it before creating.",
   "public.hero.body":
     "Prices, stock, announcements, deadlines — tell WebMonitor what to watch. It opens the page on schedule and emails you what changed.",
   "public.hero.cta": "Get started",
@@ -92,8 +92,8 @@ export const zh: Record<keyof typeof en, string> = {
   "public.nav.workspace": "进入工作台",
 
   "public.hero.eyebrow": "网页变化监控",
-  "public.hero.titleLine1": "你关心的变化，",
-  "public.hero.titleLine2": "值得被认真看见。",
+  "public.hero.titleLine1": "说清要监控什么",
+  "public.hero.titleLine2": "预览确认后开始",
   "public.hero.body":
     "价格、库存、公告、截止日期——告诉 WebMonitor 要看什么。它按时打开页面，把变化前后的内容发到你的邮箱。",
   "public.hero.cta": "开始使用",
