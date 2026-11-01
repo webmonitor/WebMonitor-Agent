@@ -14,10 +14,6 @@ import { useFormat } from "@/lib/format";
 import { useI18n } from "@/lib/i18n";
 import { ListPagination } from "@/components/list-pagination";
 
-function memberText(members: Group["members"]): string {
-  return members.map((member) => member.email).join("\n");
-}
-
 export function GroupsPanel() {
   const { user } = useAuth();
   const { t } = useI18n();
@@ -37,7 +33,7 @@ export function GroupsPanel() {
     setEditing(group);
     setError(null);
     setName(group === "new" ? "" : group.name);
-    setEmails(group === "new" ? "" : memberText(group.members));
+    setEmails(group === "new" ? "" : group.members.map((member) => member.email).join("\n"));
   }
 
   async function save() {
@@ -63,11 +59,11 @@ export function GroupsPanel() {
   }
 
   return (
-    <section className="space-y-3">
-      <header className="flex items-start justify-between gap-3">
+    <section>
+      <header className="mb-3 flex items-start justify-between gap-3">
         <div className="min-w-0">
-          <h2 className="text-sm font-semibold">{t("activity.groups.title")}</h2>
-          <p className="meta mt-0.5">{t("activity.groups.description")}</p>
+          <h2 className="section-title">{t("activity.groups.title")}</h2>
+          <p className="meta mt-1 leading-5">{t("activity.groups.description")}</p>
         </div>
         {admin && (
           <Button
@@ -76,7 +72,7 @@ export function GroupsPanel() {
             className="h-8 shrink-0 whitespace-nowrap"
             onClick={() => openForm("new")}
           >
-            <Plus className="size-3.5" />
+            <Plus className="size-3.5" strokeWidth={1.5} />
             {t("activity.groups.new")}
           </Button>
         )}
@@ -94,12 +90,12 @@ export function GroupsPanel() {
         />
       )}
 
-      <ul className="space-y-2">
+      <ul className="divide-y border-t">
         {items.map((group) => (
-          <li key={group.id} className="surface-pad space-y-2">
+          <li key={group.id} className="space-y-2 py-3">
             <div className="flex items-start justify-between gap-2">
               <div className="flex min-w-0 items-center gap-2">
-                <Users className="size-4 text-muted-foreground" />
+                <Users className="size-4 shrink-0 text-muted-foreground" strokeWidth={1.5} />
                 <span className="truncate text-[13px] font-medium">{group.name}</span>
                 {!group.enabled && <Badge tone="neutral">{t("activity.groups.disabled")}</Badge>}
               </div>
@@ -128,9 +124,9 @@ export function GroupsPanel() {
             {group.members.length === 0 ? (
               <p className="meta">{t("activity.groups.noMembers")}</p>
             ) : (
-              <ul className="flex flex-wrap gap-1.5">
+              <ul className="flex flex-wrap gap-x-3 gap-y-1">
                 {group.members.map((member) => (
-                  <li key={member.email} className="chip bg-muted text-[11px] text-muted-foreground">
+                  <li key={member.email} className="num truncate text-[12px] text-muted-foreground">
                     {member.email}
                   </li>
                 ))}
@@ -144,7 +140,7 @@ export function GroupsPanel() {
       <Dialog open={editing !== null} onOpenChange={(value) => !value && setEditing(null)}>
         <DialogContent className="max-w-md">
           <DialogHeader>
-            <DialogTitle>
+            <DialogTitle className="text-base">
               {editing === "new"
                 ? t("activity.groups.form.newTitle")
                 : t("activity.groups.form.editTitle")}
@@ -168,17 +164,17 @@ export function GroupsPanel() {
                 value={emails}
                 rows={4}
                 onChange={(event) => setEmails(event.target.value)}
-                className="w-full rounded-lg border bg-card px-3 py-2 text-sm outline-none focus-visible:border-ring/60"
+                className="w-full rounded-lg border border-input bg-card px-3 py-2 font-mono text-[12px] leading-6 outline-none transition-colors duration-150 focus-visible:border-ring"
                 placeholder={t("activity.groups.form.recipientsPlaceholder")}
               />
-              <p className="meta">{t("activity.groups.form.recipientsHint")}</p>
+              <p className="meta leading-5">{t("activity.groups.form.recipientsHint")}</p>
             </div>
             {error && (
               <p className="text-xs text-error" role="alert">
                 {error.code ? errorText(error.code) : t("activity.groups.saveFailed")}
               </p>
             )}
-            <div className="flex justify-end gap-2">
+            <div className="flex justify-end gap-2 border-t pt-4">
               <Button variant="ghost" size="sm" onClick={() => setEditing(null)}>
                 {t("activity.groups.form.cancel")}
               </Button>

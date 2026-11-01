@@ -35,7 +35,10 @@ function differencesOf(change: Record<string, unknown>): Difference[] {
   return rows;
 }
 
-/** before → after, one row per field, using the labels stored with the event. */
+/**
+ * The change itself, written as ink on ruled paper: the old value struck, the
+ * new value in the accent. This is the thing the product exists to produce.
+ */
 export function ChangeRows({
   change,
   type,
@@ -46,33 +49,36 @@ export function ChangeRows({
   const { t } = useI18n();
   const { fieldLabel, formatValue } = useFormat();
   if (type === "run_failed") {
-    return <p className="text-[13px] text-muted-foreground">{t("activity.eventCard.failedNote")}</p>;
+    return <p className="text-[13px] leading-6 text-muted-foreground">{t("activity.eventCard.failedNote")}</p>;
   }
   if (type === "recovered") {
-    return <p className="text-[13px] text-muted-foreground">{t("activity.eventCard.recoveredNote")}</p>;
+    return <p className="text-[13px] leading-6 text-muted-foreground">{t("activity.eventCard.recoveredNote")}</p>;
   }
   const labels = (change.labels ?? {}) as Record<string, string>;
   const rows = differencesOf(change);
   if (rows.length === 0) {
-    return <p className="text-[13px] text-muted-foreground">{t("activity.eventCard.noFields")}</p>;
+    return <p className="text-[13px] leading-6 text-muted-foreground">{t("activity.eventCard.noFields")}</p>;
   }
   return (
-    <ul className="space-y-1.5">
+    <dl className="divide-y">
       {rows.map((row, index) => (
-        <li key={`${row.field ?? index}-${index}`} className="text-[13px]">
-          <span className="text-muted-foreground">
+        <div
+          key={`${row.field ?? index}-${index}`}
+          className="flex items-baseline justify-between gap-3 py-1.5"
+        >
+          <dt className="shrink-0 text-[12px] text-muted-foreground">
             {fieldLabel({ name: row.field ?? "", semantic: labels[row.field ?? ""] })}
-          </span>
-          <span className="mt-0.5 flex flex-wrap items-center gap-x-1.5 gap-y-1 tabular-nums">
-            <span className="text-muted-foreground/80 line-through decoration-border">
+          </dt>
+          <dd className="flex min-w-0 flex-wrap items-baseline justify-end gap-x-2 gap-y-0.5 text-right">
+            <span className="num text-[12px] text-muted-foreground line-through decoration-muted-foreground/40">
               {formatValue(row.before)}
             </span>
-            <span aria-hidden className="text-muted-foreground/60">→</span>
-            <span className="font-medium">{formatValue(row.after)}</span>
-          </span>
-        </li>
+            <span aria-hidden className="text-[11px] text-muted-foreground/60">→</span>
+            <span className="num text-[13px] font-medium text-foreground">{formatValue(row.after)}</span>
+          </dd>
+        </div>
       ))}
-    </ul>
+    </dl>
   );
 }
 
@@ -89,19 +95,21 @@ export function EventCard({
   const { eventLabel, formatTime } = useFormat();
   const unread = !event.acknowledged_at;
   return (
-    <li className={`surface-pad space-y-2.5 ${unread ? "border-l-2 border-l-primary/60" : ""}`}>
+    <li className="py-3">
       <div className="flex items-start justify-between gap-3">
         <div className="min-w-0 space-y-1">
           <div className="flex flex-wrap items-center gap-2">
             <Badge tone={TONES[event.type] ?? "neutral"}>{eventLabel(event.type)}</Badge>
             <Link
               href={`/app/monitors/${event.monitor_id}`}
-              className="truncate text-[13px] font-medium hover:underline"
+              className="truncate text-[13px] font-medium underline-offset-2 hover:underline"
             >
               {event.monitor_name}
             </Link>
+            {/* Unread is a dot in the same column as the live monitors, not a stripe. */}
+            {unread && <span aria-hidden className="size-1.5 rounded-full bg-foreground" />}
           </div>
-          <p className="meta">{formatTime(event.created_at)}</p>
+          <p className="num text-[11px] text-muted-foreground">{formatTime(event.created_at)}</p>
         </div>
         {onAcknowledge &&
           (unread ? (
@@ -112,17 +120,19 @@ export function EventCard({
               onClick={() => onAcknowledge(event.id)}
               disabled={acknowledging}
             >
-              <Check className="size-3.5" />
+              <Check className="size-3.5" strokeWidth={1.5} />
               {t("activity.eventCard.acknowledge")}
             </Button>
           ) : (
             <span className="flex shrink-0 items-center gap-1 text-[11px] text-muted-foreground">
-              <CheckCheck className="size-3.5" />
+              <CheckCheck className="size-3.5" strokeWidth={1.5} />
               {t("activity.eventCard.read")}
             </span>
           ))}
       </div>
-      <ChangeRows change={event.change} type={event.type} />
+      <div className="mt-2">
+        <ChangeRows change={event.change} type={event.type} />
+      </div>
     </li>
   );
 }

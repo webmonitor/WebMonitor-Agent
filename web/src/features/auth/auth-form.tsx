@@ -94,74 +94,77 @@ export function AuthForm({ register = false }: { register?: boolean }) {
     : "";
 
   return (
-    <main className="mx-auto flex min-h-dvh w-full max-w-sm flex-col justify-center px-5 py-12">
-      <div className="flex justify-end">
-        <LanguageSwitcher />
-      </div>
-      <Link className="mt-2 flex items-center gap-2 self-center text-[15px] font-semibold" href="/">
-        <Radar className="size-5 text-primary" />
-        WebMonitor
-      </Link>
-      <section className="surface-pad mt-8 space-y-1">
-        <h1 className="text-xl font-semibold">
-          {t(register ? "public.auth.register.title" : "public.auth.login.title")}
-        </h1>
-        <p className="meta">
-          {t(register ? "public.auth.register.description" : "public.auth.login.description")}
-        </p>
+    <div className="flex min-h-dvh flex-col bg-background">
+      <header className="mx-auto flex h-16 w-full max-w-[76rem] items-center gap-4 px-6 sm:px-10">
+        <Link className="flex items-center gap-2 text-[15px] font-medium" href="/">
+          <Radar className="size-4 text-primary" strokeWidth={1.5} />
+          WebMonitor
+        </Link>
+        <LanguageSwitcher className="ml-auto" />
+      </header>
 
-        <form onSubmit={submit} className="mt-6 flex flex-col gap-3.5">
-          {register && (
+      <main className="flex flex-1 items-center justify-center px-6 py-12">
+        <div className="w-full max-w-[21rem]">
+          <h1 className="text-[1.375rem] font-medium">
+            {t(register ? "public.auth.register.title" : "public.auth.login.title")}
+          </h1>
+          <p className="mt-1.5 text-[13px] leading-5 text-muted-foreground">
+            {t(register ? "public.auth.register.description" : "public.auth.login.description")}
+          </p>
+
+          <form onSubmit={submit} className="mt-7 flex flex-col gap-4">
+            {register && (
+              <div>
+                <Label htmlFor="display_name">{t("public.auth.field.displayName")}</Label>
+                <Input id="display_name" name="display_name" autoComplete="name" required maxLength={100} />
+              </div>
+            )}
             <div>
-              <Label htmlFor="display_name">{t("public.auth.field.displayName")}</Label>
-              <Input id="display_name" name="display_name" autoComplete="name" required maxLength={100} />
+              <Label htmlFor="email">{t("public.auth.field.email")}</Label>
+              <Input id="email" name="email" type="email" autoComplete="email" required />
             </div>
-          )}
-          <div>
-            <Label htmlFor="email">{t("public.auth.field.email")}</Label>
-            <Input id="email" name="email" type="email" autoComplete="email" required />
-          </div>
-          <div>
-            <Label htmlFor="password">{t("public.auth.field.password")}</Label>
-            <Input
-              id="password"
-              name="password"
-              type="password"
-              autoComplete={register ? "new-password" : "current-password"}
-              minLength={register ? 12 : undefined}
-              maxLength={128}
-              required
-            />
-            {register && <p className="meta mt-1">{t("public.auth.passwordHint")}</p>}
-          </div>
-          {register && !invitation && (
-            <p className="rounded-lg border border-warning/40 bg-warning/5 px-3 py-2 text-xs text-warning">
-              {t("public.auth.missingInvitation")}
-            </p>
-          )}
-          {errorText && (
-            <p className="text-sm text-error" role="alert">
-              {errorText}
-            </p>
-          )}
-          <Button type="submit" className="mt-1" disabled={pending || (register && !invitation)}>
-            {pending
-              ? t("public.auth.submitting")
-              : t(register ? "public.auth.submitRegister" : "public.auth.submit")}
-            <ArrowRight />
-          </Button>
-        </form>
+            <div>
+              <Label htmlFor="password">{t("public.auth.field.password")}</Label>
+              <Input
+                id="password"
+                name="password"
+                type="password"
+                autoComplete={register ? "new-password" : "current-password"}
+                minLength={register ? 12 : undefined}
+                maxLength={128}
+                required
+              />
+              {register && <p className="meta mt-1.5 leading-5">{t("public.auth.passwordHint")}</p>}
+            </div>
+            {register && !invitation && (
+              <p className="rounded-md border border-warning/30 bg-warning/[0.06] px-3 py-2 text-xs leading-5 text-warning">
+                {t("public.auth.missingInvitation")}
+              </p>
+            )}
+            {errorText && (
+              <p className="text-[13px] text-error" role="alert">
+                {errorText}
+              </p>
+            )}
+            <Button type="submit" size="lg" className="mt-1 w-full" disabled={pending || (register && !invitation)}>
+              {pending
+                ? t("public.auth.submitting")
+                : t(register ? "public.auth.submitRegister" : "public.auth.submit")}
+              <ArrowRight strokeWidth={1.5} />
+            </Button>
+          </form>
 
-        <p className="mt-5 text-center text-xs text-muted-foreground">
-          {register ? (
-            <Link className="text-primary underline-offset-2 hover:underline" href="/login">
-              {t("public.auth.hasAccount")}
-            </Link>
-          ) : (
-            t("public.auth.noAccount")
-          )}
-        </p>
-      </section>
-    </main>
+          <p className="mt-6 border-t pt-4 text-xs leading-5 text-muted-foreground">
+            {register ? (
+              <Link className="text-primary underline-offset-4 hover:underline" href="/login">
+                {t("public.auth.hasAccount")}
+              </Link>
+            ) : (
+              t("public.auth.noAccount")
+            )}
+          </p>
+        </div>
+      </main>
+    </div>
   );
 }

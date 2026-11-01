@@ -22,14 +22,14 @@ function ContextPanel({
   const draft = conversation.data?.drafts.find((item) => item.id === pendingDraftId);
 
   return (
-    <aside className="hidden h-full min-h-0 flex-col gap-5 overflow-y-auto border-l bg-muted/30 px-4 py-5 xl:flex">
+    <aside className="hidden h-full min-h-0 flex-col gap-6 overflow-y-auto border-l bg-card px-4 py-5 xl:flex">
       {draft ? (
         <CreateMonitorCard conversationId={conversationId} draft={draft} />
       ) : monitorId ? (
         <MonitorSummary monitorId={monitorId} />
       ) : (
         <section className="surface-pad space-y-1.5">
-          <h2 className="text-[15px] font-semibold">{t("chat.context.emptyTitle")}</h2>
+          <h2 className="text-[14px] font-medium">{t("chat.context.emptyTitle")}</h2>
           <p className="meta">{t("chat.context.emptyBody")}</p>
         </section>
       )}

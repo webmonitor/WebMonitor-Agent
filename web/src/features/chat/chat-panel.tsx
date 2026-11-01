@@ -7,9 +7,9 @@ import remarkGfm from "remark-gfm";
 import {
   ArrowDown,
   ArrowUp,
+  ArrowUpRight,
   ChevronRight,
   Loader2,
-  Radar,
   Square,
   TriangleAlert,
 } from "lucide-react";
@@ -54,7 +54,7 @@ function mergeSteps(steps: JobView["steps"]) {
   return merged;
 }
 
-/** The collapsed "what the assistant did" trail: one line, expandable, no box. */
+/** The collapsed "what the assistant did" trail: a text disclosure, not a chip. */
 function WorkLog({ job, open = false }: { job: JobView; open?: boolean }) {
   const { t } = useI18n();
   const { errorText, stepLabel } = useFormat();
@@ -62,19 +62,19 @@ function WorkLog({ job, open = false }: { job: JobView; open?: boolean }) {
   if (steps.length === 0) return null;
   const failed = steps.filter((step) => step.status === "failed").length;
   return (
-    <details open={open} className="group mt-2.5 text-[13px]">
-      <summary className="inline-flex cursor-pointer list-none items-center gap-1.5 rounded-full border bg-card px-2.5 py-1 text-muted-foreground transition-colors select-none hover:text-foreground [&::-webkit-details-marker]:hidden">
-        <ChevronRight className="size-3.5 transition-transform group-open:rotate-90" />
+    <details open={open} className="group mt-2 text-[13px]">
+      <summary className="inline-flex cursor-pointer list-none items-center gap-1 text-muted-foreground transition-colors duration-150 select-none hover:text-foreground [&::-webkit-details-marker]:hidden">
+        <ChevronRight className="size-3.5 transition-transform duration-150 group-open:rotate-90" strokeWidth={1.5} />
         {failed > 0
           ? t("chat.worklog.incomplete", { total: steps.length, failed })
           : t("chat.worklog.view", { total: steps.length })}
       </summary>
-      <ol className="mt-2.5 space-y-2 border-l pl-3.5">
+      <ol className="mt-2 space-y-2 border-l pl-4">
         {steps.map((step, index) => (
           <li key={`${step.name}-${index}`} className="flex items-start gap-2">
             <span
               aria-hidden
-              className={`mt-1.5 size-1.5 shrink-0 rounded-full ${
+              className={`mt-[0.45rem] size-1.5 shrink-0 rounded-full ${
                 step.status === "failed"
                   ? "bg-error"
                   : step.status === "succeeded"
@@ -85,7 +85,7 @@ function WorkLog({ job, open = false }: { job: JobView; open?: boolean }) {
             <span className="min-w-0 flex-1">
               <span className="block leading-5">{stepLabel(step.name)}</span>
               {(step.error_code || step.detail) && (
-                <span className="block break-words text-[12px] text-muted-foreground">
+                <span className="block break-words text-[12px] leading-5 text-muted-foreground">
                   {step.error_code ? errorText(step.error_code) : step.detail?.slice(0, 240)}
                 </span>
               )}
@@ -97,16 +97,16 @@ function WorkLog({ job, open = false }: { job: JobView; open?: boolean }) {
   );
 }
 
-/** Assistant prose: no bubble, no avatar — full-width text, the way ChatGPT reads. */
+/** Assistant prose: no bubble, no avatar — full-width text, the way it reads best. */
 function AssistantText({ content }: { content: string }) {
   return (
-    <div className="space-y-2 text-[15px] leading-7 [&_a]:text-primary [&_a]:underline [&_a]:underline-offset-2 [&_blockquote]:border-l-2 [&_blockquote]:pl-3 [&_blockquote]:text-muted-foreground [&_code]:rounded-md [&_code]:bg-muted [&_code]:px-1.5 [&_code]:py-0.5 [&_code]:text-[13px] [&_h1]:mt-5 [&_h1]:text-[17px] [&_h2]:mt-5 [&_h2]:text-[16px] [&_h3]:mt-4 [&_h3]:text-[15px] [&_h3]:font-semibold [&_hr]:my-4 [&_li]:pl-0.5 [&_ol]:list-decimal [&_ol]:pl-5 [&_p]:leading-7 [&_pre]:mt-3 [&_pre]:overflow-x-auto [&_pre]:rounded-xl [&_pre]:border [&_pre]:bg-muted/50 [&_pre]:p-3 [&_pre_code]:bg-transparent [&_pre_code]:p-0 [&_table]:w-full [&_table]:border-collapse [&_table]:text-[13px] [&_td]:border [&_td]:px-2.5 [&_td]:py-1.5 [&_th]:border [&_th]:bg-muted/50 [&_th]:px-2.5 [&_th]:py-1.5 [&_th]:text-left [&_ul]:list-disc [&_ul]:pl-5 [&>*:first-child]:mt-0 [&>*:last-child]:mb-0">
+    <div className="space-y-2 text-[15px] leading-7 [&_a]:text-primary [&_a]:underline [&_a]:underline-offset-2 [&_blockquote]:border-l-2 [&_blockquote]:pl-3 [&_blockquote]:text-muted-foreground [&_code]:rounded-[0.25rem] [&_code]:bg-muted [&_code]:px-1.5 [&_code]:py-0.5 [&_code]:text-[13px] [&_h1]:mt-5 [&_h1]:text-[17px] [&_h1]:font-medium [&_h2]:mt-5 [&_h2]:text-[16px] [&_h2]:font-medium [&_h3]:mt-4 [&_h3]:text-[15px] [&_h3]:font-medium [&_hr]:my-4 [&_li]:pl-0.5 [&_ol]:list-decimal [&_ol]:pl-5 [&_p]:leading-7 [&_pre]:mt-3 [&_pre]:overflow-x-auto [&_pre]:rounded-lg [&_pre]:border [&_pre]:bg-muted/50 [&_pre]:p-3 [&_pre_code]:bg-transparent [&_pre_code]:p-0 [&_table]:w-full [&_table]:text-[13px] [&_td]:border [&_td]:px-2.5 [&_td]:py-1.5 [&_th]:border [&_th]:bg-muted/50 [&_th]:px-2.5 [&_th]:py-1.5 [&_th]:text-left [&_th]:font-medium [&_ul]:list-disc [&_ul]:pl-5">
       <Markdown remarkPlugins={[remarkGfm]}>{content}</Markdown>
     </div>
   );
 }
 
-/** A single pulsing dot in place of a spinner: quieter, closer to streaming text. */
+/** A single dot in place of a spinner: quieter, closer to streaming text. */
 function Thinking({ label }: { label: string }) {
   return (
     <p className="flex items-center gap-2.5 text-[15px] text-muted-foreground">
@@ -193,9 +193,9 @@ export function ChatPanel({
   if (!conversationId && !drafting) {
     return (
       <section className="grid h-full place-items-center px-6">
-        <div className="max-w-sm space-y-2 text-center">
-          <h2 className="text-lg font-semibold">{t("chat.select.title")}</h2>
-          <p className="meta">{t("chat.select.body")}</p>
+        <div className="max-w-sm space-y-1.5">
+          <h2 className="text-[15px] font-medium">{t("chat.select.title")}</h2>
+          <p className="meta leading-5">{t("chat.select.body")}</p>
         </div>
       </section>
     );
@@ -208,8 +208,8 @@ export function ChatPanel({
 
   return (
     <section className="flex h-full min-h-0 min-w-0 flex-col overflow-hidden bg-background">
-      <header className="flex h-12 shrink-0 items-center justify-between gap-3 px-4 pt-1 sm:px-6">
-        <div className="mx-auto flex w-full max-w-3xl items-center gap-2">
+      <header className="flex h-12 shrink-0 items-center gap-3 px-6">
+        <div className="mx-auto flex w-full max-w-[46rem] items-center gap-2">
           <h2 className="truncate text-[13px] text-muted-foreground">
             {snapshot?.conversation.title?.trim() || t("chat.newConversation")}
           </h2>
@@ -228,14 +228,14 @@ export function ChatPanel({
       <div className="relative min-h-0 flex-1">
         <div
           ref={scroller}
-          className="h-full overflow-y-auto px-4 sm:px-6"
+          className="h-full overflow-y-auto px-6"
           onScroll={(event) => {
             const node = event.currentTarget;
             setPinned(node.scrollHeight - node.scrollTop - node.clientHeight < 80);
           }}
         >
           <div
-            className={`mx-auto w-full max-w-3xl py-6 ${
+            className={`mx-auto w-full max-w-[46rem] py-8 ${
               empty ? "flex min-h-full flex-col justify-center" : ""
             }`}
           >
@@ -247,34 +247,28 @@ export function ChatPanel({
             )}
 
             {empty && (
-              <div className="space-y-7">
-                <div className="space-y-2.5 text-center">
-                  <span
-                    aria-hidden
-                    className="mx-auto grid size-11 place-items-center rounded-full bg-primary/10"
-                  >
-                    <Radar className="size-5 text-primary" />
-                  </span>
-                  <h2 className="text-[1.375rem] font-semibold tracking-tight">
-                    {t("chat.hero.title")}
-                  </h2>
-                  <p className="mx-auto max-w-md text-[13px] leading-6 text-muted-foreground">
-                    {t("chat.hero.body")}
-                  </p>
+              <div className="space-y-6">
+                <div className="max-w-[26rem] space-y-2">
+                  <h2 className="text-[1.25rem] leading-8 font-medium">{t("chat.hero.title")}</h2>
+                  <p className="text-[13px] leading-6 text-muted-foreground">{t("chat.hero.body")}</p>
                 </div>
-                <ul className="flex flex-wrap justify-center gap-2">
+                <ul className="max-w-[34rem] divide-y border-y">
                   {EXAMPLE_KEYS.map((exampleKey) => {
                     const example = t(exampleKey);
                     return (
-                      <li key={exampleKey} className="max-w-full">
+                      <li key={exampleKey}>
                         <button
-                          className="cursor-pointer rounded-full border bg-card px-3.5 py-2 text-[13px] text-muted-foreground transition-colors hover:border-primary/30 hover:text-foreground"
+                          className="group flex w-full items-start gap-3 py-2.5 text-left text-[13px] leading-6 text-muted-foreground transition-colors duration-150 hover:text-foreground"
                           onClick={() => {
                             setDraft(example);
                             composer.current?.focus();
                           }}
                         >
-                          {example}
+                          <span className="min-w-0 flex-1">{example}</span>
+                          <ArrowUpRight
+                            className="mt-1 size-3.5 shrink-0 text-muted-foreground/50 transition-colors duration-150 group-hover:text-foreground"
+                            strokeWidth={1.5}
+                          />
                         </button>
                       </li>
                     );
@@ -283,11 +277,11 @@ export function ChatPanel({
               </div>
             )}
 
-            <ol className="space-y-7">
+            <ol className="space-y-8">
               {messages.map((message) =>
                 message.role === "user" ? (
                   <li key={message.id} className="flex justify-end">
-                    <div className="max-w-[85%] rounded-3xl rounded-br-lg bg-muted px-4 py-2.5 text-[15px] leading-7 break-words whitespace-pre-wrap">
+                    <div className="max-w-[85%] rounded-[0.875rem] bg-muted px-3.5 py-2.5 text-[15px] leading-7 break-words whitespace-pre-wrap">
                       {message.content}
                     </div>
                   </li>
@@ -328,13 +322,13 @@ export function ChatPanel({
 
               {!running && stopped && (
                 <li className="flex items-center gap-2.5 text-[15px] text-muted-foreground">
-                  <Square className="size-3.5" />
+                  <Square className="size-3.5" strokeWidth={1.5} />
                   {t("chat.stopped")}
                 </li>
               )}
               {!running && failed && (
-                <li className="flex gap-3 rounded-2xl border border-error/20 bg-error/5 px-4 py-3">
-                  <TriangleAlert className="mt-0.5 size-4 shrink-0 text-error" />
+                <li className="flex gap-3 rounded-[0.875rem] border border-error/25 bg-error/[0.04] px-4 py-3">
+                  <TriangleAlert className="mt-0.5 size-4 shrink-0 text-error" strokeWidth={1.5} />
                   <div className="min-w-0 flex-1">
                     <p className="text-[13px] font-medium text-error">{t("chat.failed.title")}</p>
                     <p className="mt-0.5 text-[13px] leading-6 text-muted-foreground">
@@ -359,20 +353,19 @@ export function ChatPanel({
               variant="outline"
               size="icon"
               aria-label={t("chat.scrollToLatest")}
-              className="pointer-events-auto size-8 rounded-full bg-card shadow-sm"
+              className="pointer-events-auto size-8 rounded-full bg-card"
               onClick={() => setPinned(true)}
             >
-              <ArrowDown className="size-4" />
+              <ArrowDown className="size-4" strokeWidth={1.5} />
             </Button>
           </div>
         )}
       </div>
 
-      <div className="shrink-0 px-4 pt-2 pb-4 sm:px-6">
-        <div className="mx-auto w-full max-w-3xl">
-          {/* The rounded band around the box stays transparent; only the box
-              itself is a surface, and its ring appears on hover/focus. */}
-          <div className="flex items-end gap-2 rounded-[26px] border border-transparent bg-card px-3 py-2 shadow-sm transition-colors hover:border-border/70 focus-within:border-primary/40 focus-within:shadow-md">
+      <div className="shrink-0 px-6 pt-2 pb-4">
+        <div className="mx-auto w-full max-w-[46rem]">
+          {/* One field: hairline, 12px radius, the ring only while it has focus. */}
+          <div className="flex items-end gap-2 rounded-[0.75rem] border border-input bg-card p-1.5 transition-colors duration-150 focus-within:border-ring">
             <textarea
               ref={composer}
               value={draft}
@@ -388,7 +381,7 @@ export function ChatPanel({
               rows={1}
               maxLength={limit}
               aria-label={t("chat.composer.label")}
-              className="max-h-[12.5rem] min-h-9 flex-1 resize-none bg-transparent px-1 py-1.5 text-[15px] leading-6 outline-none placeholder:text-muted-foreground/70"
+              className="max-h-[12.5rem] min-h-8 flex-1 resize-none bg-transparent px-1.5 py-1 text-[15px] leading-6 outline-none placeholder:text-muted-foreground/70"
               placeholder={
                 busy ? t("chat.composer.placeholderBusy") : t("chat.composer.placeholder")
               }
@@ -397,7 +390,7 @@ export function ChatPanel({
               <Button
                 size="icon"
                 aria-label={t("chat.composer.stop")}
-                className="size-9 shrink-0 rounded-full"
+                className="size-8 shrink-0 rounded-md"
                 onClick={() => cancel.mutate(undefined, {
                   onError: (failure) => setError({ code: failure instanceof ApiError ? failure.code : null }),
                 })}
@@ -409,14 +402,14 @@ export function ChatPanel({
               <Button
                 size="icon"
                 aria-label={t("chat.composer.send")}
-                className="size-9 shrink-0 rounded-full"
+                className="size-8 shrink-0 rounded-md"
                 onClick={() => void submit()}
                 disabled={!draft.trim() || send.isPending || start.isPending}
               >
                 {send.isPending || start.isPending ? (
                   <Loader2 className="animate-spin" />
                 ) : (
-                  <ArrowUp className="size-4" />
+                  <ArrowUp className="size-4" strokeWidth={1.5} />
                 )}
               </Button>
             )}

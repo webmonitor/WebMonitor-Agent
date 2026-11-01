@@ -11,23 +11,27 @@ type PagedList = {
   refetch: () => Promise<unknown>;
 };
 
+/** Counts are quiet text; the only control is a plain "load more". */
 export function ListPagination({ query }: { query: PagedList }) {
   const { t } = useI18n();
   return (
     <div className="space-y-2 py-2 text-xs text-muted-foreground">
       {Boolean(query.error) && (
-        <div role="alert" className="space-y-1 text-error">
+        <div role="alert" className="space-y-1.5 text-error">
           <p>{t("common.listError")}</p>
           <Button size="sm" variant="outline" onClick={() => void query.refetch()}>
             {t("common.retry")}
           </Button>
         </div>
       )}
-      {query.data && query.data.total > 0 && (
-        <p>{t("common.loadedCount", { count: query.data.items.length, total: query.data.total })}</p>
+      {query.data && query.hasNextPage && query.data.total > 0 && (
+        <p className="num text-[11px]">
+          {t("common.loadedCount", { count: query.data.items.length, total: query.data.total })}
+        </p>
       )}
       {query.hasNextPage && (
-        <Button size="sm" variant="outline" disabled={query.isFetchingNextPage}
+        <Button size="sm" variant="ghost" className="px-0 text-xs text-foreground hover:bg-transparent hover:underline"
+          disabled={query.isFetchingNextPage}
           onClick={() => void query.fetchNextPage()}>
           {query.isFetchingNextPage ? t("common.loading") : t("common.loadMore")}
         </Button>

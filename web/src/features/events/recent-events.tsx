@@ -15,22 +15,22 @@ export function RecentEvents({ monitorId }: { monitorId: string }) {
     .slice(0, 3);
 
   return (
-    <section className="space-y-2">
-      <div className="flex items-baseline justify-between">
-        <h2 className="text-[11px] font-medium uppercase tracking-wide text-muted-foreground">{t("activity.recent.title")}</h2>
-        <Link href="/app/events" className="text-xs text-primary underline-offset-2 hover:underline">
+    <section>
+      <div className="mb-2 flex items-baseline justify-between gap-2">
+        <h2 className="section-title">{t("activity.recent.title")}</h2>
+        <Link href="/app/events" className="text-[11px] text-primary underline-offset-2 hover:underline">
           {t("activity.recent.all")}
         </Link>
       </div>
       {items.length === 0 ? (
         <p className="meta">{t("activity.recent.empty")}</p>
       ) : (
-        <ul className="space-y-2">
+        <ul className="divide-y border-t">
           {items.map((event) => (
-            <li key={event.id} className="surface space-y-1.5 p-3">
+            <li key={event.id} className="space-y-1.5 py-2.5">
               <p className="flex items-baseline justify-between gap-2 text-[11px] text-muted-foreground">
                 <span>{eventLabel(event.type)}</span>
-                <span>{formatTime(event.created_at)}</span>
+                <span className="num">{formatTime(event.created_at)}</span>
               </p>
               <ChangeRows change={event.change} type={event.type} />
             </li>

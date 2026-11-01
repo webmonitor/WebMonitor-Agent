@@ -28,11 +28,11 @@ function EvidenceLinks({ draftId, preview }: { draftId: string; preview: DraftPr
   const { t } = useI18n();
   if (preview.evidence_refs.length === 0) return null;
   return (
-    <div className="flex flex-wrap gap-2">
+    <div className="flex flex-wrap gap-x-4 gap-y-1.5">
       {preview.evidence_refs.map((reference, index) => (
         <a
           key={reference.sha256}
-          className="chip bg-muted text-muted-foreground hover:text-foreground"
+          className="inline-flex items-center gap-1.5 text-xs text-muted-foreground transition-colors duration-150 hover:text-foreground"
           href={`/api/v1/drafts/${draftId}/evidence/${index}`}
           target="_blank"
           rel="noreferrer"
@@ -40,8 +40,8 @@ function EvidenceLinks({ draftId, preview }: { draftId: string; preview: DraftPr
           {reference.kind === "screenshot"
             ? t("chat.evidence.screenshot")
             : t("chat.evidence.archive")}
-          <span className="text-[10px] tabular-nums">{formatBytes(reference.size_bytes)}</span>
-          <ExternalLink className="size-3" />
+          <span className="num text-[10px]">{formatBytes(reference.size_bytes)}</span>
+          <ExternalLink className="size-3.5" strokeWidth={1.5} />
         </a>
       ))}
     </div>
@@ -51,6 +51,9 @@ function EvidenceLinks({ draftId, preview }: { draftId: string; preview: DraftPr
 /**
  * The confirmation step of the whole product: everything the user is about to
  * turn into a scheduled monitor is shown here before the button is pressed.
+ *
+ * It is laid out as a report — a ruled header, then labelled blocks — because
+ * what is being read is a record of one collected page, not a settings form.
  */
 export function CreateMonitorCard({
   conversationId,
@@ -158,13 +161,13 @@ export function CreateMonitorCard({
     return (
       <section className="surface-pad space-y-3">
         <div className="space-y-1">
-          <h2 className="text-[15px] font-semibold">
+          <h2 className="text-[14px] font-medium">
             {editing ? t("chat.preview.editTitle") : t("chat.preview.title")}
           </h2>
-          <p className="meta">{t("chat.preview.body")}</p>
+          <p className="meta leading-5">{t("chat.preview.body")}</p>
         </div>
         <Button variant="outline" className="w-full" onClick={() => void onRepreview()} disabled={previewBusy}>
-          <RefreshCw />
+          <RefreshCw strokeWidth={1.5} />
           {previewBusy ? t("chat.preview.opening") : t("chat.preview.run")}
         </Button>
         {feedback}
@@ -178,31 +181,31 @@ export function CreateMonitorCard({
   }
 
   return (
-    <section className="surface-pad space-y-4">
-      <header className="space-y-1.5">
-        <div className="flex flex-wrap items-center justify-between gap-2">
+    <section className="surface">
+      <header className="space-y-2 border-b px-4 py-3">
+        <div className="flex items-baseline justify-between gap-2">
+          <span className="label-line">
+            {t("chat.preview.expires", { relative: formatRelative(preview.expires_at) })}
+          </span>
           <Badge tone={expired ? "warning" : "brand"}>
             {expired ? t("chat.status.expired") : t("chat.status.pending")}
           </Badge>
-          <span className="meta">
-            {t("chat.preview.expires", { relative: formatRelative(preview.expires_at) })}
-          </span>
         </div>
-        <h2 className="text-[15px] font-semibold">
-          {editing ? t("chat.approve.editTitle") : t("chat.approve.title")}
-        </h2>
-        <p className="meta">
-          {editing ? t("chat.approve.editBody") : t("chat.approve.body")}
-        </p>
+        <div className="space-y-0.5">
+          <h2 className="text-[14px] font-medium">
+            {editing ? t("chat.approve.editTitle") : t("chat.approve.title")}
+          </h2>
+          <p className="meta leading-5">
+            {editing ? t("chat.approve.editBody") : t("chat.approve.body")}
+          </p>
+        </div>
       </header>
 
-      <div className="space-y-2 rounded-lg border bg-muted/40 p-3">
-        <div className="flex items-baseline justify-between gap-2">
-          <span className="min-w-0 truncate text-[13px] font-medium">
-            {spec?.name ?? t("chat.approve.untitled")}
-          </span>
-          <span className="meta shrink-0 tabular-nums">{formatInterval(spec?.schedule?.interval_seconds)}</span>
-        </div>
+      {/* The record header: which page, how often, in which zone. */}
+      <div className="space-y-1.5 border-b px-4 py-3">
+        <p className="truncate text-[13px] font-medium">
+          {spec?.name ?? t("chat.approve.untitled")}
+        </p>
         <a
           className="block truncate text-xs text-primary underline-offset-2 hover:underline"
           href={preview.final_url ?? spec?.url}
@@ -211,107 +214,110 @@ export function CreateMonitorCard({
         >
           {hostOf(preview.final_url ?? spec?.url)}
         </a>
-        <p className="meta">
+        <p className="num text-[11px] text-muted-foreground">
+          {formatInterval(spec?.schedule?.interval_seconds)}
+          {" · "}
           {t("chat.approve.timezone", { zone: formatTimezone(spec?.schedule?.timezone) })}
         </p>
       </div>
 
-      <div className="space-y-1.5">
-        <h3 className="text-[11px] font-medium uppercase tracking-wide text-muted-foreground">
-          {t("chat.section.extracted")}
-        </h3>
-        <ul className="space-y-1">
-          {(spec?.fields ?? []).map((field) => (
-            <li key={field.name} className="flex items-baseline justify-between gap-3 text-[13px]">
-              <span className="shrink-0 text-muted-foreground">{labels[field.name]}</span>
-              <span className="min-w-0 truncate text-right font-medium tabular-nums">
-                {formatValue(preview.extracted_data[field.name])}
-              </span>
-            </li>
-          ))}
-        </ul>
-      </div>
+      <div className="space-y-4 px-4 py-3">
+        <div>
+          <h3 className="label-line">{t("chat.section.extracted")}</h3>
+          <dl className="mt-1.5 divide-y">
+            {(spec?.fields ?? []).map((field) => (
+              <div key={field.name} className="flex items-baseline justify-between gap-3 py-1.5">
+                <dt className="shrink-0 text-[12px] text-muted-foreground">{labels[field.name]}</dt>
+                <dd className="num min-w-0 truncate text-right text-[13px]">
+                  {formatValue(preview.extracted_data[field.name])}
+                </dd>
+              </div>
+            ))}
+          </dl>
+        </div>
 
-      <div className="space-y-1.5">
-        <h3 className="text-[11px] font-medium uppercase tracking-wide text-muted-foreground">
-          {t("chat.section.rules")}
-        </h3>
-        <p className="text-[13px]">
-          {describeRules(spec?.change_rules?.rules ?? [], spec?.change_rules?.mode, labels)}
-        </p>
-      </div>
+        <div>
+          <h3 className="label-line">{t("chat.section.rules")}</h3>
+          <p className="mt-1 text-[13px] leading-6">
+            {describeRules(spec?.change_rules?.rules ?? [], spec?.change_rules?.mode, labels)}
+          </p>
+        </div>
 
-      <div className="space-y-1.5">
-        <h3 className="text-[11px] font-medium uppercase tracking-wide text-muted-foreground">
-          {t("chat.section.recipients")}
-        </h3>
-        {preview.recipients.length === 0 ? (
-          <p className="text-[13px] text-warning">{t("chat.recipients.empty")}</p>
-        ) : (
-          <ul className="flex flex-wrap gap-1.5">
-            {preview.recipients.map((recipient) => (
-              <li key={recipient} className="chip bg-muted text-[11px] text-muted-foreground">
-                {recipient}
+        <div>
+          <h3 className="label-line">{t("chat.section.recipients")}</h3>
+          {preview.recipients.length === 0 ? (
+            <p className="mt-1 text-[13px] text-warning">{t("chat.recipients.empty")}</p>
+          ) : (
+            <ul className="mt-1 flex flex-wrap gap-x-3 gap-y-1">
+              {preview.recipients.map((recipient) => (
+                <li key={recipient} className="num truncate text-[12px] text-muted-foreground">
+                  {recipient}
+                </li>
+              ))}
+            </ul>
+          )}
+        </div>
+
+        <EvidenceLinks draftId={draft.id} preview={preview} />
+
+        {preview.warnings.length > 0 && (
+          <ul className="space-y-1 border-l-2 border-warning/40 pl-2.5 text-xs leading-5 text-warning">
+            {preview.warnings.map((warning) => (
+              <li key={warning} className="flex items-start gap-1.5">
+                <AlertTriangle className="mt-0.5 size-3.5 shrink-0" strokeWidth={1.5} />
+                {warningText(warning)}
               </li>
             ))}
           </ul>
         )}
+
+        {preview.rendered_emails.length > 0 && (
+          <details className="group border-t pt-3">
+            <summary className="flex cursor-pointer list-none flex-wrap items-center gap-1.5 text-xs text-muted-foreground transition-colors duration-150 hover:text-foreground [&::-webkit-details-marker]:hidden">
+              <Mail className="size-3.5 shrink-0" strokeWidth={1.5} />
+              <span className="shrink-0">{t("chat.mail.preview")}</span>
+              <span className="min-w-0 flex-1 truncate text-right text-[11px]">
+                {preview.rendered_emails[0]?.subject}
+              </span>
+            </summary>
+            {preview.rendered_emails.slice(0, 1).map((email) => (
+              <iframe
+                key={email.event_type}
+                title={t("chat.mail.title")}
+                sandbox=""
+                className="mt-2 h-64 w-full rounded-lg border bg-white"
+                srcDoc={email.preview_html ?? email.html}
+              />
+            ))}
+          </details>
+        )}
       </div>
 
-      <EvidenceLinks draftId={draft.id} preview={preview} />
-
-      {preview.warnings.length > 0 && (
-        <ul className="space-y-1 rounded-lg border border-warning/30 bg-warning/5 p-2.5 text-xs text-warning">
-          {preview.warnings.map((warning) => (
-            <li key={warning} className="flex items-start gap-1.5">
-              <AlertTriangle className="mt-0.5 size-3.5 shrink-0" />
-              {warningText(warning)}
-            </li>
-          ))}
-        </ul>
-      )}
-
-      {preview.rendered_emails.length > 0 && (
-        <details className="group rounded-lg border">
-          <summary className="flex cursor-pointer flex-wrap items-center gap-1.5 px-3 py-2 text-xs text-muted-foreground">
-            <Mail className="size-3.5 shrink-0" />
-            <span className="shrink-0">{t("chat.mail.preview")}</span>
-            <span className="min-w-0 flex-1 truncate text-right">{preview.rendered_emails[0]?.subject}</span>
-          </summary>
-          {preview.rendered_emails.slice(0, 1).map((email) => (
-            <iframe
-              key={email.event_type}
-              title={t("chat.mail.title")}
-              sandbox=""
-              className="h-64 w-full border-t bg-white"
-              srcDoc={email.preview_html ?? email.html}
-            />
-          ))}
-        </details>
-      )}
-
-      <div className="space-y-2">
+      <div className="space-y-2 border-t px-4 py-3">
         <Button className="w-full" onClick={() => void onApprove()} disabled={disabled}>
-          <CheckCircle2 />
+          <CheckCircle2 strokeWidth={1.5} />
           {approveLabel}
         </Button>
-        <Button
-          variant="ghost"
-          className="w-full text-muted-foreground"
+        <button
+          type="button"
+          className="w-full text-[12px] text-muted-foreground transition-colors duration-150 hover:text-foreground disabled:opacity-45"
           onClick={() => void onRepreview()}
           disabled={previewBusy || approving}
         >
-          <RefreshCw />
           {previewBusy ? t("chat.approve.repreviewing") : t("chat.approve.repreview")}
-        </Button>
+        </button>
       </div>
-      {feedback}
 
-      {expired && <p className="text-xs text-warning">{t("chat.approve.expired")}</p>}
-      {error && (
-        <p className="text-xs text-error" role="alert">
-          {describeError(error)}
-        </p>
+      {(feedback || expired || error) && (
+        <div className="space-y-1 border-t px-4 py-2.5">
+          {feedback}
+          {expired && <p className="text-xs text-warning">{t("chat.approve.expired")}</p>}
+          {error && (
+            <p className="text-xs text-error" role="alert">
+              {describeError(error)}
+            </p>
+          )}
+        </div>
       )}
     </section>
   );

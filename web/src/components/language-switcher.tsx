@@ -7,14 +7,14 @@ const OPTIONS = [
   { value: "zh-CN", label: "中文", short: "中文" },
 ] as const;
 
-/** Segmented English / 中文 switch, mirroring the original WebMonitor header control. */
+/** Segmented English / 中文 switch: two labels on a hairline, no pill, no lift. */
 export function LanguageSwitcher({ className = "" }: { className?: string }) {
   const { locale, setLocale, t } = useI18n();
   return (
     <div
       role="group"
       aria-label={t("common.language")}
-      className={`inline-flex shrink-0 items-center rounded-full border bg-muted/40 p-0.5 ${className}`}
+      className={`inline-flex shrink-0 items-center gap-0.5 rounded-md border border-transparent ${className}`}
     >
       {OPTIONS.map((option) => {
         const active = locale === option.value;
@@ -24,9 +24,9 @@ export function LanguageSwitcher({ className = "" }: { className?: string }) {
             type="button"
             aria-pressed={active}
             onClick={() => setLocale(option.value)}
-            className={`rounded-full px-2 py-0.5 text-[11px] font-semibold leading-4 transition-colors ${
+            className={`rounded px-1.5 py-0.5 text-[11px] leading-4 transition-colors duration-150 ${
               active
-                ? "bg-primary text-primary-foreground shadow-sm"
+                ? "bg-secondary font-medium text-foreground"
                 : "text-muted-foreground hover:text-foreground"
             }`}
           >

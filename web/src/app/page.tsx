@@ -27,156 +27,157 @@ const stepItems = [
 ] as const;
 
 const featureItems = [
-  {
-    id: "history",
-    icon: History,
-    title: "public.features.history.title",
-    body: "public.features.history.body",
-  },
-  {
-    id: "email",
-    icon: MailCheck,
-    title: "public.features.email.title",
-    body: "public.features.email.body",
-  },
-  {
-    id: "recipients",
-    icon: Users,
-    title: "public.features.recipients.title",
-    body: "public.features.recipients.body",
-  },
-  {
-    id: "control",
-    icon: Settings2,
-    title: "public.features.control.title",
-    body: "public.features.control.body",
-  },
+  { id: "history", icon: History, title: "public.features.history.title", body: "public.features.history.body" },
+  { id: "email", icon: MailCheck, title: "public.features.email.title", body: "public.features.email.body" },
+  { id: "recipients", icon: Users, title: "public.features.recipients.title", body: "public.features.recipients.body" },
+  { id: "control", icon: Settings2, title: "public.features.control.title", body: "public.features.control.body" },
 ] as const;
 
-const samplePrices = [
-  { id: "previous", label: "public.sample.previous", value: "¥128.50" },
-  { id: "current", label: "public.sample.current", value: "¥99.00" },
-] as const;
+/**
+ * The hero shows the one artifact this product produces: a change record.
+ * Old value struck, new value in the ink the product uses for "this changed".
+ */
+function ChangeRecord() {
+  const { t } = useI18n();
+  return (
+    <figure className="surface w-full p-5 sm:p-6">
+      <div className="flex items-baseline justify-between gap-3">
+        <span className="label-line">{t("public.sample.title")}</span>
+        <span className="text-[11px] text-muted-foreground">{t("public.sample.badge")}</span>
+      </div>
+
+      <div className="mt-3 space-y-0.5">
+        <p className="text-[15px] font-medium">{t("public.sample.product")}</p>
+        <p className="num text-[11px] text-muted-foreground">shop.example.com/product</p>
+      </div>
+
+      <div className="mt-5 grid grid-cols-[1fr_auto_1fr] items-end gap-3 border-t pt-4">
+        <div>
+          <p className="label-line">{t("public.sample.previous")}</p>
+          <p className="num mt-1 text-[1.375rem] text-muted-foreground line-through decoration-muted-foreground/40">
+            ¥128.50
+          </p>
+        </div>
+        <ArrowRight className="mb-1.5 size-4 text-muted-foreground/60" strokeWidth={1.5} />
+        <div className="text-right">
+          <p className="label-line">{t("public.sample.current")}</p>
+          <p className="num mt-1 text-[2rem] leading-none font-medium text-primary">¥99.00</p>
+        </div>
+      </div>
+
+      <figcaption className="mt-4 border-t pt-3 text-xs leading-5 text-muted-foreground">
+        {t("public.sample.schedule")}
+      </figcaption>
+    </figure>
+  );
+}
 
 export default function LandingPage() {
   const { t } = useI18n();
 
   return (
-    <main className="mx-auto flex min-h-dvh w-full max-w-5xl flex-col px-6 py-6">
-      <nav aria-label={t("public.nav.aria")} className="flex flex-wrap items-center justify-between gap-2 sm:gap-4">
-        <span className="flex items-center gap-2 text-[15px] font-semibold">
-          <Radar className="size-5 text-primary" />
+    <div className="min-h-dvh bg-background">
+      <header className="mx-auto flex h-16 w-full max-w-[76rem] items-center gap-4 px-6 sm:px-10">
+        <span className="flex items-center gap-2 text-[15px] font-medium">
+          <Radar className="size-4 text-primary" strokeWidth={1.5} />
           WebMonitor
         </span>
-        <div className="flex items-center gap-2 text-sm">
+        <div className="ml-auto flex items-center gap-3 text-[13px]">
           <LanguageSwitcher />
-          <Link className="rounded-lg px-3 py-1.5 text-muted-foreground hover:text-foreground" href="/login">
+          <Link className="text-muted-foreground transition-colors duration-150 hover:text-foreground" href="/login">
             {t("public.nav.login")}
           </Link>
           <Link
-            className="flex items-center gap-1.5 rounded-lg bg-primary px-3.5 py-1.5 font-medium text-primary-foreground hover:opacity-90"
+            className="flex h-9 items-center gap-1.5 font-medium text-foreground transition-colors duration-150 hover:text-primary"
             href="/app"
           >
             {t("public.nav.workspace")}
-            <ArrowRight className="size-3.5" />
+            <ArrowRight className="size-4" strokeWidth={1.5} />
           </Link>
         </div>
-      </nav>
+      </header>
 
-      <section className="grid gap-10 py-14 lg:grid-cols-[minmax(0,1fr)_21rem] lg:items-center lg:py-20">
-        <div>
-          <p className="text-xs font-medium tracking-wide text-primary">{t("public.hero.eyebrow")}</p>
-          <h1 className="mt-2 max-w-xl text-[2.1rem] font-semibold leading-[1.25] tracking-tight sm:text-[2.5rem]">
-            {t("public.hero.titleLine1")}
-            <br />
-            {t("public.hero.titleLine2")}
-          </h1>
-          <p className="mt-5 max-w-xl text-[15px] leading-relaxed text-muted-foreground">
-            {t("public.hero.body")}
-          </p>
-          <div className="mt-7 flex flex-wrap items-center gap-3">
-            <Link
-              className="flex items-center gap-1.5 rounded-lg bg-primary px-4 py-2.5 text-sm font-medium text-primary-foreground hover:opacity-90"
-              href="/app"
-            >
-              {t("public.hero.cta")}
-              <ArrowRight className="size-4" />
-            </Link>
-            <Link className="rounded-lg border bg-card px-4 py-2.5 text-sm hover:bg-muted" href="#how-it-works">
-              {t("public.hero.secondaryCta")}
-            </Link>
+      <main className="mx-auto w-full max-w-[76rem] px-6 sm:px-10">
+        {/* First screen: copy on the left, the change record on the right. */}
+        <section className="grid items-center gap-12 py-12 lg:min-h-[calc(100dvh-4rem)] lg:grid-cols-[minmax(0,1fr)_minmax(0,29rem)] lg:gap-16 lg:py-16">
+          <div className="max-w-[32rem]">
+            <h1 className="text-[2rem] leading-[1.15] font-medium sm:text-[3rem] sm:leading-[1.08]">
+              {t("public.hero.titleLine1")}
+              <br />
+              {t("public.hero.titleLine2")}
+            </h1>
+            <p className="mt-6 max-w-[30rem] text-[15px] leading-7 text-muted-foreground">
+              {t("public.hero.body")}
+            </p>
+            <div className="mt-8 flex flex-wrap items-center gap-3">
+              <Link
+                className="flex h-11 items-center gap-1.5 rounded-lg bg-primary px-5 text-sm font-medium text-primary-foreground transition-colors duration-150 hover:bg-[var(--primary-hover)]"
+                href="/app"
+              >
+                {t("public.hero.cta")}
+                <ArrowRight className="size-4" strokeWidth={1.5} />
+              </Link>
+              <Link
+                className="flex h-11 items-center rounded-lg border border-input bg-card px-5 text-sm transition-colors duration-150 hover:bg-muted"
+                href="#how-it-works"
+              >
+                {t("public.hero.secondaryCta")}
+              </Link>
+            </div>
+            <p className="mt-5 text-xs leading-5 text-muted-foreground">{t("public.hero.note")}</p>
           </div>
-          <p className="mt-4 text-xs text-muted-foreground">{t("public.hero.note")}</p>
-        </div>
 
-        <div className="surface-pad space-y-5 shadow-sm">
-          <div className="flex items-center justify-between gap-2">
-            <p className="text-xs text-muted-foreground">{t("public.sample.title")}</p>
-            <span className="chip border-success/30 bg-success/10 text-success">{t("public.sample.badge")}</span>
-          </div>
-          <div>
-            <p className="text-[15px] font-medium">{t("public.sample.product")}</p>
-            <p className="mt-1 text-xs text-muted-foreground">shop.example.com/product</p>
-          </div>
-          <dl className="grid grid-cols-2 gap-4">
-            {samplePrices.map((price) => (
-              <div key={price.id}>
-                <dt className="text-xs text-muted-foreground">{t(price.label)}</dt>
-                <dd className="mt-1 text-xl font-semibold tabular-nums">{price.value}</dd>
+          <ChangeRecord />
+        </section>
+
+        <section className="border-t py-16 sm:py-20">
+          <h2 className="text-[1.0625rem] font-medium">{t("public.examples.title")}</h2>
+          <ul className="mt-6 divide-y">
+            {exampleItems.map((example) => (
+              <li key={example.id} className="grid gap-1 py-4 sm:grid-cols-[10rem_minmax(0,34rem)] sm:gap-6">
+                <h3 className="text-[14px] font-medium">{t(example.title)}</h3>
+                <p className="max-w-[38rem] text-[13px] leading-6 text-muted-foreground">
+                  {t(example.detail)}
+                </p>
+              </li>
+            ))}
+          </ul>
+        </section>
+
+        <section id="how-it-works" className="scroll-mt-6 border-t py-16 sm:py-20">
+          <h2 className="text-[1.0625rem] font-medium">{t("public.steps.title")}</h2>
+          <ol className="mt-6 grid gap-8 sm:grid-cols-3 sm:gap-10">
+            {stepItems.map((step, index) => (
+              <li key={step.id} className="border-t pt-3">
+                <span className="num text-[11px] text-muted-foreground">
+                  {String(index + 1).padStart(2, "0")}
+                </span>
+                <p className="mt-2 text-[14px] font-medium">{t(step.title)}</p>
+                <p className="mt-1.5 text-[13px] leading-6 text-muted-foreground">{t(step.body)}</p>
+              </li>
+            ))}
+          </ol>
+        </section>
+
+        <section className="border-t py-16 sm:py-20">
+          <h2 className="max-w-[34rem] text-[1.0625rem] font-medium">{t("public.features.title")}</h2>
+          <div className="mt-6 grid gap-x-10 gap-y-6 sm:grid-cols-2">
+            {featureItems.map(({ id, icon: Icon, title, body }) => (
+              <div key={id} className="flex gap-3">
+                <Icon className="mt-0.5 size-4 text-muted-foreground" strokeWidth={1.5} />
+                <div className="min-w-0">
+                  <h3 className="text-[14px] font-medium">{t(title)}</h3>
+                  <p className="mt-1 max-w-[30rem] text-[13px] leading-6 text-muted-foreground">{t(body)}</p>
+                </div>
               </div>
             ))}
-          </dl>
-          <p className="border-t pt-3 text-xs leading-relaxed text-muted-foreground">
-            {t("public.sample.schedule")}
-          </p>
-        </div>
-      </section>
+          </div>
+        </section>
+      </main>
 
-      <section className="border-t py-10">
-        <h2 className="text-xl font-semibold">{t("public.examples.title")}</h2>
-        <ul className="mt-4 grid gap-4 sm:grid-cols-2">
-          {exampleItems.map((example) => (
-            <li key={example.id} className="surface space-y-2 p-5">
-              <h3 className="text-[15px] font-medium">{t(example.title)}</h3>
-              <p className="text-sm leading-relaxed text-muted-foreground">{t(example.detail)}</p>
-            </li>
-          ))}
-        </ul>
-      </section>
-
-      <section id="how-it-works" className="scroll-mt-6 border-t py-10">
-        <h2 className="text-xl font-semibold">{t("public.steps.title")}</h2>
-        <ol className="mt-4 grid gap-6 sm:grid-cols-3">
-          {stepItems.map((step, index) => (
-            <li key={step.id} className="space-y-1.5">
-              <span className="grid size-7 place-items-center rounded-full border text-xs font-semibold tabular-nums text-primary">
-                {index + 1}
-              </span>
-              <p className="text-[15px] font-medium">{t(step.title)}</p>
-              <p className="text-sm leading-relaxed text-muted-foreground">{t(step.body)}</p>
-            </li>
-          ))}
-        </ol>
-      </section>
-
-      <section className="border-t py-10">
-        <h2 className="text-xl font-semibold">{t("public.features.title")}</h2>
-        <div className="mt-5 grid gap-6 sm:grid-cols-2">
-          {featureItems.map(({ id, icon: Icon, title, body }) => (
-            <div key={id} className="flex gap-3">
-              <Icon className="mt-0.5 size-4 shrink-0 text-primary" />
-              <div>
-                <h3 className="text-[15px] font-medium">{t(title)}</h3>
-                <p className="mt-0.5 text-sm leading-relaxed text-muted-foreground">{t(body)}</p>
-              </div>
-            </div>
-          ))}
-        </div>
-      </section>
-
-      <footer className="mt-auto flex flex-wrap items-center justify-between gap-2 border-t py-4 text-xs text-muted-foreground">
+      <footer className="mx-auto flex w-full max-w-[76rem] flex-wrap items-center justify-between gap-2 border-t px-6 py-5 text-xs text-muted-foreground sm:px-10">
         <span>{t("public.footer.tagline")}</span>
       </footer>
-    </main>
+    </div>
   );
 }

@@ -21,6 +21,9 @@ import { ListPagination } from "@/components/list-pagination";
 
 const CONVERSATION_PREVIEW = 8;
 
+/* One row height for every navigation item, so the sidebar reads as a column. */
+const ROW = "flex h-8 items-center gap-2 rounded-md px-2 text-[13px] transition-colors duration-150";
+
 function ConversationList() {
   const { t } = useI18n();
   const { dayLabel, formatRelative } = useFormat();
@@ -59,43 +62,46 @@ function ConversationList() {
 
   return (
     <>
-    {groups.map((group) => (
-      <div key={group.day} className="mb-1">
-        <p className="px-2.5 pb-0.5 pt-1 text-[10px] font-medium tracking-wide text-muted-foreground">{group.day}</p>
-        <ul className="space-y-0.5">
-      {group.items.map((conversation) => {
-        const current = conversation.id === active;
-        return (
-          <li key={conversation.id}>
-            <Link
-              href={`/app?conversation=${conversation.id}`}
-              aria-current={current ? "page" : undefined}
-              className={`flex flex-col rounded-lg px-2.5 py-1.5 transition-colors ${
-                current ? "bg-accent text-accent-foreground" : "hover:bg-muted"
-              }`}
-            >
-              <span className="truncate text-[13px] leading-5">
-                {conversation.title?.trim() || t("common.untitledConversation")}
-              </span>
-              <span className="text-[11px] leading-4 text-muted-foreground">
-                {formatRelative(conversation.updated_at)}
-              </span>
-            </Link>
-          </li>
-        );
-      })}
-        </ul>
-      </div>
-    ))}
-    {items.length > CONVERSATION_PREVIEW && (
-      <button
-        className="mt-1 w-full rounded-lg px-2.5 py-1 text-left text-[11px] text-muted-foreground hover:bg-muted hover:text-foreground"
-        onClick={() => setExpanded((value) => !value)}
-      >
-        {expanded ? t("common.collapse") : t("common.allConversations", { count: items.length })}
-      </button>
-    )}
-    {expanded && <ListPagination query={conversations} />}
+      {groups.map((group) => (
+        <div key={group.day} className="mt-2 first:mt-0">
+          {/* Day captions sit closer to their own rows than to the group above. */}
+          <p className="num px-2 pb-1 text-[10px] leading-4 text-muted-foreground/80">{group.day}</p>
+          <ul>
+            {group.items.map((conversation) => {
+              const isCurrent = conversation.id === active;
+              return (
+                <li key={conversation.id}>
+                  <Link
+                    href={`/app?conversation=${conversation.id}`}
+                    aria-current={isCurrent ? "page" : undefined}
+                    className={`${ROW} ${
+                      isCurrent
+                        ? "bg-secondary text-foreground"
+                        : "text-muted-foreground hover:bg-muted hover:text-foreground"
+                    }`}
+                  >
+                    <span className="min-w-0 flex-1 truncate">
+                      {conversation.title?.trim() || t("common.untitledConversation")}
+                    </span>
+                    <span className="num shrink-0 text-[10px] text-muted-foreground/80">
+                      {formatRelative(conversation.updated_at)}
+                    </span>
+                  </Link>
+                </li>
+              );
+            })}
+          </ul>
+        </div>
+      ))}
+      {items.length > CONVERSATION_PREVIEW && (
+        <button
+          className="mt-1 h-7 px-2 text-left text-[11px] text-muted-foreground transition-colors duration-150 hover:text-foreground"
+          onClick={() => setExpanded((value) => !value)}
+        >
+          {expanded ? t("common.collapse") : t("common.allConversations", { count: items.length })}
+        </button>
+      )}
+      {expanded && <ListPagination query={conversations} />}
     </>
   );
 }
@@ -116,37 +122,37 @@ function MonitorList({ onNavigate }: { onNavigate: () => void }) {
   }
   return (
     <>
-    <ul className="space-y-0.5">
-      {items.map((monitor) => {
-        const active = pathname === `/app/monitors/${monitor.id}`;
-        return (
-          <li key={monitor.id}>
-            <Link
-              href={`/app/monitors/${monitor.id}`}
-              onClick={onNavigate}
-              aria-current={active ? "page" : undefined}
-              className={`flex items-center gap-2 rounded-lg px-2.5 py-1.5 transition-colors ${
-                active ? "bg-accent text-accent-foreground" : "hover:bg-muted"
-              }`}
-            >
-              <span
-                aria-hidden
-                className={`size-1.5 shrink-0 rounded-full ${
-                  monitor.status === "active" ? "bg-success" : "bg-muted-foreground/50"
+      <ul>
+        {items.map((monitor) => {
+          const active = pathname === `/app/monitors/${monitor.id}`;
+          const live = monitor.status === "active";
+          return (
+            <li key={monitor.id}>
+              <Link
+                href={`/app/monitors/${monitor.id}`}
+                onClick={onNavigate}
+                aria-current={active ? "page" : undefined}
+                className={`${ROW} pr-2 ${
+                  active
+                    ? "bg-secondary text-foreground"
+                    : "text-muted-foreground hover:bg-muted hover:text-foreground"
                 }`}
-              />
-              <span className="min-w-0 flex-1">
-                <span className="block truncate text-[13px] leading-5">{monitor.name}</span>
-                <span className="block truncate text-[11px] leading-4 text-muted-foreground">
-                  {monitor.status === "active" ? formatInterval(monitor.interval_seconds) : t("common.paused")}
+              >
+                {/* The signature: one dot that is green only while the monitor is live. */}
+                <span
+                  aria-hidden
+                  className={`size-1.5 shrink-0 rounded-full ${live ? "bg-success" : "bg-muted-foreground/40"}`}
+                />
+                <span className="min-w-0 flex-1 truncate text-foreground">{monitor.name}</span>
+                <span className="num shrink-0 text-[10px] text-muted-foreground/80">
+                  {live ? formatInterval(monitor.interval_seconds) : t("common.paused")}
                 </span>
-              </span>
-            </Link>
-          </li>
-        );
-      })}
-    </ul>
-    <ListPagination query={monitors} />
+              </Link>
+            </li>
+          );
+        })}
+      </ul>
+      <ListPagination query={monitors} />
     </>
   );
 }
@@ -159,9 +165,9 @@ function SectionLabel({
   count?: number;
 }) {
   return (
-    <div className="flex items-center justify-between gap-2 px-2 pb-1 pt-2 text-[11px] font-medium tracking-wide text-muted-foreground">
-      <span>{children}</span>
-      {typeof count === "number" && <span className="tabular-nums">{count}</span>}
+    <div className="mt-6 flex items-baseline justify-between gap-2 px-2 pb-1 first:mt-0">
+      <span className="text-[11px] leading-4 font-medium text-foreground/70">{children}</span>
+      {typeof count === "number" && <span className="num text-[10px] text-muted-foreground">{count}</span>}
     </div>
   );
 }
@@ -209,7 +215,7 @@ export function WorkspaceShell({ children }: { children: ReactNode }) {
       <main className="grid min-h-dvh place-items-center p-6 text-center">
         {error ? (
           <div className="space-y-3">
-            <h1 className="text-lg font-semibold">{t("common.unavailable")}</h1>
+            <h1 className="text-lg font-medium">{t("common.unavailable")}</h1>
             <p className="text-sm text-error" role="alert">
               {t("common.connectionError")}
             </p>
@@ -237,39 +243,39 @@ export function WorkspaceShell({ children }: { children: ReactNode }) {
     <div className="flex h-dvh overflow-hidden bg-background">
       {open && (
         <button
-          className="fixed inset-0 z-30 bg-black/30 md:hidden"
+          className="fixed inset-0 z-30 bg-[rgba(30,27,22,0.28)] md:hidden"
           aria-label={t("common.closeNavigation")}
           onClick={() => setOpen(false)}
         />
       )}
       <aside
-        className={`fixed inset-y-0 left-0 z-40 flex w-[17.5rem] shrink-0 flex-col border-r bg-card transition-transform md:static md:translate-x-0 ${
+        className={`fixed inset-y-0 left-0 z-40 flex w-[17.5rem] shrink-0 flex-col border-r bg-card transition-transform duration-200 md:static md:translate-x-0 ${
           open ? "translate-x-0" : "-translate-x-full"
         }`}
       >
-        <div className="flex h-14 items-center justify-between gap-2 px-4">
-          <Link href="/app" className="flex items-center gap-2 text-[15px] font-semibold">
-            <Radar className="size-5 text-primary" />
-            WebMonitor
+        <div className="flex h-14 items-center gap-2 px-3">
+          <Link href="/app" className="flex min-w-0 items-center gap-2 text-[15px] font-medium">
+            <Radar className="size-4 text-primary" strokeWidth={1.5} />
+            <span className="truncate">WebMonitor</span>
           </Link>
-          <LanguageSwitcher />
+          <LanguageSwitcher className="ml-auto" />
           <Button
             variant="ghost"
             size="icon"
-            className="size-8 md:hidden"
+            className="size-7 md:hidden"
             aria-label={t("common.closeNavigation")}
             onClick={() => setOpen(false)}
           >
-            <X className="size-4" />
+            <X className="size-4" strokeWidth={1.5} />
           </Button>
         </div>
 
-        <nav className="space-y-0.5 px-3 pb-2">
+        <nav className="space-y-0.5 px-2 pb-2">
           <button
             onClick={() => void startConversation()}
-            className="flex w-full items-center gap-2 rounded-lg px-2.5 py-1.5 text-left text-[13px] text-muted-foreground transition-colors hover:bg-muted hover:text-foreground"
+            className={`${ROW} w-full text-left text-muted-foreground hover:bg-muted hover:text-foreground`}
           >
-            <Plus className="size-4" />
+            <Plus className="size-4" strokeWidth={1.5} />
             {t("common.newConversation")}
           </button>
           {links.map(({ href, label, icon: Icon }) => {
@@ -279,20 +285,20 @@ export function WorkspaceShell({ children }: { children: ReactNode }) {
                 key={href}
                 href={href}
                 aria-current={current ? "page" : undefined}
-                className={`flex items-center gap-2 rounded-lg px-2.5 py-1.5 text-[13px] transition-colors ${
+                className={`${ROW} ${
                   current
-                    ? "bg-accent font-medium text-accent-foreground"
+                    ? "bg-secondary font-medium text-foreground"
                     : "text-muted-foreground hover:bg-muted hover:text-foreground"
                 }`}
               >
-                <Icon className="size-4" />
+                <Icon className="size-4" strokeWidth={1.5} />
                 {label}
               </Link>
             );
           })}
         </nav>
 
-        <div className="min-h-0 flex-1 overflow-y-auto border-t px-3 pb-4">
+        <div className="min-h-0 flex-1 overflow-y-auto border-t px-2 pt-3 pb-4">
           <SectionLabel count={monitors.data?.total}>{t("common.monitors")}</SectionLabel>
           <MonitorList onNavigate={() => setOpen(false)} />
           <SectionLabel>{t("common.conversations")}</SectionLabel>
@@ -301,15 +307,15 @@ export function WorkspaceShell({ children }: { children: ReactNode }) {
           </Suspense>
         </div>
 
-        <div className="flex items-center gap-2 border-t px-3 py-2.5">
+        <div className="flex h-14 items-center gap-2 border-t px-3">
           <span
             aria-hidden
-            className="grid size-8 shrink-0 place-items-center rounded-full bg-accent text-xs font-semibold text-accent-foreground"
+            className="grid size-7 shrink-0 place-items-center rounded-full border text-[11px] font-medium text-muted-foreground"
           >
             {initial}
           </span>
           <div className="min-w-0 flex-1 leading-tight">
-            <p className="truncate text-[13px] font-medium">{user.display_name}</p>
+            <p className="truncate text-[12px] font-medium">{user.display_name}</p>
             <p className="truncate text-[11px] text-muted-foreground">
               {user.role === "admin" ? t("common.admin") : t("common.member")}
             </p>
@@ -317,11 +323,11 @@ export function WorkspaceShell({ children }: { children: ReactNode }) {
           <Button
             variant="ghost"
             size="icon"
-            className="size-8 text-muted-foreground"
+            className="size-7 text-muted-foreground"
             aria-label={t("common.logout")}
             onClick={() => { setLogoutError(null); void logout().catch(setLogoutError); }}
           >
-            <LogOut className="size-4" />
+            <LogOut className="size-4" strokeWidth={1.5} />
           </Button>
         </div>
         {logoutError && <p role="alert" className="px-3 pb-2 text-xs text-error">{errorText(logoutError)}</p>}
@@ -329,14 +335,14 @@ export function WorkspaceShell({ children }: { children: ReactNode }) {
 
       <div className="flex min-w-0 flex-1 flex-col">
         <header className="flex h-14 items-center gap-3 border-b bg-card px-4 md:hidden">
-          <Button variant="ghost" size="icon" aria-label={t("common.openNavigation")} onClick={() => setOpen(true)}>
-            <Menu className="size-4" />
+          <Button variant="ghost" size="icon" className="size-8" aria-label={t("common.openNavigation")} onClick={() => setOpen(true)}>
+            <Menu className="size-4" strokeWidth={1.5} />
           </Button>
-          <span className="flex items-center gap-1.5 text-sm font-semibold">
-            <Radar className="size-4 text-primary" />
+          <span className="flex items-center gap-1.5 text-sm font-medium">
+            <Radar className="size-4 text-primary" strokeWidth={1.5} />
             WebMonitor
           </span>
-          <span className="truncate text-sm text-muted-foreground">
+          <span className="truncate text-[13px] text-muted-foreground">
             {section}
           </span>
           <LanguageSwitcher className="ml-auto" />

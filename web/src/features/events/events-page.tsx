@@ -2,7 +2,6 @@
 import { useMemo, useState } from "react";
 import { PageBody, PageHeader } from "@/components/page-header";
 import { EmptyState } from "@/components/empty-state";
-import { Button } from "@/components/ui/button";
 import { useAckEvent, useEvents } from "@/lib/api/hooks";
 import { useFormat } from "@/lib/format";
 import { useI18n } from "@/lib/i18n";
@@ -43,13 +42,17 @@ export function EventsPage() {
           title={t("activity.events.title")}
           description={t("activity.events.description")}
           actions={
-            <div className="flex items-center gap-1 rounded-lg border bg-card p-0.5">
+            <div className="flex items-center gap-1">
               {FILTERS.map((value) => (
-                <Button
+                <button
                   key={value}
-                  size="sm"
-                  variant={filter === value ? "secondary" : "ghost"}
-                  className="h-7 px-2.5 text-xs"
+                  type="button"
+                  aria-pressed={filter === value}
+                  className={`h-7 rounded-md px-2 text-xs transition-colors duration-150 ${
+                    filter === value
+                      ? "bg-secondary font-medium text-foreground"
+                      : "text-muted-foreground hover:text-foreground"
+                  }`}
                   onClick={() => setFilter(value)}
                 >
                   {value === "unread"
@@ -57,7 +60,7 @@ export function EventsPage() {
                       ? t("activity.events.filter.unreadCount", { count: unreadCount })
                       : t("activity.events.filter.unread")
                     : t("activity.events.filter.all")}
-                </Button>
+                </button>
               ))}
             </div>
           }
@@ -86,13 +89,11 @@ export function EventsPage() {
           />
         )}
 
-        <div className="max-w-3xl space-y-6">
+        <div className="space-y-10">
           {groups.map((group) => (
-            <section key={group.day} className="space-y-2">
-              <h2 className="text-[11px] font-medium uppercase tracking-wide text-muted-foreground">
-                {group.day}
-              </h2>
-              <ul className="space-y-2">
+            <section key={group.day}>
+              <h2 className="num border-b pb-1.5 text-[11px] text-muted-foreground">{group.day}</h2>
+              <ul className="divide-y">
                 {group.events.map((event) => (
                   <EventCard
                     key={event.id}
