@@ -1,24 +1,33 @@
 <h1 align="center">WebMonitor-Agent</h1>
 
 <p align="center">
-  <strong>Describe what to watch. Review it before creating.</strong>
+  <strong>A website monitor you set up by talking to it.</strong>
 </p>
 
 <p align="center">
-  Describe the page in your own words. The assistant opens it, takes one real sample, and you confirm before any schedule starts.<br>
-  After that it checks on time and emails you when your condition is met.
+  Describe the page and the condition in your own words. The assistant reads the page, extracts the values, and shows you a real sample before anything is scheduled.<br>
+  After you confirm, it checks on time, stores the evidence, and emails you when your condition is met.
 </p>
 
 <p align="center">
+  <a href="#what-it-is">Overview</a> ·
   <a href="#install-in-three-steps">Quick start</a> ·
-  <a href="#your-first-monitor">Your first monitor</a> ·
+  <a href="#create-your-first-monitor">First monitor</a> ·
   <a href="#email-alerts">Email alerts</a> ·
   <a href="#faq">FAQ</a> ·
   <a href="#update-roll-back-and-your-data">Updates and data</a> ·
   <a href="./README.zh-CN.md">简体中文</a>
 </p>
 
-## What it watches
+![Conversation on the left, live sample and confirmation card on the right](./docs/screenshot.png)
+
+## What it is
+
+WebMonitor-Agent is a self-hosted change monitor for public web pages. You do not write selectors or cron expressions: you hold a conversation. The assistant inspects the target page, proposes what to extract, runs a real collection, and puts the result in front of you. Only your click on **Create monitor** starts the schedule.
+
+Everything runs from one Docker Compose stack — a Next.js interface, a FastAPI service with its background loops, PostgreSQL, S3-compatible evidence storage and a Squid egress proxy. There are no external accounts or hosted services beyond the model endpoint and optional SMTP account you configure.
+
+### What you can watch
 
 | Situation | Say something like |
 | --- | --- |
@@ -29,7 +38,22 @@
 
 A rule can watch text, a keyword appearing or disappearing, a number against a threshold, a percentage or absolute change, or new, updated and removed items in a list.
 
-It checks public `http://` and `https://` pages on ports 80 or 443, every 1 minute to 24 hours. Pages behind a sign-in, and content inside iframes or Shadow DOM, are outside what the collector can read. The preview tells you when it only covers part of a page.
+It checks public `http://` and `https://` pages on ports 80 or 443, every 1 minute to 24 hours. Pages behind a sign-in, and content inside iframes or Shadow DOM, are outside what the collector can read. The preview says so when it only covers part of a page.
+
+## How it works
+
+1. **Describe the target.** Paste the URL and say what matters, how often to check, and when to notify.
+2. **Let the assistant do the reading.** It fetches the HTML first and opens the page in a sandboxed browser when the data needs JavaScript. It records which fields it found and how much of the page it covers.
+3. **Review a real sample.** The confirmation card shows the extracted values, coverage, the rule that will fire, recipients, the saved page archive, and the actual email body. Say what is wrong and the assistant takes another sample.
+4. **Confirm to schedule.** **Create monitor** is the only action that starts checks. The preview expires after 60 minutes and a different preview must be confirmed again.
+
+What the system guarantees:
+
+- Previews never send email, and the first successful check only records a baseline.
+- Collection evidence is committed only after the upload succeeds; a failed check keeps the last successful baseline.
+- Every check is stored with its values, coverage and page archive, and each event links to the check that produced it.
+- The browser runs sandboxed. If the sandbox is unavailable the check fails as `browser_unavailable` instead of falling back to an unsandboxed browser.
+- Collection only reaches the target through the bundled egress proxy.
 
 ## Before you start
 
@@ -144,7 +168,7 @@ If startup fails, inspect service status with `docker compose ps` and errors wit
 
 The site is published on `127.0.0.1` only, on the machine running Docker. Use that machine's browser, or an SSH tunnel from yours.
 
-## Your first monitor
+## Create your first monitor
 
 Sign in with the `ADMIN_EMAIL` and `ADMIN_PASSWORD` from `.env`. The first start creates that account automatically. If it was not created, see the [FAQ](#faq). The **EN / 中文** switch at the top of the sidebar changes the interface language.
 
@@ -156,7 +180,7 @@ Only an administrator can create groups; members ask an administrator. Every mon
 
 ### Describe what you want
 
-Click **New conversation** and type what you need, for example one of the sentences in [What it watches](#what-it-watches). Press Enter to send, Shift+Enter for a new line, and the square button to stop a run that is taking too long.
+Click **New conversation** and type what you need, for example one of the sentences in [What you can watch](#what-you-can-watch). Press Enter to send, Shift+Enter for a new line, and the square button to stop a run that is taking too long.
 
 Two things happen next:
 
