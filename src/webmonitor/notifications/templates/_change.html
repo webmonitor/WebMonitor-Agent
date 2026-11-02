@@ -1,0 +1,56 @@
+{% macro item_line(item, labels, timezone_name, marker) -%}
+{%- set headline = item.get('title') or item.get('name') or item.get('label') -%}
+<p style="margin:4px 0 0;font-size:14px;line-height:1.5">
+  <span style="color:{{ '#16a34a' if marker == '+' else '#dc2626' }};font-weight:600">{{ marker }}</span>
+  {%- if headline %} <strong>{{ headline | readable(timezone_name) }}</strong>{% endif %}
+  {%- for key, value in item.items() if key not in ('title', 'name', 'label') %}
+    <span style="color:#6f6759;font-size:11px"> · {{ labels.get(key, key) }}</span>
+    {%- if value is string and value.startswith('http') %}
+    <a href="{{ value }}" style="color:#22584a;font-size:12px;text-decoration:none">{{ value | host }}</a>
+    {%- else %}
+    <span style="font-size:12px">{{ value | readable(timezone_name) }}</span>
+    {%- endif %}
+  {%- endfor %}
+</p>
+{%- endmacro %}
+{% set differences = change.differences or [] %}
+<h2 style="margin:24px 0 8px;font-size:15px;font-weight:600">变化</h2>
+{% if differences %}
+<div style="border-top:1px solid rgba(30,27,22,0.12)">
+  {% for difference in differences %}
+  <div style="padding:10px 0;border-bottom:1px solid rgba(30,27,22,0.12)">
+    <p style="margin:0;color:#6f6759;font-size:12px">{{ change.labels.get(difference.field, difference.field) }}</p>
+    {% set rows = difference.get('items') or [] %}
+    {% if rows %}
+      {% if difference['type'] == 'list_updated' %}
+        {% for row in rows %}
+          {% for name in row['fields'] %}
+          <p style="margin:4px 0 0;font-size:14px">
+            <span style="color:#6f6759;font-size:12px">{{ change.labels.get(name, name) }}</span>
+            <span style="color:#6f6759;text-decoration:line-through">{{ row['before'][name] | readable(monitor.timezone) }}</span>
+            →
+            <strong>{{ row['after'][name] | readable(monitor.timezone) }}</strong>
+          </p>
+          {% endfor %}
+        {% endfor %}
+      {% else %}
+        {% for row in rows[:8] %}
+          {{ item_line(row, change.labels, monitor.timezone, '+' if difference['type'] == 'list_added' else '−') }}
+        {% endfor %}
+        {% if rows | length > 8 %}
+        <p style="margin:4px 0 0;color:#6f6759;font-size:12px">另有 {{ rows | length - 8 }} 项</p>
+        {% endif %}
+      {% endif %}
+    {% else %}
+      <p style="margin:4px 0 0;font-size:14px">
+        <span style="color:#6f6759;text-decoration:line-through">{{ difference.before | readable(monitor.timezone) }}</span>
+        →
+        <strong>{{ difference.after | readable(monitor.timezone) }}</strong>
+      </p>
+    {% endif %}
+  </div>
+  {% endfor %}
+</div>
+{% else %}
+<p style="margin:8px 0 0;color:#6f6759">{{ change.summary }}</p>
+{% endif %}

@@ -131,7 +131,10 @@ async def test_changed_value_publishes_one_event_and_one_delivery(session):
     assert deliveries[0].recipient == "ops@example.com"
     assert deliveries[0].status == "queued"
     assert deliveries[0].message_id.startswith("<")
-    assert '"B"' in deliveries[0].body_text
+    body = deliveries[0].body_text
+    assert "之前：A" in body
+    assert "之后：B" in body
+    assert '"B"' not in body
 
     # An unchanged value must stay silent.
     await runs.commit_success(session, await running_job(session, monitor), result("B"))

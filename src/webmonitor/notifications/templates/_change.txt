@@ -1,0 +1,25 @@
+{% macro item_line(item, labels, timezone_name, marker) -%}
+{{ marker }} {% set headline = item.get('title') or item.get('name') or item.get('label') %}{% if headline %}{{ headline | readable(timezone_name) }}{% endif %}{% for key, value in item.items() if key not in ('title','name','label') %} · {{ labels.get(key, key) }} {{ value | readable(timezone_name) }}{% endfor %}
+{%- endmacro %}
+{% set differences = change.differences or [] %}
+变化：
+{% if differences -%}
+{% for difference in differences %}
+- {{ change.labels.get(difference.field, difference.field) }}
+{%- set rows = difference.get('items') or [] %}
+{% if rows %}
+{% if difference['type'] == 'list_updated' %}
+{% for row in rows %}{% for name in row['fields'] %}  {{ change.labels.get(name, name) }}：{{ row['before'][name] | readable(monitor.timezone) }} → {{ row['after'][name] | readable(monitor.timezone) }}
+{% endfor %}{% endfor %}
+{% else %}
+{% for row in rows[:8] %}  {{ item_line(row, change.labels, monitor.timezone, '+' if difference['type'] == 'list_added' else '−') }}
+{% endfor %}{% if rows | length > 8 %}  另有 {{ rows | length - 8 }} 项
+{% endif %}{% endif %}
+{% else %}
+  之前：{{ difference.before | readable(monitor.timezone) }}
+  之后：{{ difference.after | readable(monitor.timezone) }}
+{% endif %}
+{% endfor %}
+{%- else %}
+  {{ change.summary }}
+{% endif %}

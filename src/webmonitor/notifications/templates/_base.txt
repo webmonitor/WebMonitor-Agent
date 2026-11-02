@@ -1,0 +1,19 @@
+WebMonitor
+
+{{ monitor.name }}
+{{ event_label }}
+
+{% block intro %}{% endblock %}
+
+检测时间（UTC）：{{ event.detected_at | utc_datetime }}
+监控页面：{{ monitor.url }}
+{% block figure %}{% endblock %}
+{% block change %}{% include "_change.txt" %}{% endblock %}
+{% if evidence_url %}
+查看完整记录：{{ evidence_url }}
+记录需要登录，并且必须具有当前工作区的访问权限。
+{% endif %}
+
+监控 ID：{{ monitor.id }}
+事件 ID：{{ event.id }}
+事件类型：{{ event.type }}

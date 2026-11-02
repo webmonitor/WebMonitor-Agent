@@ -141,7 +141,8 @@ async def build_preview(session: AsyncSession, draft: Draft, job: Job) -> dict:
     simulation = evaluate_rules(spec, None, fields, {})
     event_id = uuid4()
     payload = {
-        "monitor": {"id": str(draft.monitor_id or draft.id), "name": spec.name, "url": spec.url},
+        "monitor": {"id": str(draft.monitor_id or draft.id), "name": spec.name, "url": spec.url,
+                    "timezone": spec.schedule.timezone or "UTC"},
         "event": {"id": str(event_id), "type": "price_changed",
                   "detected_at": utc_now().isoformat()},
         "change": {"before": None, "after": fields,

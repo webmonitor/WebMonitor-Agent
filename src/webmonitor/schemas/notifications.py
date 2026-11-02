@@ -3,7 +3,7 @@ from datetime import datetime
 from typing import Any, Literal
 from uuid import UUID
 
-from pydantic import BaseModel, ConfigDict
+from pydantic import BaseModel, ConfigDict, Field
 
 EventType = Literal['price_changed', 'list_changed', 'content_changed', 'run_failed', 'recovered']
 EVENT_TYPES = frozenset(('price_changed', 'list_changed', 'content_changed', 'run_failed', 'recovered'))
@@ -17,6 +17,7 @@ class PayloadMonitor(Contract):
     id: UUID
     name: str
     url: str
+    timezone: str = "UTC"
 
 
 class PayloadEvent(Contract):
@@ -29,6 +30,10 @@ class PayloadChange(Contract):
     before: dict[str, Any] | None
     after: dict[str, Any]
     summary: str
+    # The readable evidence travels with the event: field labels and the exact
+    # rows that were added, removed or updated.
+    differences: list[dict[str, Any]] = Field(default_factory=list)
+    labels: dict[str, str] = Field(default_factory=dict)
 
 
 class NotificationPayload(Contract):

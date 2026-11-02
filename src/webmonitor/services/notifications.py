@@ -18,6 +18,7 @@ from webmonitor.models import (
 )
 from webmonitor.notifications.rendering import render_email
 from webmonitor.schemas.api import Group, MemberSpec, Page
+from webmonitor.schemas.monitors import DraftSpec
 from webmonitor.security.auth import CurrentUser, require_admin
 from webmonitor.services.jobs import LEASE_SECONDS
 
@@ -132,14 +133,25 @@ def recipients_emails(recipients: list[dict]) -> list[str]:
     return sorted({item["email"] for item in recipients})
 
 
+def _timezone(monitor: Monitor) -> str:
+    """Dates are normalized to the monitor's zone; the mail shows them there."""
+    try:
+        return DraftSpec.model_validate(monitor.spec or {}).schedule.timezone or "UTC"
+    except ValueError:
+        return "UTC"
+
+
 def _payload(monitor: Monitor, event: Event, fields: dict) -> dict:
     return {
-        "monitor": {"id": str(monitor.id), "name": monitor.name, "url": monitor.url},
+        "monitor": {"id": str(monitor.id), "name": monitor.name, "url": monitor.url,
+                    "timezone": _timezone(monitor)},
         "event": {"id": str(event.id), "type": event.type,
                   "detected_at": event.created_at.isoformat()},
         "change": {"before": event.change.get("before"),
                    "after": event.change.get("after", {}),
-                   "summary": event.change.get("summary", "")},
+                   "summary": event.change.get("summary", ""),
+                   "differences": event.change.get("differences") or [],
+                   "labels": event.change.get("labels") or {}},
         "fields": fields,
         "evidence_url": f"{get_settings().app_origin}/app/monitors/{monitor.id}",
     }
