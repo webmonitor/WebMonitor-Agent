@@ -13,6 +13,7 @@ from webmonitor.schemas.api import (
     ConversationSnapshot,
     ConversationView,
     CreateMonitorResult,
+    DraftSpecUpdate,
     DraftView,
     JobDetail,
     JobView,
@@ -81,6 +82,16 @@ async def approve(conversation_id: UUID, payload: ApproveRequest, session: Datab
 @router.get("/drafts/{draft_id}", response_model=DraftView)
 async def read_draft(draft_id: UUID, session: DatabaseSession, user: AuthenticatedUser):
     return conversations.draft_view(await drafts.require_draft(session, user, draft_id))
+
+
+@router.put("/drafts/{draft_id}", response_model=DraftView)
+async def update_draft(draft_id: UUID, payload: DraftSpecUpdate, session: DatabaseSession,
+                       user: AuthenticatedUser):
+    draft = await drafts.update_draft(session, user, draft_id=draft_id,
+        revision=payload.revision, spec=payload.spec)
+    result = conversations.draft_view(draft)
+    await session.commit()
+    return result
 
 
 @router.post("/drafts/{draft_id}/preview", response_model=JobView, status_code=202)

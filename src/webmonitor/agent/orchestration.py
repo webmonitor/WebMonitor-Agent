@@ -23,7 +23,7 @@ from webmonitor.agent.tools import make_agent_tools
 from webmonitor.config import get_settings
 from webmonitor.db import get_session_factory
 from webmonitor.errors import DomainError
-from webmonitor.models import Job, Message, User, utc_now
+from webmonitor.models import Conversation, Job, Message, User, utc_now
 from webmonitor.security.auth import CurrentUser
 from webmonitor.services import jobs
 
@@ -105,7 +105,17 @@ async def _append_text(job_id: UUID, worker_id: str, delta: str) -> None:
 
 async def _complete_message(job_id: UUID, worker_id: str, text: str) -> None:
     async with get_session_factory()() as session:
-        job = await _live(session, job_id, worker_id)
+        current = await session.get(Job, job_id)
+        if current is None:
+            return
+        # User writes and cancellation lock the conversation before the job.
+        # Take the same order so the message insert cannot deadlock with them.
+        await session.execute(select(Conversation.id).where(
+            Conversation.id == current.conversation_id).with_for_update())
+        try:
+            job = await _live(session, job_id, worker_id)
+        except DomainError:
+            return
         session.add(Message(conversation_id=job.conversation_id, job_id=job.id,
                             user_id=job.user_id, role="assistant", content=text))
         job.partial_text = ""
@@ -270,6 +280,7 @@ async def execute_job(job_id: UUID, worker_id: str) -> None:
             except Exception:
                 pass
             return
+        logger.exception("Agent run failed: job=%s error=%s", job_id, type(exc).__name__)
         code = exc.code if isinstance(exc, DomainError) else "model_unavailable"
         try:
             await _finish(job_id, worker_id, error=code, reason=_reason(exc))

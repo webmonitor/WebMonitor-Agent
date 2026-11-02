@@ -6,8 +6,16 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from webmonitor.config import get_settings
 from webmonitor.errors import DomainError
-from webmonitor.models import Job, Monitor, Snapshot, User, utc_now
-from webmonitor.schemas.api import MonitorDetail, MonitorView, Page, SnapshotRecord
+from webmonitor.models import Draft, Job, Monitor, Snapshot, User, utc_now
+from webmonitor.schemas.api import (
+    MonitorDetail,
+    MonitorView,
+    Page,
+    SnapshotDetail,
+    SnapshotRecord,
+    SpecVersion,
+)
+from webmonitor.schemas.monitors import DraftSpec, content_hash
 from webmonitor.security.auth import CurrentUser, require_owner
 from webmonitor.services import jobs
 
@@ -22,7 +30,8 @@ def monitor_view(monitor: Monitor) -> MonitorView:
         health_status=monitor.health_status,
         notification_group_ids=list(monitor.notification_group_ids or []),
         next_run_at=monitor.next_run_at, last_success_at=monitor.last_success_at,
-        last_failure_at=monitor.last_failure_at, created_at=monitor.created_at)
+        last_failure_at=monitor.last_failure_at, created_at=monitor.created_at,
+        archived_at=monitor.archived_at)
 
 
 def snapshot_record(snapshot: Snapshot) -> SnapshotRecord:
@@ -42,8 +51,10 @@ async def read_monitor_row(session: AsyncSession, user: CurrentUser, monitor_id:
 
 
 async def list_monitors(session: AsyncSession, user: CurrentUser, limit: int,
-                        offset: int) -> Page[MonitorView]:
+                        offset: int, *, archived: bool = False) -> Page[MonitorView]:
     query = select(Monitor)
+    query = query.where(Monitor.archived_at.is_not(None) if archived
+                        else Monitor.archived_at.is_(None))
     if user.role != "admin":
         query = query.where(Monitor.user_id == user.user_id)
     rows = (await session.scalars(query.order_by(Monitor.created_at.desc(), Monitor.id.desc())
@@ -59,7 +70,9 @@ async def read_monitor(session: AsyncSession, user: CurrentUser, monitor_id: UUI
         snapshot = await session.get(Snapshot, monitor.baseline_snapshot_id)
         baseline = snapshot_record(snapshot) if snapshot is not None else None
     return MonitorDetail(**monitor_view(monitor).model_dump(), spec=monitor.spec,
-                         baseline=baseline)
+        baseline=baseline,
+        approved_recipients=[item["email"] for item in monitor.approved_recipients or []
+                             if isinstance(item, dict) and "email" in item])
 
 
 async def pause_monitor(session: AsyncSession, user: CurrentUser, monitor_id: UUID) -> Monitor:
@@ -107,3 +120,70 @@ async def list_monitor_jobs(session: AsyncSession, user: CurrentUser, monitor_id
     total = await session.scalar(select(func.count()).select_from(query.subquery()))
     from webmonitor.services.conversations import job_view
     return Page(items=[job_view(row) for row in rows], total=total or 0)
+
+
+async def rename_monitor(session: AsyncSession, user: CurrentUser, monitor_id: UUID,
+                         name: str) -> Monitor:
+    """A name change is not a new collection contract, so the version is kept."""
+    monitor = await read_monitor_row(session, user, monitor_id, lock=True)
+    spec = DraftSpec.model_validate(monitor.spec).model_copy(update={"name": name.strip()})
+    monitor.name = spec.name
+    monitor.spec = spec.model_dump(mode="json")
+    monitor.spec_hash = content_hash(spec)
+    await session.flush()
+    return monitor
+
+
+async def archive_monitor(session: AsyncSession, user: CurrentUser, monitor_id: UUID) -> Monitor:
+    monitor = await read_monitor_row(session, user, monitor_id, lock=True)
+    if monitor.archived_at is None:
+        monitor.archived_at = utc_now()
+        monitor.status = "paused"
+        monitor.paused_at = monitor.paused_at or utc_now()
+        await jobs.cancel_pending(session, monitor_id=monitor.id)
+        await session.flush()
+    return monitor
+
+
+async def restore_monitor(session: AsyncSession, user: CurrentUser, monitor_id: UUID) -> Monitor:
+    monitor = await read_monitor_row(session, user, monitor_id, lock=True)
+    if monitor.archived_at is not None:
+        monitor.archived_at = None
+        await session.flush()
+    return monitor
+
+
+async def list_snapshots(session: AsyncSession, user: CurrentUser, monitor_id: UUID,
+                         limit: int, offset: int) -> Page[SnapshotRecord]:
+    monitor = await read_monitor_row(session, user, monitor_id)
+    query = select(Snapshot).where(Snapshot.monitor_id == monitor.id)
+    rows = (await session.scalars(query.order_by(Snapshot.collected_at.desc(),
+        Snapshot.id.desc()).limit(limit).offset(offset))).all()
+    total = await session.scalar(select(func.count()).select_from(query.subquery()))
+    return Page[SnapshotRecord](items=[snapshot_record(row) for row in rows], total=total or 0)
+
+
+async def read_snapshot(session: AsyncSession, user: CurrentUser,
+                        snapshot_id: UUID) -> SnapshotDetail:
+    snapshot = await session.get(Snapshot, snapshot_id)
+    if snapshot is None:
+        raise DomainError("not_found", 404)
+    monitor = require_owner(user, await session.get(Monitor, snapshot.monitor_id))
+    return SnapshotDetail(**snapshot_record(snapshot).model_dump(),
+        monitor_id=monitor.id, monitor_name=monitor.name)
+
+
+async def list_spec_versions(session: AsyncSession, user: CurrentUser, monitor_id: UUID,
+                             limit: int, offset: int) -> Page[SpecVersion]:
+    monitor = await read_monitor_row(session, user, monitor_id)
+    query = select(Draft).where(Draft.monitor_id == monitor.id, Draft.status == "published")
+    total = await session.scalar(select(func.count()).select_from(query.subquery())) or 0
+    rows = (await session.scalars(query.order_by(Draft.created_at.desc(), Draft.id.desc())
+        .limit(limit).offset(offset))).all()
+    return Page[SpecVersion](items=[
+        SpecVersion(id=row.id, version=total - offset - index,
+            draft_id=row.id, spec=row.spec or {}, spec_hash=row.spec_hash or "",
+            published_at=row.updated_at,
+            current=total - offset - index == monitor.spec_version)
+        for index, row in enumerate(rows)
+    ], total=total)

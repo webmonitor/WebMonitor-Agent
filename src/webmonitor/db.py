@@ -33,7 +33,7 @@ async def session_dependency():
 
 
 async def initialize_database() -> None:
-    """Create the schema and the first administrator; no migration path exists."""
+    """Create the schema and the first administrator."""
     settings = get_settings()
     engine = get_engine()
     async with engine.begin() as connection:

@@ -7,16 +7,18 @@ from collections import defaultdict, deque
 from datetime import timedelta
 from typing import Literal
 from urllib.parse import urlencode
+from uuid import UUID
 
 from argon2 import PasswordHasher
 from argon2.exceptions import InvalidHashError, VerificationError
 from email_validator import EmailNotValidError, validate_email
-from sqlalchemy import select
+from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from webmonitor.config import get_settings
 from webmonitor.errors import DomainError
 from webmonitor.models import Invitation, Session, User, utc_now
+from webmonitor.schemas.api import InvitationView, Page
 from webmonitor.security.auth import CurrentUser
 
 _hasher = PasswordHasher()
@@ -93,7 +95,8 @@ async def admin_create(session: AsyncSession, *, email: str, password: str) -> C
     return CurrentUser(user_id=user.id, role="admin")
 
 
-async def invite_create(session: AsyncSession, *, email: str, ttl_hours: int = 24) -> str:
+async def create_invitation(session: AsyncSession, *, email: str, ttl_hours: int,
+                            created_by_user_id: UUID) -> tuple[Invitation, str]:
     email = normalize_email(email)
     settings = get_settings()
     if settings.allowed_registration_emails and email not in settings.allowed_registration_emails:
@@ -101,14 +104,39 @@ async def invite_create(session: AsyncSession, *, email: str, ttl_hours: int = 2
     if not 1 <= ttl_hours <= 168:
         raise DomainError("invalid_invitation_ttl", 422)
     token = secrets.token_urlsafe(32)
+    invitation = Invitation(email=email, token_hash=token_hash(token),
+        created_by_user_id=created_by_user_id,
+        expires_at=utc_now() + timedelta(hours=ttl_hours))
+    session.add(invitation)
+    await session.flush()
+    url = settings.app_origin + "/register?" + urlencode(
+        {"invitation_token": token, "email": email})
+    return invitation, url
+
+
+async def invite_create(session: AsyncSession, *, email: str, ttl_hours: int = 24) -> str:
     admin = await session.scalar(select(User).where(User.role == "admin", User.active.is_(True))
         .order_by(User.created_at).limit(1))
     if admin is None:
         raise DomainError("administrator_required", 409)
-    session.add(Invitation(email=email, token_hash=token_hash(token),
-        created_by_user_id=admin.id, expires_at=utc_now() + timedelta(hours=ttl_hours)))
+    _, url = await create_invitation(session, email=email, ttl_hours=ttl_hours,
+                                     created_by_user_id=admin.id)
     await session.commit()
-    return settings.app_origin + "/register?" + urlencode({"invitation_token": token, "email": email})
+    return url
+
+
+async def list_invitations(session: AsyncSession, limit: int,
+                           offset: int) -> Page[InvitationView]:
+    query = select(Invitation).where(Invitation.consumed_at.is_(None),
+                                     Invitation.expires_at > utc_now())
+    rows = (await session.scalars(query.order_by(Invitation.created_at.desc(),
+        Invitation.id.desc()).limit(limit).offset(offset))).all()
+    total = await session.scalar(select(func.count()).select_from(query.subquery()))
+    return Page[InvitationView](items=[
+        InvitationView(id=row.id, email=row.email, created_at=row.created_at,
+                       expires_at=row.expires_at, consumed_at=row.consumed_at)
+        for row in rows
+    ], total=total or 0)
 
 
 async def register(session: AsyncSession, *, display_name: str, email: str, password: str,

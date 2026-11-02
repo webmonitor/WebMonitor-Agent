@@ -9,6 +9,7 @@ import {
   Menu,
   Plus,
   Radar,
+  Users,
   X,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
@@ -160,14 +161,21 @@ function MonitorList({ onNavigate }: { onNavigate: () => void }) {
 function SectionLabel({
   children,
   count,
+  action,
 }: {
   children: ReactNode;
   count?: number;
+  action?: ReactNode;
 }) {
   return (
     <div className="mt-6 flex items-baseline justify-between gap-2 px-2 pb-1 first:mt-0">
       <span className="text-[11px] leading-4 font-medium text-foreground/70">{children}</span>
-      {typeof count === "number" && <span className="num text-[10px] text-muted-foreground">{count}</span>}
+      <span className="flex items-center gap-2">
+        {typeof count === "number" && (
+          <span className="num text-[10px] text-muted-foreground">{count}</span>
+        )}
+        {action}
+      </span>
     </div>
   );
 }
@@ -185,6 +193,9 @@ export function WorkspaceShell({ children }: { children: ReactNode }) {
   const links = [
     { href: "/app/events", label: t("common.events"), icon: Activity },
     { href: "/app/notifications", label: t("common.notifications"), icon: Bell },
+    ...(user?.role === "admin"
+      ? [{ href: "/app/members", label: t("common.members"), icon: Users }]
+      : []),
   ];
 
   useEffect(() => {
@@ -237,7 +248,11 @@ export function WorkspaceShell({ children }: { children: ReactNode }) {
       ? t("common.events")
       : pathname.startsWith("/app/notifications")
         ? t("common.notifications")
-        : t("common.monitors");
+        : pathname.startsWith("/app/members")
+          ? t("common.members")
+          : pathname.startsWith("/app/archived")
+            ? t("common.archived")
+            : t("common.monitors");
 
   return (
     <div className="flex h-dvh overflow-hidden bg-background">
@@ -299,7 +314,19 @@ export function WorkspaceShell({ children }: { children: ReactNode }) {
         </nav>
 
         <div className="min-h-0 flex-1 overflow-y-auto border-t px-2 pt-3 pb-4">
-          <SectionLabel count={monitors.data?.total}>{t("common.monitors")}</SectionLabel>
+          <SectionLabel
+            count={monitors.data?.total}
+            action={
+              <Link
+                href="/app/archived"
+                className="text-[10px] text-muted-foreground underline-offset-2 hover:text-foreground hover:underline"
+              >
+                {t("common.archived")}
+              </Link>
+            }
+          >
+            {t("common.monitors")}
+          </SectionLabel>
           <MonitorList onNavigate={() => setOpen(false)} />
           <SectionLabel>{t("common.conversations")}</SectionLabel>
           <Suspense fallback={null}>

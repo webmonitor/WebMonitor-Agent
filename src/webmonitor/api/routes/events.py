@@ -8,6 +8,7 @@ from webmonitor.api.dependencies import AuthenticatedUser, DatabaseSession
 from webmonitor.errors import DomainError
 from webmonitor.models import Event, Monitor, utc_now
 from webmonitor.schemas.api import EventView, Page
+from webmonitor.schemas.notifications import EventType
 
 router = APIRouter(prefix="/api/v1/events", tags=["events"])
 
@@ -22,10 +23,12 @@ def _view(event: Event, monitor_name: str) -> EventView:
 @router.get("", response_model=Page[EventView])
 async def list_events(session: DatabaseSession, user: AuthenticatedUser,
                       limit: int = Query(50, ge=1, le=100), offset: int = Query(0, ge=0),
-                      monitor_id: UUID | None = None):
+                      monitor_id: UUID | None = None, event_type: EventType | None = None):
     query = select(Event)
     if monitor_id is not None:
         query = query.where(Event.monitor_id == monitor_id)
+    if event_type is not None:
+        query = query.where(Event.type == event_type)
     if user.role != "admin":
         query = query.join(Monitor, Monitor.id == Event.monitor_id).where(
             Monitor.user_id == user.user_id)

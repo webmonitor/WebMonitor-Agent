@@ -6,7 +6,14 @@ export function generateMetadata(): Promise<Metadata> {
   return localizedMetadata("common.title.monitor");
 }
 
-export default async function MonitorRoute({ params }: { params: Promise<{ id: string }> }) {
+export default async function MonitorRoute({
+  params,
+  searchParams,
+}: {
+  params: Promise<{ id: string }>;
+  searchParams: Promise<{ job?: string }>;
+}) {
   const { id } = await params;
-  return <MonitorPage monitorId={id} />;
+  const { job } = await searchParams;
+  return <MonitorPage monitorId={id} initialJob={job ?? null} />;
 }

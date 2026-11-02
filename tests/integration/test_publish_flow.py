@@ -237,3 +237,54 @@ async def _conversation(session, user):
     session.add(conversation)
     await session.flush()
     return conversation
+
+
+@pytest.mark.asyncio
+async def test_direct_edit_replaces_the_spec_and_invalidates_the_preview(session):
+    user, group = await seed(session)
+    current = CurrentUser(user_id=user.id, role="admin")
+    conversation = await _conversation(session, user)
+    draft = await drafts.save_draft(session, current, conversation_id=conversation.id,
+                                    spec=build_spec(group.id))
+    spec = DraftSpec.model_validate(draft.spec)
+    recipients = recipients_emails(await load_recipients(session, spec.notification_group_ids))
+    await drafts.save_preview(session, draft, preview_payload(spec, draft, recipients, "100"),
+                              ttl_minutes=60)
+    await session.commit()
+
+    edited = build_spec(group.id).model_copy(update={"name": "Price watch v2"})
+    updated = await drafts.update_draft(session, current, draft_id=draft.id,
+                                        revision=1, spec=edited)
+    await session.commit()
+
+    assert updated.id == draft.id
+    assert updated.revision == 2
+    assert updated.spec["name"] == "Price watch v2"
+    assert updated.preview is None and updated.preview_hash is None
+
+    with pytest.raises(DomainError) as stale:
+        await drafts.update_draft(session, current, draft_id=draft.id,
+                                  revision=1, spec=edited)
+    assert stale.value.code == "stale_revision"
+
+
+@pytest.mark.asyncio
+async def test_published_draft_cannot_be_edited_directly(session):
+    user, group = await seed(session)
+    current = CurrentUser(user_id=user.id, role="admin")
+    conversation = await _conversation(session, user)
+    draft = await drafts.save_draft(session, current, conversation_id=conversation.id,
+                                    spec=build_spec(group.id))
+    spec = DraftSpec.model_validate(draft.spec)
+    recipients = recipients_emails(await load_recipients(session, spec.notification_group_ids))
+    await drafts.save_preview(session, draft, preview_payload(spec, draft, recipients, "100"),
+                              ttl_minutes=60)
+    await drafts.publish_draft(session, current, conversation_id=conversation.id,
+        draft_id=draft.id, revision=draft.revision,
+        preview_hash=draft.preview_hash or "0" * 64)
+    await session.commit()
+
+    with pytest.raises(DomainError) as rejected:
+        await drafts.update_draft(session, current, draft_id=draft.id,
+                                  revision=draft.revision, spec=build_spec(group.id))
+    assert rejected.value.code == "draft_not_editable"

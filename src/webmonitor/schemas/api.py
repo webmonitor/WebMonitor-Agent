@@ -5,6 +5,8 @@ from uuid import UUID
 
 from pydantic import BaseModel, ConfigDict, EmailStr, Field, StrictBool, field_validator
 
+from webmonitor.schemas.monitors import DraftSpec
+
 T = TypeVar("T")
 
 Role = Literal["admin", "member"]
@@ -39,6 +41,28 @@ class ApproveRequest(Input):
     draft_id: UUID
     revision: int = Field(ge=1, strict=True)
     preview_hash: str = Field(pattern=r"^[0-9a-f]{64}$")
+
+
+class DraftSpecUpdate(Input):
+    revision: int = Field(ge=1, strict=True)
+    spec: DraftSpec
+
+
+class MonitorRename(Input):
+    name: str = Field(min_length=1, max_length=200)
+
+    @field_validator("name")
+    @classmethod
+    def trimmed(cls, value: str) -> str:
+        value = value.strip()
+        if not value:
+            raise ValueError("name must not be blank")
+        return value
+
+
+class InvitationCreate(Input):
+    email: EmailStr
+    ttl_hours: int = Field(default=24, ge=1, le=168, strict=True)
 
 
 class MemberSpec(Input):
@@ -182,6 +206,7 @@ class MonitorView(BaseModel):
     last_success_at: datetime | None
     last_failure_at: datetime | None
     created_at: datetime
+    archived_at: datetime | None = None
 
 
 class SnapshotRecord(BaseModel):
@@ -195,9 +220,25 @@ class SnapshotRecord(BaseModel):
     collected_at: datetime
 
 
+class SnapshotDetail(SnapshotRecord):
+    monitor_id: UUID
+    monitor_name: str
+
+
 class MonitorDetail(MonitorView):
     spec: dict[str, Any]
     baseline: SnapshotRecord | None
+    approved_recipients: list[str] = Field(default_factory=list)
+
+
+class SpecVersion(BaseModel):
+    id: UUID
+    version: int
+    draft_id: UUID
+    spec: dict[str, Any]
+    spec_hash: str
+    published_at: datetime
+    current: bool
 
 
 class JobDetail(JobView):
@@ -229,6 +270,7 @@ class Group(BaseModel):
 class Delivery(BaseModel):
     id: UUID
     monitor_id: UUID
+    monitor_name: str
     event_id: UUID
     recipient: str
     subject: str
@@ -250,6 +292,20 @@ class Member(BaseModel):
     role: str
     active: bool
     created_at: datetime
+
+
+class InvitationView(BaseModel):
+    id: UUID
+    email: str
+    created_at: datetime
+    expires_at: datetime
+    consumed_at: datetime | None
+
+
+class InvitationCreated(BaseModel):
+    email: str
+    url: str
+    expires_at: datetime
 
 
 class CreateMonitorResult(BaseModel):

@@ -58,12 +58,16 @@ function EvidenceLinks({ draftId, preview }: { draftId: string; preview: DraftPr
 export function CreateMonitorCard({
   conversationId,
   draft,
+  onApproved,
 }: {
   conversationId: string;
   draft: DraftView;
+  onApproved?: () => void;
 }) {
   const { t } = useI18n();
   const {
+    coverageLabel,
+    describeRule,
     describeRules,
     errorText,
     fieldLabels,
@@ -132,6 +136,7 @@ export function CreateMonitorCard({
     try {
       if (!draft.preview_hash) return;
       await approve.mutateAsync({ draftId: draft.id, revision: draft.revision, previewHash: draft.preview_hash });
+      onApproved?.();
     } catch (failure) {
       setError(
         failure instanceof ApiError
@@ -146,6 +151,18 @@ export function CreateMonitorCard({
   }
 
   const labels = fieldLabels(spec?.fields ?? []);
+  const rules = spec?.change_rules?.rules ?? [];
+  const simulation = preview?.rule_simulation as {
+    triggered?: boolean;
+    rule_state?: { predicates?: Record<string, boolean>; aggregate?: boolean };
+  } | undefined;
+  const predicates = simulation?.rule_state?.predicates ?? {};
+  // Change rules have no previous snapshot at preview time; their predicate is
+  // false by construction, not because the page failed the rule.
+  const historyRules = new Set([
+    "text_changed", "number_absolute_change", "number_percent_change",
+    "list_added", "list_removed", "list_updated",
+  ]);
   const editing = Boolean(draft.monitor_id);
   const expired = preview ? new Date(preview.expires_at).getTime() <= Date.now() : false;
   const disabled = approving || approve.isPending || previewBusy || expired || !preview || !draft.preview_hash;
@@ -237,10 +254,39 @@ export function CreateMonitorCard({
         </div>
 
         <div>
+          <h3 className="label-line">{t("chat.section.coverage")}</h3>
+          <p className="mt-1 text-[13px] leading-6">
+            {coverageLabel(preview.coverage.scope)}
+            {preview.coverage.description ? ` · ${preview.coverage.description}` : ""}
+          </p>
+        </div>
+
+        <div>
           <h3 className="label-line">{t("chat.section.rules")}</h3>
           <p className="mt-1 text-[13px] leading-6">
-            {describeRules(spec?.change_rules?.rules ?? [], spec?.change_rules?.mode, labels)}
+            {describeRules(rules, spec?.change_rules?.mode, labels)}
           </p>
+          <ul className="mt-1.5 divide-y border-t">
+            {rules.map((rule, index) => {
+              const value = predicates[String(index)];
+              const status = value === true
+                ? t("chat.simulation.met")
+                : value === false && historyRules.has(rule.type ?? "")
+                  ? t("chat.simulation.baseline")
+                  : value === false
+                    ? t("chat.simulation.unmet")
+                    : t("chat.simulation.unknown");
+              return (
+                <li key={`${rule.type ?? "rule"}-${index}`} className="flex items-baseline justify-between gap-3 py-1.5">
+                  <span className="min-w-0 text-[12px] text-muted-foreground">
+                    {describeRule(rule, labels)}
+                  </span>
+                  <span className="num shrink-0 text-[11px]">{status}</span>
+                </li>
+              );
+            })}
+          </ul>
+          <p className="meta mt-1.5 leading-5">{t("chat.simulation.note")}</p>
         </div>
 
         <div>

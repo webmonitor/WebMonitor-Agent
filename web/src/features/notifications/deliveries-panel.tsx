@@ -53,7 +53,7 @@ export function DeliveriesPanel() {
                   <Badge tone={tone(delivery.status)}>{statusLabel(delivery.status)}</Badge>
                 </span>
                 <span className="num mt-1 block truncate text-[11px] text-muted-foreground">
-                  {delivery.recipient} · {formatTime(delivery.created_at)}
+                  {delivery.monitor_name} · {delivery.recipient} · {formatTime(delivery.created_at)}
                 </span>
                 {delivery.error_code && (
                   <span className="mt-1 block text-[11px] text-error">{errorText(delivery.error_code)}</span>

@@ -7,8 +7,16 @@ from sqlalchemy import func, select, update
 from webmonitor.api.dependencies import AuthenticatedUser, DatabaseSession
 from webmonitor.errors import DomainError
 from webmonitor.models import Session, User, utc_now
-from webmonitor.schemas.api import Availability, Member, Page
+from webmonitor.schemas.api import (
+    Availability,
+    InvitationCreate,
+    InvitationCreated,
+    InvitationView,
+    Member,
+    Page,
+)
 from webmonitor.security.auth import require_admin
+from webmonitor.services import accounts
 
 router = APIRouter(prefix="/api/v1/members", tags=["members"])
 
@@ -26,6 +34,25 @@ async def list_members(session: DatabaseSession, user: AuthenticatedUser,
         .limit(limit).offset(offset))).all()
     total = await session.scalar(select(func.count()).select_from(User))
     return Page[Member](items=[_view(row) for row in rows], total=total or 0)
+
+
+@router.get("/invitations", response_model=Page[InvitationView])
+async def list_invitations(session: DatabaseSession, user: AuthenticatedUser,
+                           limit: int = Query(50, ge=1, le=100), offset: int = Query(0, ge=0)):
+    require_admin(user)
+    return await accounts.list_invitations(session, limit, offset)
+
+
+@router.post("/invitations", response_model=InvitationCreated, status_code=201)
+async def create_invitation(body: InvitationCreate, session: DatabaseSession,
+                            user: AuthenticatedUser):
+    require_admin(user)
+    invitation, url = await accounts.create_invitation(session,
+        email=str(body.email), ttl_hours=body.ttl_hours, created_by_user_id=user.user_id)
+    result = InvitationCreated(email=invitation.email, url=url,
+                               expires_at=invitation.expires_at)
+    await session.commit()
+    return result
 
 
 @router.patch("/{user_id}", response_model=Member)

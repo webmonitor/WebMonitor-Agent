@@ -59,7 +59,6 @@ for path in \
   deploy/minio.Dockerfile \
   deploy/egress.Dockerfile \
   deploy/egress/squid.conf \
-  deploy/egress/unbound.conf \
   deploy/egress/entrypoint.sh \
   deploy/minio-artifacts.json
 do
@@ -84,8 +83,7 @@ webmonitor-agent/
     ├── minio-artifacts.json
     ├── egress/
     │   ├── entrypoint.sh
-    │   ├── squid.conf
-    │   └── unbound.conf
+    │   └── squid.conf
     └── proxy/
         └── nginx.conf
 ```
@@ -171,7 +169,8 @@ Before anything is scheduled, a confirmation card appears — in the right-hand 
 
 - monitor name, check frequency, page host and timezone, and how long the preview stays valid
 - **Extracted content** — the fields it read and their actual values on this page
-- **Notify when** — the rule that will trigger an email
+- **Coverage** — how much of the page this check covers
+- **Notify when** — the rule that will trigger an email, and whether each rule evaluates true now; change rules are compared from the next check onward
 - **Recipients** — the addresses that will be notified
 - **Page screenshot** / **Page archive** when the sample saved them
 - **Preview notification email** — the real email body
@@ -185,11 +184,14 @@ The card shows a preview's queued, running or failed status. Failed previews ret
 
 ### After it starts
 
-- The monitor appears under **Monitors** in the left sidebar with its name and interval. Its page shows **Last check**, **Next check**, **Check frequency**, **Collection method**, then **Recent checks**, **Current content** and **Recent events**.
-- **Pause** / **Resume** stops and restarts the schedule. Pausing cancels queued or running collection; **Check now** is available while the monitor is active.
-- **Edit settings** opens a new conversation with the existing monitor's full settings. Describe the change, review the new preview, then **Save changes**; saving updates that monitor and rebuilds its baseline.
-- **Events** lists everything detected, with **All** / **Unread** filters and **Mark as read**.
-- **Notifications** → **Delivery log** lists each email: recipient, status, attempts, body, and the error if it failed.
+- The monitor appears under **Monitors** in the left sidebar with its name and interval. Its page shows **Last check**, **Next check**, **Check frequency**, **Collection method**, and **Monitor definition**: the selectors, fields, normalization, change rules, schedule, coverage, notification groups and approved recipients actually in use. **Raw definition (JSON)** shows the exact spec, and **Definition versions** lists every published version.
+- **Edit definition** edits that JSON directly. Saving writes a draft, runs a real preview, and only a confirmed preview updates the monitor; editing from an older version starts a new draft from it. **Edit settings** still opens a conversation with the same settings.
+- **Rename** changes the name. **Archive** stops checks and moves the monitor to **Archived**, keeping its definition and history; **Restore** brings it back, paused.
+- **Check history** stores every successful collection. Open one to see the stored values, coverage, screenshot and page archive. Events link to their check record and check details.
+- **Pause** / **Resume** stops and restarts the schedule. Pausing cancels queued or running collection; **Check now** is available while the monitor is active. An active check can be cancelled from its details, and a failed check can be retried there.
+- **Events** lists everything detected, with **All** / **Unread** filters, monitor and event-type filters, and **Mark as read**.
+- **Notifications** → **Delivery log** lists each email with its monitor, recipient, status, attempts, body, and the error if it failed.
+- **Members** (administrators) enables or disables accounts and creates single-use invitation links to copy.
 - Use **Load more** to reach older conversations, monitors, checks, events, groups and deliveries. Monitor detail pages show events filtered for that monitor.
 
 The first successful check only records the starting content and sends no email; comparisons begin with the second check. Previews never send email. A failed check keeps the last successful content as the comparison baseline.
@@ -281,11 +283,11 @@ docker compose up -d --wait --no-deps api web
 
 `:latest` follows stable releases; a pinned version keeps an install repeatable. Deployment files come from `main`, so keep the copies you actually started with.
 
-Record the current image version and back up data you need to retain before updating. Check database-format changes between versions: the project does not provide automatic schema migration or downgrade. The commands above update only the application services while leaving the running database and evidence services in place.
+Record the current image version and back up data you need to retain before updating. The commands above update only the application services while leaving the running database and evidence services in place.
 
 ### Roll back
 
-Set `WEBMONITOR_IMAGE` to the previous tag and repeat the commands above. Use data matching that version; rollback does not convert the database schema.
+Set `WEBMONITOR_IMAGE` to the previous tag and repeat the commands above.
 
 The default database and evidence store use temporary memory-backed directories. Stopping, restarting or recreating `postgres` or `s3`, or running `docker compose down`, clears accounts, monitors, events and saved pages. `docker compose restart api` preserves the running data services. Configure persistent storage and backups for long-term use, and retain `.env` and deployment files.
 

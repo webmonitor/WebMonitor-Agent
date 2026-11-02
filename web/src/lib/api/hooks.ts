@@ -13,9 +13,14 @@ export type JobDetail = components["schemas"]["JobDetail"];
 export type DraftView = components["schemas"]["DraftView"];
 export type MonitorView = components["schemas"]["MonitorView"];
 export type MonitorDetail = components["schemas"]["MonitorDetail"];
+export type SnapshotRecord = components["schemas"]["SnapshotRecord"];
+export type SnapshotDetail = components["schemas"]["SnapshotDetail"];
+export type SpecVersion = components["schemas"]["SpecVersion"];
 export type EventView = components["schemas"]["EventView"];
 export type Group = components["schemas"]["Group"];
 export type Delivery = components["schemas"]["Delivery"];
+export type InvitationView = components["schemas"]["InvitationView"];
+export type InvitationCreated = components["schemas"]["InvitationCreated"];
 export type CreateMonitorResult = components["schemas"]["CreateMonitorResult"];
 
 export type Page<T> = { items: T[]; total: number };
@@ -61,8 +66,12 @@ export function useConversation(id: string | null) {
   });
 }
 
-export function useMonitors() {
-  return usePagedQuery<MonitorView>(["monitors"], "/monitors", 15000);
+export function useMonitors(archived = false) {
+  return usePagedQuery<MonitorView>(
+    ["monitors", archived ? "archived" : "active"],
+    archived ? "/monitors?archived=true" : "/monitors",
+    15000,
+  );
 }
 
 export function useMonitor(id: string) {
@@ -86,9 +95,31 @@ export function useJobDetail(id: string | null) {
   });
 }
 
-export function useEvents(monitorId?: string) {
-  return usePagedQuery<EventView>(["events", monitorId ?? "all"],
-    monitorId ? `/events?monitor_id=${encodeURIComponent(monitorId)}` : "/events", 15000);
+export function useEvents(monitorId?: string, eventType?: string) {
+  const query = new URLSearchParams();
+  if (monitorId) query.set("monitor_id", monitorId);
+  if (eventType) query.set("event_type", eventType);
+  const suffix = query.toString();
+  return usePagedQuery<EventView>(["events", monitorId ?? "all", eventType ?? "all"],
+    `/events${suffix ? `?${suffix}` : ""}`, 15000);
+}
+
+export function useSnapshots(monitorId: string) {
+  return usePagedQuery<SnapshotRecord>(["snapshots", monitorId],
+    `/monitors/${monitorId}/snapshots`, 15000);
+}
+
+export function useSnapshot(id: string | null) {
+  return useQuery({
+    queryKey: ["snapshot", id],
+    queryFn: () => api<SnapshotDetail>(`/snapshots/${id}`),
+    enabled: Boolean(id),
+  });
+}
+
+export function useSpecVersions(monitorId: string) {
+  return usePagedQuery<SpecVersion>(["spec-versions", monitorId],
+    `/monitors/${monitorId}/specs`, 30000);
 }
 
 export function useGroups() {
@@ -147,9 +178,12 @@ export function useApproveDraft(conversationId: string) {
         method: "POST",
         body: JSON.stringify({ draft_id: draftId, revision, preview_hash: previewHash }),
       }),
-    onSuccess: () => {
+    onSuccess: (result) => {
       void cache.invalidateQueries({ queryKey: ["conversation", conversationId] });
       void cache.invalidateQueries({ queryKey: ["monitors"] });
+      void cache.invalidateQueries({ queryKey: ["monitor", result.monitor_id] });
+      void cache.invalidateQueries({ queryKey: ["monitor-jobs", result.monitor_id] });
+      void cache.invalidateQueries({ queryKey: ["spec-versions", result.monitor_id] });
     },
   });
 }
@@ -160,6 +194,23 @@ export function useStartPreview(conversationId: string) {
     mutationFn: (draftId: string) =>
       api<JobView>(`/drafts/${draftId}/preview`, { method: "POST" }),
     onSettled: () => void cache.invalidateQueries({ queryKey: ["conversation", conversationId] }),
+  });
+}
+
+export function useUpdateDraft() {
+  const cache = useQueryClient();
+  return useMutation({
+    mutationFn: ({ draftId, revision, spec }: {
+      draftId: string;
+      revision: number;
+      spec: Record<string, unknown>;
+    }) =>
+      api<DraftView>(`/drafts/${draftId}`, {
+        method: "PUT",
+        body: JSON.stringify({ revision, spec }),
+      }),
+    onSuccess: (draft) =>
+      void cache.invalidateQueries({ queryKey: ["conversation", draft.conversation_id] }),
   });
 }
 
@@ -199,6 +250,58 @@ export function useRunNow() {
   });
 }
 
+export function useRenameMonitor() {
+  const cache = useQueryClient();
+  return useMutation({
+    mutationFn: ({ monitorId, name }: { monitorId: string; name: string }) =>
+      api<MonitorView>(`/monitors/${monitorId}`, {
+        method: "PATCH",
+        body: JSON.stringify({ name }),
+      }),
+    onSuccess: (_data, { monitorId }) => {
+      void cache.invalidateQueries({ queryKey: ["monitor", monitorId] });
+      void cache.invalidateQueries({ queryKey: ["monitors"] });
+    },
+  });
+}
+
+export function useArchiveMonitor() {
+  const cache = useQueryClient();
+  return useMutation({
+    mutationFn: (monitorId: string) =>
+      api<MonitorView>(`/monitors/${monitorId}/archive`, { method: "POST" }),
+    onSuccess: (_data, monitorId) => {
+      void cache.invalidateQueries({ queryKey: ["monitor", monitorId] });
+      void cache.invalidateQueries({ queryKey: ["monitors"] });
+    },
+  });
+}
+
+export function useRestoreMonitor() {
+  const cache = useQueryClient();
+  return useMutation({
+    mutationFn: (monitorId: string) =>
+      api<MonitorView>(`/monitors/${monitorId}/restore`, { method: "POST" }),
+    onSuccess: (_data, monitorId) => {
+      void cache.invalidateQueries({ queryKey: ["monitor", monitorId] });
+      void cache.invalidateQueries({ queryKey: ["monitors"] });
+    },
+  });
+}
+
+export function useCancelJob() {
+  const cache = useQueryClient();
+  return useMutation({
+    mutationFn: (jobId: string) =>
+      api<JobView>(`/jobs/${jobId}/cancel`, { method: "POST" }),
+    onSettled: (_data, _error, jobId) => {
+      void cache.invalidateQueries({ queryKey: ["job", jobId] });
+      void cache.invalidateQueries({ queryKey: ["monitor-jobs"] });
+      void cache.invalidateQueries({ queryKey: ["monitor"] });
+    },
+  });
+}
+
 export function useDeriveDraft() {
   const cache = useQueryClient();
   return useMutation({
@@ -217,6 +320,38 @@ export function useAckEvent() {
     mutationFn: (eventId: string) =>
       api<EventView>(`/events/${eventId}/acknowledge`, { method: "POST" }),
     onSuccess: () => void cache.invalidateQueries({ queryKey: ["events"] }),
+  });
+}
+
+export function useMembers() {
+  return usePagedQuery<AuthProfile>(["members"], "/members", 30000);
+}
+
+export function useSetMemberActive() {
+  const cache = useQueryClient();
+  return useMutation({
+    mutationFn: ({ userId, active }: { userId: string; active: boolean }) =>
+      api<AuthProfile>(`/members/${userId}`, {
+        method: "PATCH",
+        body: JSON.stringify({ active }),
+      }),
+    onSuccess: () => void cache.invalidateQueries({ queryKey: ["members"] }),
+  });
+}
+
+export function useInvitations() {
+  return usePagedQuery<InvitationView>(["invitations"], "/members/invitations", 30000);
+}
+
+export function useCreateInvitation() {
+  const cache = useQueryClient();
+  return useMutation({
+    mutationFn: ({ email, ttlHours }: { email: string; ttlHours: number }) =>
+      api<InvitationCreated>("/members/invitations", {
+        method: "POST",
+        body: JSON.stringify({ email, ttl_hours: ttlHours }),
+      }),
+    onSuccess: () => void cache.invalidateQueries({ queryKey: ["invitations"] }),
   });
 }
 

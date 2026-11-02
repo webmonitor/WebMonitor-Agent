@@ -41,26 +41,68 @@ const ruleSchema = z.object({
   watch_fields: z.array(z.string()).optional(),
 });
 
+const normalizationSchema = z.object({
+  trim: z.boolean().optional(),
+  collapse_whitespace: z.boolean().optional(),
+  decimal_separator: z.string().nullish(),
+  thousands_separator: z.string().nullish(),
+  currency: z.string().nullish(),
+  date_format: z.string().nullish(),
+  timezone: z.string().nullish(),
+  true_values: z.array(z.string()).optional(),
+  false_values: z.array(z.string()).optional(),
+});
+
+const fieldShape = {
+  name: z.string(),
+  type: z.string(),
+  semantic: z.string().optional(),
+  selector: z.string().optional(),
+  attribute: z.string().nullish(),
+  required: z.boolean().optional(),
+  normalize: normalizationSchema.optional(),
+  min_items: z.number().nullish(),
+  max_items: z.number().nullish(),
+};
+
+const fieldSchema = z.object({
+  ...fieldShape,
+  // The backend rejects nested lists, so one level covers every valid spec.
+  item_fields: z.array(z.object(fieldShape)).nullish(),
+});
+
+const browserStepSchema = z.object({
+  type: z.string(),
+  selector: z.string().optional(),
+  timeout_ms: z.number().optional(),
+  max_steps: z.number().optional(),
+  max_pages: z.number().optional(),
+});
+
 export const draftSpecSchema = z.object({
   name: z.string().optional(),
   url: z.string().optional(),
   collection_mode: z.string().optional(),
-  fields: z.array(
-    z.object({
-      name: z.string(),
-      type: z.string(),
-      semantic: z.string().optional(),
-      selector: z.string().optional(),
-    }),
-  ),
+  fields: z.array(fieldSchema),
+  business_key: z
+    .object({ field: z.string(), item_fields: z.array(z.string()) })
+    .nullish(),
   change_rules: z
     .object({ mode: z.string().optional(), rules: z.array(ruleSchema) })
     .optional(),
   schedule: z.object({ interval_seconds: z.number(), timezone: z.string().optional() }).optional(),
+  notification_group_ids: z.array(z.string()).optional(),
+  coverage: z
+    .object({ scope: z.string().optional(), description: z.string().optional() })
+    .optional(),
+  browser_steps: z.array(browserStepSchema).optional(),
 });
 
 export type DraftPreview = z.infer<typeof draftPreviewSchema>;
 export type DraftSpecView = z.infer<typeof draftSpecSchema>;
+export type SpecField = z.infer<typeof fieldSchema>;
+export type SpecRule = z.infer<typeof ruleSchema>;
+export type BrowserStep = z.infer<typeof browserStepSchema>;
 
 export function parsePreview(value: unknown): DraftPreview | null {
   const parsed = draftPreviewSchema.safeParse(value);

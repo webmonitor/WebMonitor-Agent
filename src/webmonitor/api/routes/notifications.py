@@ -6,7 +6,7 @@ from sqlalchemy import func, select
 
 from webmonitor.api.dependencies import AuthenticatedUser, DatabaseSession
 from webmonitor.errors import DomainError
-from webmonitor.models import EmailDelivery
+from webmonitor.models import EmailDelivery, Monitor
 from webmonitor.schemas.api import Delivery, Group, GroupPatch, GroupSpec, Page
 from webmonitor.services import notifications
 
@@ -53,11 +53,15 @@ async def list_deliveries(session: DatabaseSession, user: AuthenticatedUser,
     rows = (await session.scalars(query.order_by(EmailDelivery.created_at.desc(), EmailDelivery.id.desc())
         .limit(limit).offset(offset))).all()
     total = await session.scalar(select(func.count()).select_from(query.subquery()))
-    return Page[Delivery](items=[_delivery(row) for row in rows], total=total or 0)
+    names = {row.id: row.name for row in (await session.scalars(select(Monitor).where(
+        Monitor.id.in_({row.monitor_id for row in rows})))).all()}
+    return Page[Delivery](items=[_delivery(row, names.get(row.monitor_id, ""))
+                                 for row in rows], total=total or 0)
 
 
-def _delivery(row: EmailDelivery) -> Delivery:
-    return Delivery(id=row.id, monitor_id=row.monitor_id, event_id=row.event_id,
+def _delivery(row: EmailDelivery, monitor_name: str = "") -> Delivery:
+    return Delivery(id=row.id, monitor_id=row.monitor_id, monitor_name=monitor_name,
+        event_id=row.event_id,
         recipient=row.recipient, subject=row.subject, body_text=row.body_text,
         status=row.status,
         attempt_count=row.attempt_count, error_code=row.error_code,
@@ -70,4 +74,5 @@ async def read_delivery(delivery_id: UUID, session: DatabaseSession, user: Authe
     row = await session.get(EmailDelivery, delivery_id)
     if row is None or (row.user_id != user.user_id and user.role != "admin"):
         raise DomainError("not_found", 404)
-    return _delivery(row)
+    monitor = await session.get(Monitor, row.monitor_id)
+    return _delivery(row, monitor.name if monitor is not None else "")

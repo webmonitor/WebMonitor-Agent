@@ -212,6 +212,7 @@ class Monitor(UUIDPrimaryKey, Created, Updated, Base):
     health_status: Mapped[str] = mapped_column(String(16), default="healthy", server_default="healthy")
     failure_fingerprint: Mapped[str | None] = mapped_column(String(64))
     paused_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    archived_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
 
 
 class Snapshot(UUIDPrimaryKey, Created, Base):

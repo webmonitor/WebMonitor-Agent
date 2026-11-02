@@ -2,7 +2,7 @@
 import { useMemo, useState } from "react";
 import { PageBody, PageHeader } from "@/components/page-header";
 import { EmptyState } from "@/components/empty-state";
-import { useAckEvent, useEvents } from "@/lib/api/hooks";
+import { useAckEvent, useEvents, useMonitors } from "@/lib/api/hooks";
 import { useFormat } from "@/lib/format";
 import { useI18n } from "@/lib/i18n";
 import { EventCard } from "@/features/events/event-card";
@@ -12,13 +12,19 @@ type Filter = "all" | "unread";
 
 const FILTERS: Filter[] = ["all", "unread"];
 
+const EVENT_TYPES = [
+  "price_changed", "list_changed", "content_changed", "run_failed", "recovered",
+] as const;
+
 export function EventsPage() {
-  const events = useEvents();
-  const acknowledge = useAckEvent();
   const { t } = useI18n();
-  const { dayLabel } = useFormat();
-  const { errorText } = useFormat();
+  const { dayLabel, eventLabel, errorText } = useFormat();
   const [filter, setFilter] = useState<Filter>("all");
+  const [monitorId, setMonitorId] = useState("");
+  const [eventType, setEventType] = useState("");
+  const events = useEvents(monitorId || undefined, eventType || undefined);
+  const monitors = useMonitors();
+  const acknowledge = useAckEvent();
 
   const items = events.data?.items ?? [];
   const unreadCount = items.filter((event) => !event.acknowledged_at).length;
@@ -42,7 +48,29 @@ export function EventsPage() {
           title={t("activity.events.title")}
           description={t("activity.events.description")}
           actions={
-            <div className="flex items-center gap-1">
+            <div className="flex flex-wrap items-center gap-2">
+              <select
+                aria-label={t("activity.events.filter.monitor")}
+                value={monitorId}
+                onChange={(event) => setMonitorId(event.target.value)}
+                className="h-7 max-w-40 rounded-md border bg-card px-1.5 text-xs text-muted-foreground"
+              >
+                <option value="">{t("activity.events.filter.allMonitors")}</option>
+                {(monitors.data?.items ?? []).map((monitor) => (
+                  <option key={monitor.id} value={monitor.id}>{monitor.name}</option>
+                ))}
+              </select>
+              <select
+                aria-label={t("activity.events.filter.type")}
+                value={eventType}
+                onChange={(event) => setEventType(event.target.value)}
+                className="h-7 rounded-md border bg-card px-1.5 text-xs text-muted-foreground"
+              >
+                <option value="">{t("activity.events.filter.allTypes")}</option>
+                {EVENT_TYPES.map((value) => (
+                  <option key={value} value={value}>{eventLabel(value)}</option>
+                ))}
+              </select>
               {FILTERS.map((value) => (
                 <button
                   key={value}

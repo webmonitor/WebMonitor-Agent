@@ -106,6 +106,24 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v1/members/invitations": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** List Invitations */
+        get: operations["list_invitations_api_v1_members_invitations_get"];
+        put?: never;
+        /** Create Invitation */
+        post: operations["create_invitation_api_v1_members_invitations_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/v1/members/{user_id}": {
         parameters: {
             query?: never;
@@ -218,7 +236,8 @@ export interface paths {
         };
         /** Read Draft */
         get: operations["read_draft_api_v1_drafts__draft_id__get"];
-        put?: never;
+        /** Update Draft */
+        put: operations["update_draft_api_v1_drafts__draft_id__put"];
         post?: never;
         delete?: never;
         options?: never;
@@ -322,6 +341,92 @@ export interface paths {
         get: operations["read_monitor_api_v1_monitors__monitor_id__get"];
         put?: never;
         post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        /** Rename Monitor */
+        patch: operations["rename_monitor_api_v1_monitors__monitor_id__patch"];
+        trace?: never;
+    };
+    "/api/v1/monitors/{monitor_id}/snapshots": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** List Snapshots */
+        get: operations["list_snapshots_api_v1_monitors__monitor_id__snapshots_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/snapshots/{snapshot_id}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Read Snapshot */
+        get: operations["read_snapshot_api_v1_snapshots__snapshot_id__get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/monitors/{monitor_id}/specs": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** List Spec Versions */
+        get: operations["list_spec_versions_api_v1_monitors__monitor_id__specs_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/monitors/{monitor_id}/archive": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Archive Monitor */
+        post: operations["archive_monitor_api_v1_monitors__monitor_id__archive_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/monitors/{monitor_id}/restore": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Restore Monitor */
+        post: operations["restore_monitor_api_v1_monitors__monitor_id__restore_post"];
         delete?: never;
         options?: never;
         head?: never;
@@ -589,12 +694,41 @@ export interface components {
             /** Active */
             active: boolean;
         };
+        /** BusinessKey */
+        BusinessKey: {
+            /** Field */
+            field: string;
+            /** Item Fields */
+            item_fields: string[];
+        };
         /** CSRFResponse */
         CSRFResponse: {
             /** Csrf Token */
             csrf_token: string;
             /** Expires At */
             expires_at: number;
+        };
+        /** ChangeRules */
+        ChangeRules: {
+            /**
+             * Mode
+             * @enum {string}
+             */
+            mode: "all" | "any";
+            /** Rules */
+            rules: (components["schemas"]["TextChanged"] | components["schemas"]["KeywordPresent"] | components["schemas"]["KeywordAbsent"] | components["schemas"]["NumberAbsoluteChange"] | components["schemas"]["NumberPercentChange"] | components["schemas"]["Threshold"] | components["schemas"]["ListAdded"] | components["schemas"]["ListRemoved"] | components["schemas"]["ListUpdated"])[];
+        };
+        /** ClickNext */
+        ClickNext: {
+            /**
+             * @description discriminator enum property added by openapi-typescript
+             * @enum {string}
+             */
+            type: "click_next";
+            /** Selector */
+            selector: string;
+            /** Max Pages */
+            max_pages: number;
         };
         /** ConversationCreate */
         ConversationCreate: {
@@ -633,6 +767,16 @@ export interface components {
              */
             updated_at: string;
         };
+        /** Coverage */
+        Coverage: {
+            /**
+             * Scope
+             * @enum {string}
+             */
+            scope: "full" | "bounded";
+            /** Description */
+            description: string;
+        };
         /** CreateMonitorResult */
         CreateMonitorResult: {
             /**
@@ -662,6 +806,8 @@ export interface components {
              * Format: uuid
              */
             monitor_id: string;
+            /** Monitor Name */
+            monitor_name: string;
             /**
              * Event Id
              * Format: uuid
@@ -692,6 +838,34 @@ export interface components {
             sent_at: string | null;
             /** Failed At */
             failed_at: string | null;
+        };
+        /** DraftSpec */
+        DraftSpec: {
+            /** Name */
+            name: string;
+            /** Url */
+            url: string;
+            /**
+             * Collection Mode
+             * @enum {string}
+             */
+            collection_mode: "http" | "browser";
+            /** Fields */
+            fields: components["schemas"]["FieldSpec"][];
+            business_key?: components["schemas"]["BusinessKey"] | null;
+            change_rules: components["schemas"]["ChangeRules"];
+            schedule: components["schemas"]["Schedule"];
+            /** Notification Group Ids */
+            notification_group_ids: string[];
+            coverage: components["schemas"]["Coverage"];
+            /** Browser Steps */
+            browser_steps?: (components["schemas"]["WaitForSelector"] | components["schemas"]["Scroll"] | components["schemas"]["ClickNext"])[];
+        };
+        /** DraftSpecUpdate */
+        DraftSpecUpdate: {
+            /** Revision */
+            revision: number;
+            spec: components["schemas"]["DraftSpec"];
         };
         /** DraftView */
         DraftView: {
@@ -786,6 +960,34 @@ export interface components {
             /** Sha256 */
             sha256: string;
         };
+        /** FieldSpec */
+        FieldSpec: {
+            /** Name */
+            name: string;
+            /**
+             * Type
+             * @enum {string}
+             */
+            type: "text" | "number" | "money" | "date" | "boolean" | "url" | "list";
+            /** Semantic */
+            semantic: string;
+            /** Selector */
+            selector: string;
+            /** Attribute */
+            attribute?: string | null;
+            /**
+             * Required
+             * @default true
+             */
+            required: boolean;
+            normalize?: components["schemas"]["Normalization"];
+            /** Item Fields */
+            item_fields?: components["schemas"]["FieldSpec"][] | null;
+            /** Min Items */
+            min_items?: number | null;
+            /** Max Items */
+            max_items?: number | null;
+        };
         /** Group */
         Group: {
             /**
@@ -835,6 +1037,53 @@ export interface components {
         HTTPValidationError: {
             /** Detail */
             detail?: components["schemas"]["ValidationError"][];
+        };
+        /** InvitationCreate */
+        InvitationCreate: {
+            /**
+             * Email
+             * Format: email
+             */
+            email: string;
+            /**
+             * Ttl Hours
+             * @default 24
+             */
+            ttl_hours: number;
+        };
+        /** InvitationCreated */
+        InvitationCreated: {
+            /** Email */
+            email: string;
+            /** Url */
+            url: string;
+            /**
+             * Expires At
+             * Format: date-time
+             */
+            expires_at: string;
+        };
+        /** InvitationView */
+        InvitationView: {
+            /**
+             * Id
+             * Format: uuid
+             */
+            id: string;
+            /** Email */
+            email: string;
+            /**
+             * Created At
+             * Format: date-time
+             */
+            created_at: string;
+            /**
+             * Expires At
+             * Format: date-time
+             */
+            expires_at: string;
+            /** Consumed At */
+            consumed_at: string | null;
         };
         /** JobAttempt */
         JobAttempt: {
@@ -958,12 +1207,68 @@ export interface components {
              */
             created_at: string;
         };
+        /** KeywordAbsent */
+        KeywordAbsent: {
+            /** Field */
+            field: string;
+            /**
+             * @description discriminator enum property added by openapi-typescript
+             * @enum {string}
+             */
+            type: "keyword_absent";
+            /** Keyword */
+            keyword: string;
+        };
+        /** KeywordPresent */
+        KeywordPresent: {
+            /** Field */
+            field: string;
+            /**
+             * @description discriminator enum property added by openapi-typescript
+             * @enum {string}
+             */
+            type: "keyword_present";
+            /** Keyword */
+            keyword: string;
+        };
         /** Limits */
         Limits: {
             /** Message Max Chars */
             message_max_chars: number;
             /** Preview Ttl Minutes */
             preview_ttl_minutes: number;
+        };
+        /** ListAdded */
+        ListAdded: {
+            /** Field */
+            field: string;
+            /**
+             * @description discriminator enum property added by openapi-typescript
+             * @enum {string}
+             */
+            type: "list_added";
+        };
+        /** ListRemoved */
+        ListRemoved: {
+            /** Field */
+            field: string;
+            /**
+             * @description discriminator enum property added by openapi-typescript
+             * @enum {string}
+             */
+            type: "list_removed";
+        };
+        /** ListUpdated */
+        ListUpdated: {
+            /** Field */
+            field: string;
+            /**
+             * @description discriminator enum property added by openapi-typescript
+             * @enum {string}
+             */
+            type: "list_updated";
+            /** Watch Fields */
+            watch_fields: string[];
         };
         /** LoginRequest */
         LoginRequest: {
@@ -1068,11 +1373,20 @@ export interface components {
              * Format: date-time
              */
             created_at: string;
+            /** Archived At */
+            archived_at?: string | null;
             /** Spec */
             spec: {
                 [key: string]: unknown;
             };
             baseline: components["schemas"]["SnapshotRecord"] | null;
+            /** Approved Recipients */
+            approved_recipients?: string[];
+        };
+        /** MonitorRename */
+        MonitorRename: {
+            /** Name */
+            name: string;
         };
         /** MonitorView */
         MonitorView: {
@@ -1115,6 +1429,69 @@ export interface components {
              * Format: date-time
              */
             created_at: string;
+            /** Archived At */
+            archived_at?: string | null;
+        };
+        /** Normalization */
+        Normalization: {
+            /**
+             * Trim
+             * @default true
+             */
+            trim: boolean;
+            /**
+             * Collapse Whitespace
+             * @default false
+             */
+            collapse_whitespace: boolean;
+            /** Decimal Separator */
+            decimal_separator?: ("." | ",") | null;
+            /** Thousands Separator */
+            thousands_separator?: ("." | "," | " " | "'") | null;
+            /** Currency */
+            currency?: string | null;
+            /** Date Format */
+            date_format?: string | null;
+            /** Timezone */
+            timezone?: string | null;
+            /** True Values */
+            true_values?: string[];
+            /** False Values */
+            false_values?: string[];
+        };
+        /** NumberAbsoluteChange */
+        NumberAbsoluteChange: {
+            /** Field */
+            field: string;
+            /**
+             * Operator
+             * @enum {string}
+             */
+            operator: "increase_gte" | "decrease_gte" | "change_gte";
+            /** Value */
+            value: number | string;
+            /**
+             * @description discriminator enum property added by openapi-typescript
+             * @enum {string}
+             */
+            type: "number_absolute_change";
+        };
+        /** NumberPercentChange */
+        NumberPercentChange: {
+            /** Field */
+            field: string;
+            /**
+             * Operator
+             * @enum {string}
+             */
+            operator: "increase_gte" | "decrease_gte" | "change_gte";
+            /** Value */
+            value: number | string;
+            /**
+             * @description discriminator enum property added by openapi-typescript
+             * @enum {string}
+             */
+            type: "number_percent_change";
         };
         /** Page[ConversationView] */
         Page_ConversationView_: {
@@ -1144,6 +1521,13 @@ export interface components {
             /** Total */
             total: number;
         };
+        /** Page[InvitationView] */
+        Page_InvitationView_: {
+            /** Items */
+            items: components["schemas"]["InvitationView"][];
+            /** Total */
+            total: number;
+        };
         /** Page[JobView] */
         Page_JobView_: {
             /** Items */
@@ -1165,6 +1549,20 @@ export interface components {
             /** Total */
             total: number;
         };
+        /** Page[SnapshotRecord] */
+        Page_SnapshotRecord_: {
+            /** Items */
+            items: components["schemas"]["SnapshotRecord"][];
+            /** Total */
+            total: number;
+        };
+        /** Page[SpecVersion] */
+        Page_SpecVersion_: {
+            /** Items */
+            items: components["schemas"]["SpecVersion"][];
+            /** Total */
+            total: number;
+        };
         /** PostMessageRequest */
         PostMessageRequest: {
             /** Content */
@@ -1182,6 +1580,62 @@ export interface components {
             password: string;
             /** Invitation Token */
             invitation_token: string;
+        };
+        /** Schedule */
+        Schedule: {
+            /** Interval Seconds */
+            interval_seconds: number;
+            /** Timezone */
+            timezone: string;
+        };
+        /** Scroll */
+        Scroll: {
+            /**
+             * @description discriminator enum property added by openapi-typescript
+             * @enum {string}
+             */
+            type: "scroll";
+            /** Max Steps */
+            max_steps: number;
+        };
+        /** SnapshotDetail */
+        SnapshotDetail: {
+            /**
+             * Id
+             * Format: uuid
+             */
+            id: string;
+            /**
+             * Job Id
+             * Format: uuid
+             */
+            job_id: string;
+            /** Spec Version */
+            spec_version: number;
+            /** Final Url */
+            final_url: string;
+            /** Extracted Data */
+            extracted_data: {
+                [key: string]: unknown;
+            };
+            /** Coverage */
+            coverage: {
+                [key: string]: unknown;
+            };
+            /** Evidence Refs */
+            evidence_refs: components["schemas"]["EvidenceRef"][];
+            /**
+             * Collected At
+             * Format: date-time
+             */
+            collected_at: string;
+            /**
+             * Monitor Id
+             * Format: uuid
+             */
+            monitor_id: string;
+            /** Monitor Name */
+            monitor_name: string;
         };
         /** SnapshotRecord */
         SnapshotRecord: {
@@ -1215,6 +1669,61 @@ export interface components {
              */
             collected_at: string;
         };
+        /** SpecVersion */
+        SpecVersion: {
+            /**
+             * Id
+             * Format: uuid
+             */
+            id: string;
+            /** Version */
+            version: number;
+            /**
+             * Draft Id
+             * Format: uuid
+             */
+            draft_id: string;
+            /** Spec */
+            spec: {
+                [key: string]: unknown;
+            };
+            /** Spec Hash */
+            spec_hash: string;
+            /**
+             * Published At
+             * Format: date-time
+             */
+            published_at: string;
+            /** Current */
+            current: boolean;
+        };
+        /** TextChanged */
+        TextChanged: {
+            /** Field */
+            field: string;
+            /**
+             * @description discriminator enum property added by openapi-typescript
+             * @enum {string}
+             */
+            type: "text_changed";
+        };
+        /** Threshold */
+        Threshold: {
+            /** Field */
+            field: string;
+            /**
+             * @description discriminator enum property added by openapi-typescript
+             * @enum {string}
+             */
+            type: "threshold";
+            /**
+             * Operator
+             * @enum {string}
+             */
+            operator: "gt" | "gte" | "lt" | "lte" | "eq";
+            /** Value */
+            value: number | string;
+        };
         /** ValidationError */
         ValidationError: {
             /** Location */
@@ -1227,6 +1736,21 @@ export interface components {
             input?: unknown;
             /** Context */
             ctx?: Record<string, never>;
+        };
+        /** WaitForSelector */
+        WaitForSelector: {
+            /**
+             * @description discriminator enum property added by openapi-typescript
+             * @enum {string}
+             */
+            type: "wait_for_selector";
+            /** Selector */
+            selector: string;
+            /**
+             * Timeout Ms
+             * @default 10000
+             */
+            timeout_ms: number;
         };
     };
     responses: never;
@@ -1380,6 +1904,71 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["Page_Member_"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    list_invitations_api_v1_members_invitations_get: {
+        parameters: {
+            query?: {
+                limit?: number;
+                offset?: number;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Page_InvitationView_"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    create_invitation_api_v1_members_invitations_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["InvitationCreate"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["InvitationCreated"];
                 };
             };
             /** @description Validation Error */
@@ -1656,6 +2245,41 @@ export interface operations {
             };
         };
     };
+    update_draft_api_v1_drafts__draft_id__put: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                draft_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["DraftSpecUpdate"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["DraftView"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
     start_preview_api_v1_drafts__draft_id__preview_post: {
         parameters: {
             query?: never;
@@ -1785,6 +2409,7 @@ export interface operations {
             query?: {
                 limit?: number;
                 offset?: number;
+                archived?: boolean;
             };
             header?: never;
             path?: never;
@@ -1830,6 +2455,202 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["MonitorDetail"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    rename_monitor_api_v1_monitors__monitor_id__patch: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                monitor_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["MonitorRename"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["MonitorView"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    list_snapshots_api_v1_monitors__monitor_id__snapshots_get: {
+        parameters: {
+            query?: {
+                limit?: number;
+                offset?: number;
+            };
+            header?: never;
+            path: {
+                monitor_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Page_SnapshotRecord_"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    read_snapshot_api_v1_snapshots__snapshot_id__get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                snapshot_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["SnapshotDetail"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    list_spec_versions_api_v1_monitors__monitor_id__specs_get: {
+        parameters: {
+            query?: {
+                limit?: number;
+                offset?: number;
+            };
+            header?: never;
+            path: {
+                monitor_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Page_SpecVersion_"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    archive_monitor_api_v1_monitors__monitor_id__archive_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                monitor_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["MonitorView"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    restore_monitor_api_v1_monitors__monitor_id__restore_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                monitor_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["MonitorView"];
                 };
             };
             /** @description Validation Error */
@@ -1976,6 +2797,7 @@ export interface operations {
                 limit?: number;
                 offset?: number;
                 monitor_id?: string | null;
+                event_type?: ("price_changed" | "list_changed" | "content_changed" | "run_failed" | "recovered") | null;
             };
             header?: never;
             path?: never;

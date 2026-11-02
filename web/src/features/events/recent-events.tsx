@@ -33,6 +33,22 @@ export function RecentEvents({ monitorId }: { monitorId: string }) {
                 <span className="num">{formatTime(event.created_at)}</span>
               </p>
               <ChangeRows change={event.change} type={event.type} />
+              <div className="flex flex-wrap gap-x-4">
+                {event.snapshot_id && (
+                  <Link
+                    href={`/app/monitors/${monitorId}/snapshots/${event.snapshot_id}`}
+                    className="text-[11px] text-muted-foreground underline-offset-2 hover:text-foreground hover:underline"
+                  >
+                    {t("monitors.snapshot.open")}
+                  </Link>
+                )}
+                <Link
+                  href={`/app/monitors/${monitorId}?job=${event.job_id}`}
+                  className="text-[11px] text-muted-foreground underline-offset-2 hover:text-foreground hover:underline"
+                >
+                  {t("monitors.dialog.open")}
+                </Link>
+              </div>
             </li>
           ))}
         </ul>

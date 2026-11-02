@@ -17,7 +17,18 @@ const TONES: Record<string, Tone> = {
   recovered: "success",
 };
 
-type Difference = { field?: string; before?: unknown; after?: unknown };
+type Difference = {
+  field?: string;
+  type?: string;
+  before?: unknown;
+  after?: unknown;
+  items?: unknown[];
+  delta?: string;
+  percent_change?: string;
+  keyword?: string;
+  operator?: string;
+  value?: string;
+};
 
 function differencesOf(change: Record<string, unknown>): Difference[] {
   const raw = change.differences;
@@ -35,9 +46,51 @@ function differencesOf(change: Record<string, unknown>): Difference[] {
   return rows;
 }
 
+function ItemFields({ item, labels }: { item: unknown; labels: Record<string, string> }) {
+  const { formatValue } = useFormat();
+  if (!item || typeof item !== "object" || Array.isArray(item)) {
+    return <span className="num break-words">{formatValue(item)}</span>;
+  }
+  return (
+    <span className="flex flex-wrap gap-x-3 gap-y-0.5">
+      {Object.entries(item as Record<string, unknown>).map(([key, value]) => (
+        <span key={key} className="inline-flex items-baseline gap-1">
+          <span className="text-[11px] text-muted-foreground">{labels[key] ?? key}</span>
+          <span className="num break-words">{formatValue(value)}</span>
+        </span>
+      ))}
+    </span>
+  );
+}
+
+function UpdatedFields({ item, labels }: { item: unknown; labels: Record<string, string> }) {
+  const { formatValue } = useFormat();
+  if (!item || typeof item !== "object") return null;
+  const record = item as {
+    before?: Record<string, unknown>;
+    after?: Record<string, unknown>;
+    fields?: string[];
+  };
+  return (
+    <ul className="space-y-0.5">
+      {(record.fields ?? []).map((name) => (
+        <li key={name} className="flex flex-wrap items-baseline gap-x-2">
+          <span className="text-[11px] text-muted-foreground">{labels[name] ?? name}</span>
+          <span className="num text-[11px] text-muted-foreground line-through decoration-muted-foreground/40">
+            {formatValue(record.before?.[name])}
+          </span>
+          <span aria-hidden className="text-[10px] text-muted-foreground/60">→</span>
+          <span className="num text-[12px]">{formatValue(record.after?.[name])}</span>
+        </li>
+      ))}
+    </ul>
+  );
+}
+
 /**
  * The change itself, written as ink on ruled paper: the old value struck, the
- * new value in the accent. This is the thing the product exists to produce.
+ * new value in the accent. List rules show the rows that appeared, disappeared
+ * or changed instead of flattening the whole list into one string.
  */
 export function ChangeRows({
   change,
@@ -61,23 +114,69 @@ export function ChangeRows({
   }
   return (
     <dl className="divide-y">
-      {rows.map((row, index) => (
-        <div
-          key={`${row.field ?? index}-${index}`}
-          className="flex items-baseline justify-between gap-3 py-1.5"
-        >
-          <dt className="shrink-0 text-[12px] text-muted-foreground">
-            {fieldLabel({ name: row.field ?? "", semantic: labels[row.field ?? ""] })}
-          </dt>
-          <dd className="flex min-w-0 flex-wrap items-baseline justify-end gap-x-2 gap-y-0.5 text-right">
-            <span className="num text-[12px] text-muted-foreground line-through decoration-muted-foreground/40">
-              {formatValue(row.before)}
-            </span>
-            <span aria-hidden className="text-[11px] text-muted-foreground/60">→</span>
-            <span className="num text-[13px] font-medium text-foreground">{formatValue(row.after)}</span>
-          </dd>
-        </div>
-      ))}
+      {rows.map((row, index) => {
+        const items = Array.isArray(row.items) ? row.items : [];
+        const metrics = [
+          row.keyword ? t("activity.eventCard.keyword", { keyword: row.keyword }) : "",
+          row.delta ? t("activity.eventCard.delta", { value: row.delta }) : "",
+          row.percent_change
+            ? t("activity.eventCard.percent", { value: Number(row.percent_change).toFixed(1) })
+            : "",
+        ].filter(Boolean);
+        return (
+          <div key={`${row.field ?? index}-${index}`} className="space-y-1 py-1.5">
+            <div className="flex items-baseline justify-between gap-3">
+              <dt className="shrink-0 text-[12px] text-muted-foreground">
+                {fieldLabel({ name: row.field ?? "", semantic: labels[row.field ?? ""] })}
+              </dt>
+              {items.length > 0 ? (
+                <dd className="num shrink-0 text-[11px] text-muted-foreground">
+                  {t("activity.eventCard.itemCount", { count: items.length })}
+                </dd>
+              ) : metrics.length === 0 ? (
+                <dd className="flex min-w-0 flex-wrap items-baseline justify-end gap-x-2 gap-y-0.5 text-right">
+                  <span className="num text-[12px] text-muted-foreground line-through decoration-muted-foreground/40">
+                    {formatValue(row.before)}
+                  </span>
+                  <span aria-hidden className="text-[11px] text-muted-foreground/60">→</span>
+                  <span className="num text-[13px] font-medium text-foreground">
+                    {formatValue(row.after)}
+                  </span>
+                </dd>
+              ) : (
+                <dd className="num shrink-0 text-[11px] text-muted-foreground">
+                  {metrics.join(" · ")}
+                </dd>
+              )}
+            </div>
+            {items.length > 0 && (
+              <dd>
+                <ul className="space-y-1 border-l pl-2.5">
+                  {items.map((item, itemIndex) => (
+                    <li key={itemIndex} className="text-[12px]">
+                      {row.type === "list_updated" ? (
+                        <UpdatedFields item={item} labels={labels} />
+                      ) : (
+                        <span className="flex items-baseline gap-1.5">
+                          <span
+                            aria-hidden
+                            className={`shrink-0 ${
+                              row.type === "list_removed" ? "text-error" : "text-success"
+                            }`}
+                          >
+                            {row.type === "list_removed" ? "−" : "+"}
+                          </span>
+                          <ItemFields item={item} labels={labels} />
+                        </span>
+                      )}
+                    </li>
+                  ))}
+                </ul>
+              </dd>
+            )}
+          </div>
+        );
+      })}
     </dl>
   );
 }
@@ -132,6 +231,22 @@ export function EventCard({
       </div>
       <div className="mt-2">
         <ChangeRows change={event.change} type={event.type} />
+      </div>
+      <div className="mt-1.5 flex flex-wrap gap-x-4 gap-y-1">
+        {event.snapshot_id && (
+          <Link
+            href={`/app/monitors/${event.monitor_id}/snapshots/${event.snapshot_id}`}
+            className="text-[11px] text-muted-foreground underline-offset-2 hover:text-foreground hover:underline"
+          >
+            {t("monitors.snapshot.open")}
+          </Link>
+        )}
+        <Link
+          href={`/app/monitors/${event.monitor_id}?job=${event.job_id}`}
+          className="text-[11px] text-muted-foreground underline-offset-2 hover:text-foreground hover:underline"
+        >
+          {t("monitors.dialog.open")}
+        </Link>
       </div>
     </li>
   );

@@ -46,14 +46,19 @@ export function MonitorSummary({ monitorId }: { monitorId: string }) {
 
       {fields.length > 0 && row.baseline_status === "ready" && (
         <dl className="divide-y border-t px-4">
-          {fields.slice(0, 4).map((field) => (
-            <div key={field.name} className="flex items-baseline justify-between gap-3 py-2">
-              <dt className="shrink-0 text-[12px] text-muted-foreground">{labels[field.name]}</dt>
-              <dd className="num min-w-0 truncate text-right text-[13px]">
-                {formatValue(values[field.name])}
-              </dd>
-            </div>
-          ))}
+          {fields.slice(0, 4).map((field) => {
+            const value = values[field.name];
+            return (
+              <div key={field.name} className="flex items-baseline justify-between gap-3 py-2">
+                <dt className="shrink-0 text-[12px] text-muted-foreground">{labels[field.name]}</dt>
+                <dd className="num min-w-0 truncate text-right text-[13px]">
+                  {Array.isArray(value)
+                    ? t("monitors.content.itemsCount", { count: value.length })
+                    : formatValue(value)}
+                </dd>
+              </div>
+            );
+          })}
         </dl>
       )}
 

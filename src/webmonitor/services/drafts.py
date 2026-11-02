@@ -68,6 +68,22 @@ async def save_draft(session: AsyncSession, user: CurrentUser, *, conversation_i
     return draft
 
 
+async def update_draft(session: AsyncSession, user: CurrentUser, *, draft_id: UUID,
+                       revision: int, spec: DraftSpec) -> Draft:
+    """Replace an editable draft's spec from the direct editor.
+
+    The revision check keeps a stale editor from overwriting an agent turn, and
+    `save_draft` clears the preview so nothing is published without re-running it.
+    """
+    draft = await require_draft(session, user, draft_id, lock=True)
+    if draft.status != "draft":
+        raise DomainError("draft_not_editable", 409)
+    if draft.revision != revision:
+        raise DomainError("stale_revision", 409)
+    return await save_draft(session, user, conversation_id=draft.conversation_id,
+                            spec=spec, draft_id=draft.id)
+
+
 async def draft_from_monitor(session: AsyncSession, user: CurrentUser,
                              monitor_id: UUID) -> tuple[Conversation, Draft]:
     monitor = require_owner(user, await session.get(Monitor, monitor_id))

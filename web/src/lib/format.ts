@@ -287,6 +287,12 @@ export function useFormat() {
       return t("format.interval", { duration: locale === "zh-CN" ? `${seconds} 秒` : `${seconds} seconds` });
     }
 
+    function coverageLabel(scope?: string | null): string {
+      if (scope === "full") return t("monitors.config.coverageFull");
+      if (scope === "bounded") return t("monitors.config.coverageBounded");
+      return "—";
+    }
+
     function formatTimezone(zone?: string | null): string {
       if (!zone) return "—";
       const key = ZONE_KEYS[zone];
@@ -371,6 +377,7 @@ export function useFormat() {
       warningText,
       formatInterval,
       formatTimezone,
+      coverageLabel,
       formatMode,
       fieldLabel,
       fieldLabels,

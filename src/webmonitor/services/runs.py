@@ -63,7 +63,12 @@ def _field_labels(monitor: Monitor) -> dict[str, str]:
         spec = DraftSpec.model_validate(monitor.spec or {})
     except ValueError:
         return {}
-    return {field.name: field.semantic for field in spec.fields}
+    labels = {field.name: field.semantic for field in spec.fields}
+    # List rows are rendered field by field; their names need the same labels.
+    for field in spec.fields:
+        for item in field.item_fields or []:
+            labels.setdefault(item.name, item.semantic)
+    return labels
 
 
 ERROR_SUMMARIES = {
