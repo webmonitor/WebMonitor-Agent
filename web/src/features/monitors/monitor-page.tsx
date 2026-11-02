@@ -207,7 +207,7 @@ export function MonitorPage({
                   <MoreHorizontal className="size-4" strokeWidth={1.5} />
                 </Button>
                 {menuOpen && (
-                  <div className="absolute top-full right-0 z-20 mt-1 w-44 rounded-lg border bg-popover p-1 shadow-lg">
+                  <div className="absolute top-full right-0 z-20 mt-1 w-44 rounded-lg border bg-popover p-1 shadow-[0_8px_24px_rgba(30,27,22,0.10)]">
                     {!archived && (
                       <button
                         type="button"
@@ -301,7 +301,7 @@ export function MonitorPage({
           }}
         />
 
-        <div className="grid gap-10 lg:grid-cols-[minmax(0,1fr)_20rem]">
+        <div className="grid gap-10 lg:grid-cols-[minmax(0,1fr)_24rem]">
           <div className="space-y-10">
             <section>
               <div className="mb-2 flex items-baseline justify-between gap-2">

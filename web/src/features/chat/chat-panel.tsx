@@ -288,7 +288,7 @@ export function ChatPanel({
     <section className="flex h-full min-h-0 min-w-0 flex-col overflow-hidden bg-background">
       <header className="flex h-12 shrink-0 items-center gap-3 px-6">
         <div className="mx-auto flex w-full max-w-[46rem] items-center gap-2">
-          <h2 className="truncate text-[13px] text-muted-foreground">
+          <h2 className="truncate text-[14px] text-foreground">
             {snapshot?.conversation.title?.trim() || t("chat.newConversation")}
           </h2>
           {monitorId && (

@@ -96,7 +96,7 @@ export default function LandingPage() {
 
       <main className="mx-auto w-full max-w-[76rem] px-6 sm:px-10">
         {/* First screen: copy on the left, the change record on the right. */}
-        <section className="grid items-center gap-12 py-12 lg:min-h-[calc(100dvh-4rem)] lg:grid-cols-[minmax(0,1fr)_minmax(0,29rem)] lg:gap-16 lg:py-16">
+        <section className="grid items-center gap-12 py-12 lg:min-h-[34rem] lg:grid-cols-[minmax(0,1fr)_minmax(0,32rem)] lg:gap-16 lg:py-16">
           <div className="max-w-[32rem]">
             <h1 className="text-[2rem] leading-[1.15] font-medium sm:text-[3rem] sm:leading-[1.08]">
               {t("public.hero.titleLine1")}

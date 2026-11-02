@@ -66,7 +66,7 @@ function ConversationList() {
       {groups.map((group) => (
         <div key={group.day} className="mt-2 first:mt-0">
           {/* Day captions sit closer to their own rows than to the group above. */}
-          <p className="num px-2 pb-1 text-[10px] leading-4 text-muted-foreground/80">{group.day}</p>
+          <p className="num px-2 pb-1 text-[11px] leading-4 text-muted-foreground">{group.day}</p>
           <ul>
             {group.items.map((conversation) => {
               const isCurrent = conversation.id === active;
@@ -84,7 +84,7 @@ function ConversationList() {
                     <span className="min-w-0 flex-1 truncate">
                       {conversation.title?.trim() || t("common.untitledConversation")}
                     </span>
-                    <span className="num shrink-0 text-[10px] text-muted-foreground/80">
+                    <span className="num shrink-0 text-[11px] text-muted-foreground">
                       {formatRelative(conversation.updated_at)}
                     </span>
                   </Link>
@@ -145,7 +145,7 @@ function MonitorList({ onNavigate }: { onNavigate: () => void }) {
                   className={`size-1.5 shrink-0 rounded-full ${live ? "bg-success" : "bg-muted-foreground/40"}`}
                 />
                 <span className="min-w-0 flex-1 truncate text-foreground">{monitor.name}</span>
-                <span className="num shrink-0 text-[10px] text-muted-foreground/80">
+                <span className="num shrink-0 text-[11px] text-muted-foreground">
                   {live ? formatInterval(monitor.interval_seconds) : t("common.paused")}
                 </span>
               </Link>
@@ -172,7 +172,7 @@ function SectionLabel({
       <span className="text-[11px] leading-4 font-medium text-foreground/70">{children}</span>
       <span className="flex items-center gap-2">
         {typeof count === "number" && (
-          <span className="num text-[10px] text-muted-foreground">{count}</span>
+          <span className="num text-[11px] text-muted-foreground">{count}</span>
         )}
         {action}
       </span>
@@ -319,7 +319,7 @@ export function WorkspaceShell({ children }: { children: ReactNode }) {
             action={
               <Link
                 href="/app/archived"
-                className="text-[10px] text-muted-foreground underline-offset-2 hover:text-foreground hover:underline"
+                className="text-[11px] text-muted-foreground underline-offset-2 hover:text-foreground hover:underline"
               >
                 {t("common.archived")}
               </Link>

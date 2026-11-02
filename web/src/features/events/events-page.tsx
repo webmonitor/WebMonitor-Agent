@@ -1,5 +1,6 @@
 "use client";
-import { useMemo, useState } from "react";
+import { useMemo, useState, type ReactNode } from "react";
+import { ChevronDown } from "lucide-react";
 import { PageBody, PageHeader } from "@/components/page-header";
 import { EmptyState } from "@/components/empty-state";
 import { useAckEvent, useEvents, useMonitors } from "@/lib/api/hooks";
@@ -15,6 +16,42 @@ const FILTERS: Filter[] = ["all", "unread"];
 const EVENT_TYPES = [
   "price_changed", "list_changed", "content_changed", "run_failed", "recovered",
 ] as const;
+
+/**
+ * A filter is one quiet control: hairline, 32px, the same chevron and focus ring
+ * as every other control in the workspace.
+ */
+function FilterSelect({
+  label,
+  value,
+  onChange,
+  className,
+  children,
+}: {
+  label: string;
+  value: string;
+  onChange: (value: string) => void;
+  className?: string;
+  children: ReactNode;
+}) {
+  return (
+    <span className={`relative inline-flex ${className ?? ""}`}>
+      <select
+        aria-label={label}
+        value={value}
+        onChange={(event) => onChange(event.target.value)}
+        className="h-8 w-full appearance-none truncate rounded-md border border-input bg-card pl-2.5 pr-7 text-xs text-foreground transition-colors duration-150 hover:bg-muted focus-visible:border-ring focus-visible:ring-2 focus-visible:ring-ring/25 focus-visible:outline-none"
+      >
+        {children}
+      </select>
+      <ChevronDown
+        aria-hidden
+        className="pointer-events-none absolute top-1/2 right-2 size-3.5 -translate-y-1/2 text-muted-foreground"
+        strokeWidth={1.5}
+      />
+    </span>
+  );
+}
 
 export function EventsPage() {
   const { t } = useI18n();
@@ -49,47 +86,48 @@ export function EventsPage() {
           description={t("activity.events.description")}
           actions={
             <div className="flex flex-wrap items-center gap-2">
-              <select
-                aria-label={t("activity.events.filter.monitor")}
+              <FilterSelect
+                label={t("activity.events.filter.monitor")}
                 value={monitorId}
-                onChange={(event) => setMonitorId(event.target.value)}
-                className="h-7 max-w-40 rounded-md border bg-card px-1.5 text-xs text-muted-foreground"
+                onChange={setMonitorId}
+                className="max-w-40"
               >
                 <option value="">{t("activity.events.filter.allMonitors")}</option>
                 {(monitors.data?.items ?? []).map((monitor) => (
                   <option key={monitor.id} value={monitor.id}>{monitor.name}</option>
                 ))}
-              </select>
-              <select
-                aria-label={t("activity.events.filter.type")}
+              </FilterSelect>
+              <FilterSelect
+                label={t("activity.events.filter.type")}
                 value={eventType}
-                onChange={(event) => setEventType(event.target.value)}
-                className="h-7 rounded-md border bg-card px-1.5 text-xs text-muted-foreground"
+                onChange={setEventType}
               >
                 <option value="">{t("activity.events.filter.allTypes")}</option>
                 {EVENT_TYPES.map((value) => (
                   <option key={value} value={value}>{eventLabel(value)}</option>
                 ))}
-              </select>
-              {FILTERS.map((value) => (
-                <button
-                  key={value}
-                  type="button"
-                  aria-pressed={filter === value}
-                  className={`h-7 rounded-md px-2 text-xs transition-colors duration-150 ${
-                    filter === value
-                      ? "bg-secondary font-medium text-foreground"
-                      : "text-muted-foreground hover:text-foreground"
-                  }`}
-                  onClick={() => setFilter(value)}
-                >
-                  {value === "unread"
-                    ? unreadCount
-                      ? t("activity.events.filter.unreadCount", { count: unreadCount })
-                      : t("activity.events.filter.unread")
-                    : t("activity.events.filter.all")}
-                </button>
-              ))}
+              </FilterSelect>
+              <span className="inline-flex items-center gap-0.5">
+                {FILTERS.map((value) => (
+                  <button
+                    key={value}
+                    type="button"
+                    aria-pressed={filter === value}
+                    className={`h-8 rounded-md px-2.5 text-xs transition-colors duration-150 ${
+                      filter === value
+                        ? "bg-secondary font-medium text-foreground"
+                        : "text-muted-foreground hover:text-foreground"
+                    }`}
+                    onClick={() => setFilter(value)}
+                  >
+                    {value === "unread"
+                      ? unreadCount
+                        ? t("activity.events.filter.unreadCount", { count: unreadCount })
+                        : t("activity.events.filter.unread")
+                      : t("activity.events.filter.all")}
+                  </button>
+                ))}
+              </span>
             </div>
           }
         />
