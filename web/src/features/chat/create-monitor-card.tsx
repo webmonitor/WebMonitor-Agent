@@ -3,6 +3,7 @@ import { useState } from "react";
 import { AlertTriangle, CheckCircle2, ExternalLink, Mail, RefreshCw } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
+import { FieldValues } from "@/features/monitors/field-values";
 import { ApiError } from "@/lib/api/client";
 import { useApproveDraft, useConversation, useJobDetail, useStartPreview, type DraftView, type JobView } from "@/lib/api/hooks";
 import { parsePreview, parseSpec, type DraftPreview } from "@/lib/api/preview";
@@ -74,7 +75,6 @@ export function CreateMonitorCard({
     formatInterval,
     formatRelative,
     formatTimezone,
-    formatValue,
     warningText,
     statusLabel,
   } = useFormat();
@@ -257,16 +257,14 @@ export function CreateMonitorCard({
         )}
         <div>
           <h3 className="label-line">{t("chat.section.extracted")}</h3>
-          <dl className="mt-1.5 divide-y">
-            {(spec?.fields ?? []).map((field) => (
-              <div key={field.name} className="flex items-baseline justify-between gap-3 py-1.5">
-                <dt className="shrink-0 text-[12px] text-muted-foreground">{labels[field.name]}</dt>
-                <dd className="num min-w-0 truncate text-right text-[13px]">
-                  {formatValue(preview.extracted_data[field.name])}
-                </dd>
-              </div>
-            ))}
-          </dl>
+          <div className="mt-1.5">
+            <FieldValues
+              values={preview.extracted_data}
+              labels={labels}
+              mode="compact"
+              maxItems={3}
+            />
+          </div>
         </div>
 
         <div>
