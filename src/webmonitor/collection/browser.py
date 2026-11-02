@@ -28,8 +28,10 @@ def _browser_slots() -> asyncio.Semaphore:
     if _slots is None:
         _slots = asyncio.Semaphore(get_settings().browser_concurrency)
     return _slots
-MAX_REQUESTS = 100
-MAX_RESOURCE_BYTES = 20 * 1024 * 1024
+# Images, media and fonts are blocked, so these budgets cover scripts and data.
+# Real SPA notice pages routinely need more than the old 100 requests / 20 MB.
+MAX_REQUESTS = 200
+MAX_RESOURCE_BYTES = 48 * 1024 * 1024
 
 
 async def collect_browser(url: str, spec: DraftSpec | None = None) -> CollectionResult:
@@ -111,6 +113,14 @@ async def collect_browser(url: str, spec: DraftSpec | None = None) -> Collection
                         async def paused(event):
                             nonlocal request_count
                             try:
+                                # Text extraction never reads images, media or fonts.
+                                # Blocking them keeps heavy SPAs within the byte budget.
+                                if event['request'].get('resourceType') in {'Image', 'Media', 'Font'}:
+                                    await cdp.send('Fetch.failRequest', {
+                                        'requestId': event['requestId'],
+                                        'errorReason': 'BlockedByClient',
+                                    })
+                                    return
                                 request_count += 1
                                 if request_count > MAX_REQUESTS:
                                     raise DomainError('collection_limit', 422, details={'limit': 'requests'})
