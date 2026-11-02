@@ -1,6 +1,5 @@
 export const en = {
   "public.nav.aria": "Primary",
-  "public.nav.login": "Sign in",
   "public.nav.workspace": "Open workspace",
 
   "public.hero.eyebrow": "Web change monitoring",
@@ -88,7 +87,6 @@ export const en = {
 
 export const zh: Record<keyof typeof en, string> = {
   "public.nav.aria": "主导航",
-  "public.nav.login": "登录",
   "public.nav.workspace": "进入工作台",
 
   "public.hero.eyebrow": "网页变化监控",

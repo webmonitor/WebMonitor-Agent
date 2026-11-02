@@ -84,9 +84,6 @@ export default function LandingPage() {
         </span>
         <div className="ml-auto flex items-center gap-3 text-[13px]">
           <LanguageSwitcher />
-          <Link className="text-muted-foreground transition-colors duration-150 hover:text-foreground" href="/login">
-            {t("public.nav.login")}
-          </Link>
           <Link
             className="flex h-9 items-center gap-1.5 font-medium text-foreground transition-colors duration-150 hover:text-primary"
             href="/app"
