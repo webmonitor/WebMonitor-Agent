@@ -5,6 +5,7 @@ from sqlalchemy import func, select
 from sqlalchemy.dialects.postgresql import distinct_on
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from webmonitor.agent.titling import provisional_title
 from webmonitor.config import get_settings
 from webmonitor.errors import DomainError
 from webmonitor.models import Conversation, Draft, Job, Message, Monitor, utc_now
@@ -133,9 +134,9 @@ async def post_message(session: AsyncSession, user: CurrentUser, conversation_id
     if active is not None:
         raise DomainError("run_in_progress", 409, details={"job_id": str(active.id)})
     if not conversation.title:
-        # The first message names the conversation; the UI truncates for display.
-        line = " ".join(content.split())
-        conversation.title = line[:60].rstrip(" ，,、。;；") + ("…" if len(line) > 60 else "")
+        # The first message names the conversation until the agent generates a
+        # title; the UI truncates for display.
+        conversation.title = provisional_title(content)
     job = await jobs.enqueue(session, user_id=user.user_id, kind="agent",
                              conversation_id=conversation.id)
     session.add(Message(conversation_id=conversation.id, job_id=job.id, user_id=user.user_id,

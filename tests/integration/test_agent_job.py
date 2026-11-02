@@ -1,5 +1,6 @@
 """An agent job fails cleanly without a model, keeping its drafts and history."""
 from datetime import timedelta
+from types import SimpleNamespace
 from uuid import uuid4
 
 import pytest
@@ -8,9 +9,11 @@ from sqlalchemy import select
 from webmonitor.agent.orchestration import (
     _cancellation_requested,
     _finish,
+    _generate_title,
     _history,
     execute_job,
 )
+from webmonitor.agent.titling import provisional_title
 from webmonitor.config import get_settings
 from webmonitor.models import Conversation, Job, Message, User, utc_now
 from webmonitor.services import jobs
@@ -158,3 +161,44 @@ async def test_a_dropped_model_connection_requeues_then_stops_at_the_limit(
     messages = (await session.scalars(select(Message).where(
         Message.conversation_id == stored.conversation_id))).all()
     assert [message.role for message in messages] == ["user"]
+
+
+class _FakeCompletions:
+    def __init__(self):
+        self.calls: list[dict] = []
+
+    async def create(self, **kwargs):
+        self.calls.append(kwargs)
+        return SimpleNamespace(
+            choices=[SimpleNamespace(message=SimpleNamespace(content="“标题：清华史院更新。”"))])
+
+
+class _FakeClient:
+    def __init__(self):
+        self.chat = SimpleNamespace(completions=_FakeCompletions())
+
+
+@pytest.mark.asyncio
+async def test_worker_replaces_only_the_provisional_title(session):
+    _, job = await running_agent_job(session)
+    conversation = await session.get(Conversation, job.conversation_id)
+    conversation.title = provisional_title("监控这个页面的价格")
+    await session.commit()
+    client = _FakeClient()
+
+    await _generate_title(job.conversation_id, client, "test-model")
+
+    await session.refresh(conversation)
+    assert conversation.title == "清华史院更新"
+    assert len(client.chat.completions.calls) == 1
+    assert client.chat.completions.calls[0]["model"] == "test-model"
+    assert "监控这个页面的价格" in client.chat.completions.calls[0]["messages"][0]["content"]
+
+    # A title that a person set is never replaced; a generated one no longer
+    # matches the placeholder, so a later run does not call the model again.
+    conversation.title = "手工标题"
+    await session.commit()
+    await _generate_title(job.conversation_id, client, "test-model")
+    assert len(client.chat.completions.calls) == 1
+    await session.refresh(conversation)
+    assert conversation.title == "手工标题"

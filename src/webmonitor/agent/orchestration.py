@@ -23,6 +23,11 @@ from sqlalchemy import select
 
 from webmonitor.agent.model import CompleteChatCompletionsModel
 from webmonitor.agent.runtime import RuntimeContext, current_draft
+from webmonitor.agent.titling import (
+    TITLE_PROMPT,
+    clean_generated_title,
+    needs_generated_title,
+)
 from webmonitor.agent.tools import make_agent_tools
 from webmonitor.config import get_settings
 from webmonitor.db import get_session_factory
@@ -206,6 +211,62 @@ async def _history(conversation_id: UUID, limit: int) -> list[dict]:
     return [{"role": row.role, "content": row.content} for row in reversed(rows)]
 
 
+TITLE_TIMEOUT_SECONDS = 20.0
+TITLE_INPUT_CHARS = 2000
+# Reasoning models spend tokens before they write the title; the title itself
+# stays short, but the cap must leave room for that hidden work.
+TITLE_MAX_TOKENS = 512
+
+
+async def _first_message(conversation_id: UUID) -> str | None:
+    async with get_session_factory()() as session:
+        return await session.scalar(
+            select(Message.content).where(
+                Message.conversation_id == conversation_id, Message.role == "user")
+            .order_by(Message.created_at, Message.id).limit(1))
+
+
+async def _conversation_title(conversation_id: UUID) -> str | None:
+    async with get_session_factory()() as session:
+        return await session.scalar(
+            select(Conversation.title).where(Conversation.id == conversation_id))
+
+
+async def _store_title(conversation_id: UUID, title: str) -> None:
+    async with get_session_factory()() as session:
+        conversation = await session.get(Conversation, conversation_id)
+        if conversation is None:
+            return
+        conversation.title = title
+        await session.commit()
+
+
+async def _generate_title(conversation_id: UUID, client: AsyncOpenAI, model: str) -> None:
+    """Name the conversation from its first message; never fail the run for it."""
+    try:
+        first = await _first_message(conversation_id)
+        if not first:
+            return
+        if not needs_generated_title(await _conversation_title(conversation_id), first):
+            return
+        async with asyncio.timeout(TITLE_TIMEOUT_SECONDS):
+            response = await client.chat.completions.create(
+                model=model,
+                messages=[{
+                    "role": "user",
+                    "content": TITLE_PROMPT.format(message=first[:TITLE_INPUT_CHARS]),
+                }],
+                max_tokens=TITLE_MAX_TOKENS,
+            )
+        title = clean_generated_title(
+            response.choices[0].message.content if response.choices else None)
+        if title:
+            await _store_title(conversation_id, title)
+    except Exception as exc:
+        logger.info("Conversation title skipped: conversation=%s reason=%s",
+                    conversation_id, type(exc).__name__)
+
+
 async def _context(job_id: UUID, worker_id: str) -> RuntimeContext:
     async with get_session_factory()() as session:
         job = await session.get(Job, job_id)
@@ -253,6 +314,7 @@ async def execute_job(job_id: UUID, worker_id: str) -> None:
     settings = get_settings()
     stream = None
     client = None
+    title_task = None
     buffer = ""
     buffer_lock = asyncio.Lock()
     flusher = None
@@ -282,6 +344,10 @@ async def execute_job(job_id: UUID, worker_id: str) -> None:
             base_url=settings.model_base_url,
             timeout=settings.agent_model_timeout_seconds,
             max_retries=settings.agent_model_retries)
+        # The title is independent of the answer: it runs beside the agent and
+        # never delays the first visible step.
+        title_task = asyncio.create_task(
+            _generate_title(runtime.conversation_id, client, settings.openai_model))
         agent = Agent(name="WebMonitor", instructions=_instructions, tools=make_agent_tools(),
             model=CompleteChatCompletionsModel(model=settings.openai_model,
                 openai_client=client, buffer_streamed_tool_calls=True),
@@ -349,5 +415,8 @@ async def execute_job(job_id: UUID, worker_id: str) -> None:
         if flusher is not None:
             flusher.cancel()
             await asyncio.gather(flusher, return_exceptions=True)
+        if title_task is not None:
+            # Bounded by its own timeout; the client must outlive it.
+            await asyncio.gather(title_task, return_exceptions=True)
         if client is not None:
             await client.close()
