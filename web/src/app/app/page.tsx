@@ -6,6 +6,7 @@ import { CreateMonitorCard } from "@/features/chat/create-monitor-card";
 import { MonitorSummary } from "@/features/monitors/monitor-summary";
 import { RecentEvents } from "@/features/events/recent-events";
 import { useConversation, useConversations } from "@/lib/api/hooks";
+import { ApiError } from "@/lib/api/client";
 import { useI18n } from "@/lib/i18n";
 
 function ContextPanel({
@@ -47,15 +48,26 @@ function WorkspaceView() {
 
   const items = conversations.data?.items ?? [];
   const first = items[0];
+  // A link to a conversation that no longer exists opens a fresh draft instead
+  // of an error: reloading the same address can never make it exist again.
+  const missing =
+    Boolean(conversationId) &&
+    conversation.error instanceof ApiError &&
+    conversation.error.status === 404;
+  const activeId = missing ? null : conversationId;
   // `new=1` opens an unsaved draft; an empty account starts in it directly.
   const drafting =
-    !conversationId && (params.get("new") === "1" || (conversations.isSuccess && items.length === 0));
+    !activeId && (missing || params.get("new") === "1" || (conversations.isSuccess && items.length === 0));
 
   useEffect(() => {
-    if (!conversationId && !drafting && first) {
+    if (missing) router.replace("/app?new=1");
+  }, [missing, router]);
+
+  useEffect(() => {
+    if (!activeId && !drafting && first) {
       router.replace(`/app?conversation=${first.id}`);
     }
-  }, [conversationId, drafting, first, router]);
+  }, [activeId, drafting, first, router]);
 
   const drafts = conversation.data?.drafts ?? [];
   const pending = drafts.filter((draft) => draft.status === "draft").at(-1);
@@ -64,13 +76,13 @@ function WorkspaceView() {
   return (
     <div
       className={`grid h-full min-h-0 grid-cols-1 grid-rows-[minmax(0,1fr)] ${
-        conversationId ? "xl:grid-cols-[minmax(0,1fr)_21rem]" : ""
+        activeId ? "xl:grid-cols-[minmax(0,1fr)_21rem]" : ""
       }`}
     >
-      <ChatPanel conversationId={conversationId} drafting={drafting} pendingDraft={pending} />
-      {conversationId && (
+      <ChatPanel conversationId={activeId} drafting={drafting} pendingDraft={pending} />
+      {activeId && (
         <ContextPanel
-          conversationId={conversationId}
+          conversationId={activeId}
           pendingDraftId={pending?.id}
           monitorId={monitorId}
         />
