@@ -1,6 +1,6 @@
 "use client";
 import { useState } from "react";
-import { Check, Copy, Pencil } from "lucide-react";
+import { Check, ChevronRight, Copy, Pencil } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { ListPagination } from "@/components/list-pagination";
@@ -112,9 +112,7 @@ export function MonitorConfig({
     describeRule,
     fieldLabels,
     formatDateTime,
-    formatInterval,
     formatMode,
-    formatTimezone,
   } = useFormat();
   const groups = useGroups();
   const versions = useSpecVersions(monitor.id);
@@ -142,51 +140,41 @@ export function MonitorConfig({
   const coverage = spec?.coverage;
 
   return (
-    <section className="surface mb-8">
-      <header className="flex flex-wrap items-start justify-between gap-3 border-b px-4 py-3">
-        <div className="min-w-0">
-          <h2 className="section-title">{t("monitors.config.title")}</h2>
-          <p className="meta mt-1 max-w-xl leading-5">{t("monitors.config.description")}</p>
-        </div>
+    <details className="group surface mb-8">
+      <summary className="flex cursor-pointer list-none flex-wrap items-center justify-between gap-3 px-4 py-3 select-none [&::-webkit-details-marker]:hidden">
+        <span className="flex min-w-0 items-center gap-2">
+          <ChevronRight
+            className="size-3.5 shrink-0 text-muted-foreground transition-transform duration-150 group-open:rotate-90"
+            strokeWidth={1.5}
+          />
+          <span className="section-title">{t("monitors.config.title")}</span>
+          <span className="meta truncate">
+            {formatMode(monitor.collection_mode)}
+            {" · "}
+            {coverageLabel(coverage?.scope)}
+          </span>
+        </span>
         {editable && (
-          <Button variant="outline" size="sm" onClick={onEdit}>
+          <Button
+            variant="outline"
+            size="sm"
+            onClick={(event) => {
+              event.preventDefault();
+              event.stopPropagation();
+              onEdit();
+            }}
+          >
             <Pencil strokeWidth={1.5} />
             {t("monitors.config.edit")}
           </Button>
         )}
-      </header>
+      </summary>
 
-      <dl className="grid border-b sm:grid-cols-2 lg:grid-cols-4 lg:divide-x">
-        <div className="border-b px-4 py-3 lg:border-b-0">
-          <dt className="label-line">{t("monitors.config.schedule")}</dt>
-          <dd className="num mt-1 text-[13px]">
-            {spec?.schedule
-              ? `${formatInterval(spec.schedule.interval_seconds)} · ${formatTimezone(spec.schedule.timezone)}`
-              : "—"}
-          </dd>
-        </div>
-        <div className="border-b px-4 py-3 lg:border-b-0">
-          <dt className="label-line">{t("monitors.config.collection")}</dt>
-          <dd className="mt-1 text-[13px]">{formatMode(monitor.collection_mode)}</dd>
-        </div>
-        <div className="border-b px-4 py-3 lg:border-b-0">
-          <dt className="label-line">{t("monitors.config.coverage")}</dt>
-          <dd className="mt-1 text-[13px]">
-            {coverageLabel(coverage?.scope)}
-            {coverage?.description && (
-              <span className="meta mt-0.5 block break-words">{coverage.description}</span>
-            )}
-          </dd>
-        </div>
-        <div className="px-4 py-3">
-          <dt className="label-line">{t("monitors.config.version")}</dt>
-          <dd className="num mt-1 text-[13px]">
-            {t("monitors.config.versionValue", { version: monitor.spec_version })}
-          </dd>
-        </div>
-      </dl>
+      {coverage?.description && (
+        <p className="meta border-t px-4 py-2 leading-5">{coverage.description}</p>
+      )}
 
-      <div className="grid gap-8 px-4 py-4 lg:grid-cols-2">
+      <div className="grid gap-8 border-t px-4 py-4 lg:grid-cols-2">
         <div>
           {spec?.source && (
             <div className="mb-5">
@@ -311,11 +299,9 @@ export function MonitorConfig({
             )}
           </div>
 
-          <div>
-            <h3 className="label-line">{t("monitors.config.browserSteps")}</h3>
-            {(spec?.browser_steps ?? []).length === 0 ? (
-              <p className="meta mt-1">{t("monitors.config.noBrowserSteps")}</p>
-            ) : (
+          {(spec?.browser_steps ?? []).length > 0 && (
+            <div>
+              <h3 className="label-line">{t("monitors.config.browserSteps")}</h3>
               <ul className="mt-1.5 divide-y border-t">
                 {(spec?.browser_steps ?? []).map((step, index) => (
                   <li key={`${step.type}-${index}`} className="num break-all py-1.5 text-[12px]">
@@ -327,8 +313,8 @@ export function MonitorConfig({
                   </li>
                 ))}
               </ul>
-            )}
-          </div>
+            </div>
+          )}
         </div>
       </div>
 
@@ -395,6 +381,6 @@ export function MonitorConfig({
           {copied ? t("monitors.config.copied") : t("monitors.config.copy")}
         </Button>
       </details>
-    </section>
+    </details>
   );
 }

@@ -1,5 +1,5 @@
 "use client";
-import { Fragment } from "react";
+import { Fragment, useState } from "react";
 import { useFormat } from "@/lib/format";
 import { useI18n } from "@/lib/i18n";
 
@@ -30,14 +30,17 @@ export function FieldValues({
   labels,
   mode = "full",
   emptyLabel,
+  maxItems,
 }: {
   values: Record<string, unknown>;
   labels: Record<string, string>;
   mode?: "compact" | "full";
   emptyLabel?: string;
+  maxItems?: number;
 }) {
   const { t } = useI18n();
   const { formatValue } = useFormat();
+  const [expanded, setExpanded] = useState(false);
   const entries = Object.entries(values);
   if (entries.length === 0) return <p className="meta">{emptyLabel ?? t("monitors.content.noFields")}</p>;
   return (
@@ -62,16 +65,24 @@ export function FieldValues({
               {value.length === 0 ? (
                 <p className="meta">{t("monitors.content.itemsCount", { count: 0 })}</p>
               ) : (
-                <ul className="space-y-1">
-                  {value.map((item, index) => (
-                    <li
-                      key={index}
-                      className="rounded-md border bg-muted/20 px-2 py-1.5 text-[12px]"
-                    >
+                <ul className="divide-y border-t">
+                  {(maxItems && !expanded ? value.slice(0, maxItems) : value).map((item, index) => (
+                    <li key={index} className="py-1.5 text-[12px]">
                       <ItemValue item={item} labels={labels} />
                     </li>
                   ))}
                 </ul>
+              )}
+              {maxItems !== undefined && value.length > maxItems && (
+                <button
+                  type="button"
+                  className="mt-1.5 text-[11px] text-muted-foreground underline-offset-2 transition-colors duration-150 hover:text-foreground hover:underline"
+                  onClick={() => setExpanded((open) => !open)}
+                >
+                  {expanded
+                    ? t("monitors.content.collapse")
+                    : t("monitors.content.showAll", { count: value.length })}
+                </button>
               )}
             </dd>
           )}

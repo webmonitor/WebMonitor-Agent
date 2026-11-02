@@ -163,6 +163,9 @@ export function useFormat() {
     const fullDateTime = new Intl.DateTimeFormat(intl, {
       year: "numeric", month: "long", day: "numeric", hour: "2-digit", minute: "2-digit", hour12: false,
     });
+    const valueDate = new Intl.DateTimeFormat(intl, {
+      year: "numeric", month: locale === "zh-CN" ? "long" : "short", day: "numeric",
+    });
     const clock = new Intl.DateTimeFormat(intl, {
       hour: "2-digit", minute: "2-digit", second: "2-digit", hour12: false,
     });
@@ -238,7 +241,12 @@ export function useFormat() {
       if (typeof value === "number") return numbers.format(value);
       if (typeof value === "string") {
         const date = /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}/.test(value) ? toDate(value) : null;
-        return date ? dateTime.format(date) : value;
+        if (!date) return value;
+        // A stored date usually normalizes to local midnight; dropping the time
+        // keeps the ledger readable and always keeps the year that disambiguates it.
+        return date.getHours() === 0 && date.getMinutes() === 0
+          ? valueDate.format(date)
+          : fullDateTime.format(date);
       }
       if (Array.isArray(value)) {
         if (value.length === 0) return t("format.empty");
@@ -322,9 +330,19 @@ export function useFormat() {
     }
 
     function fieldLabels(
-      fields: { name: string; semantic?: string | null }[],
+      fields: { name: string; semantic?: string | null; item_fields?: unknown }[],
     ): Record<string, string> {
-      return Object.fromEntries(fields.map((field) => [field.name, fieldLabel(field)]));
+      const labels: Record<string, string> = {};
+      const collect = (items: { name: string; semantic?: string | null; item_fields?: unknown }[]) => {
+        for (const field of items) {
+          labels[field.name] ??= fieldLabel(field);
+          if (Array.isArray(field.item_fields)) {
+            collect(field.item_fields as { name: string; semantic?: string | null; item_fields?: unknown }[]);
+          }
+        }
+      };
+      collect(fields);
+      return labels;
     }
 
     function describeRule(rule: Rule, labels: Record<string, string> = {}): string {

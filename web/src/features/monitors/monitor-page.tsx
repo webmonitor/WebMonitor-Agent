@@ -1,11 +1,12 @@
 "use client";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
-import { useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import {
   AlertTriangle,
   Archive,
   ExternalLink,
+  MoreHorizontal,
   Pause,
   Pencil,
   Play,
@@ -71,7 +72,6 @@ export function MonitorPage({
     formatClock,
     formatDateTime,
     formatInterval,
-    formatMode,
     formatTime,
     statusLabel,
   } = useFormat();
@@ -95,7 +95,18 @@ export function MonitorPage({
   const [renaming, setRenaming] = useState(false);
   const [renameName, setRenameName] = useState("");
   const [archiving, setArchiving] = useState(false);
+  const [menuOpen, setMenuOpen] = useState(false);
+  const menu = useRef<HTMLDivElement>(null);
   const detail = useJobDetail(openJob);
+
+  useEffect(() => {
+    if (!menuOpen) return;
+    const close = (event: PointerEvent) => {
+      if (!menu.current?.contains(event.target as Node)) setMenuOpen(false);
+    };
+    document.addEventListener("pointerdown", close);
+    return () => document.removeEventListener("pointerdown", close);
+  }, [menuOpen]);
 
   if (monitor.isPending) {
     return (
@@ -140,7 +151,6 @@ export function MonitorPage({
           : t("monitors.paused"),
     },
     { label: t("monitors.stat.interval"), value: formatInterval(row.interval_seconds) },
-    { label: t("monitors.stat.mode"), value: formatMode(row.collection_mode) },
   ];
 
   return (
@@ -183,40 +193,65 @@ export function MonitorPage({
                     <Zap className="size-3.5" strokeWidth={1.5} />
                     {t("monitors.action.runNow")}
                   </Button>
-                  <Button
-                    variant="ghost"
-                    size="sm"
-                    className="text-muted-foreground"
-                    disabled={derive.isPending}
-                    onClick={() => derive.mutate(row.id, {
-                      onSuccess: (result) => router.push(`/app?conversation=${result.conversation_id}`),
-                    })}
-                  >
-                    <Settings2 className="size-3.5" strokeWidth={1.5} />
-                    {t("monitors.action.editSettings")}
-                  </Button>
                 </>
               )}
-              <Button
-                variant="ghost"
-                size="sm"
-                className="text-muted-foreground"
-                onClick={() => { setRenameName(row.name); setRenaming(true); }}
-              >
-                <Pencil className="size-3.5" strokeWidth={1.5} />
-                {t("monitors.action.rename")}
-              </Button>
-              {!archived && (
+              <div ref={menu} className="relative">
                 <Button
                   variant="ghost"
-                  size="sm"
-                  className="text-muted-foreground"
-                  onClick={() => setArchiving(true)}
+                  size="icon"
+                  className="size-8"
+                  aria-label={t("monitors.action.more")}
+                  aria-expanded={menuOpen}
+                  onClick={() => setMenuOpen((open) => !open)}
                 >
-                  <Archive className="size-3.5" strokeWidth={1.5} />
-                  {t("monitors.action.archive")}
+                  <MoreHorizontal className="size-4" strokeWidth={1.5} />
                 </Button>
-              )}
+                {menuOpen && (
+                  <div className="absolute top-full right-0 z-20 mt-1 w-44 rounded-lg border bg-popover p-1 shadow-lg">
+                    {!archived && (
+                      <button
+                        type="button"
+                        className="flex w-full items-center gap-2 rounded-md px-2 py-1.5 text-left text-[13px] transition-colors duration-150 hover:bg-muted disabled:opacity-45"
+                        disabled={derive.isPending}
+                        onClick={() => {
+                          setMenuOpen(false);
+                          derive.mutate(row.id, {
+                            onSuccess: (result) => router.push(`/app?conversation=${result.conversation_id}`),
+                          });
+                        }}
+                      >
+                        <Settings2 className="size-3.5" strokeWidth={1.5} />
+                        {t("monitors.action.editSettings")}
+                      </button>
+                    )}
+                    <button
+                      type="button"
+                      className="flex w-full items-center gap-2 rounded-md px-2 py-1.5 text-left text-[13px] transition-colors duration-150 hover:bg-muted"
+                      onClick={() => {
+                        setMenuOpen(false);
+                        setRenameName(row.name);
+                        setRenaming(true);
+                      }}
+                    >
+                      <Pencil className="size-3.5" strokeWidth={1.5} />
+                      {t("monitors.action.rename")}
+                    </button>
+                    {!archived && (
+                      <button
+                        type="button"
+                        className="flex w-full items-center gap-2 rounded-md px-2 py-1.5 text-left text-[13px] text-error transition-colors duration-150 hover:bg-error/[0.06]"
+                        onClick={() => {
+                          setMenuOpen(false);
+                          setArchiving(true);
+                        }}
+                      >
+                        <Archive className="size-3.5" strokeWidth={1.5} />
+                        {t("monitors.action.archive")}
+                      </button>
+                    )}
+                  </div>
+                )}
+              </div>
             </>
           }
         >
@@ -242,8 +277,8 @@ export function MonitorPage({
           </p>
         )}
 
-        {/* Four figures on one ruled strip, not four cards. */}
-        <dl className="mb-8 grid overflow-hidden rounded-[0.875rem] border bg-card sm:grid-cols-4 sm:divide-x">
+        {/* Three facts on one ruled strip, not three cards. */}
+        <dl className="mb-8 grid overflow-hidden rounded-[0.875rem] border bg-card sm:grid-cols-3 sm:divide-x">
           {stats.map((stat) => (
             <div key={stat.label} className="border-b px-4 py-3 last:border-b-0 sm:border-b-0">
               <dt className="label-line">{stat.label}</dt>
@@ -310,12 +345,6 @@ export function MonitorPage({
                               {t("monitors.snapshot.open")}
                             </Link>
                           )}
-                          <Link
-                            href={`/app/monitors/${row.id}?job=${monitorEvents[0].job_id}`}
-                            className="text-[11px] text-muted-foreground underline-offset-2 hover:text-foreground hover:underline"
-                          >
-                            {t("monitors.dialog.open")}
-                          </Link>
                         </div>
                       </div>
                     </article>
@@ -339,12 +368,6 @@ export function MonitorPage({
                               {t("monitors.snapshot.open")}
                             </Link>
                           )}
-                          <Link
-                            href={`/app/monitors/${row.id}?job=${event.job_id}`}
-                            className="text-[11px] text-muted-foreground underline-offset-2 hover:text-foreground hover:underline"
-                          >
-                            {t("monitors.dialog.open")}
-                          </Link>
                         </div>
                       </li>
                     ))}
@@ -444,7 +467,7 @@ export function MonitorPage({
               </span>
             </div>
             {row.baseline ? (
-              <FieldValues values={values} labels={labels} />
+              <FieldValues values={values} labels={labels} maxItems={3} />
             ) : (
               <p className="meta">{t("monitors.content.empty")}</p>
             )}
