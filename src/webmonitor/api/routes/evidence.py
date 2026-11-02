@@ -13,18 +13,33 @@ from webmonitor.storage.evidence import stream_evidence
 
 router = APIRouter(prefix="/api/v1", tags=["evidence"])
 
+# The archive is an HTML document; it downloads as an attachment so untrusted
+# markup never renders on this origin, but its filename keeps the extension.
+_EVIDENCE_SUFFIXES = {"html": "html", "json": "json", "screenshot": "png"}
+
+
+def evidence_media_type(reference: dict) -> str:
+    is_image = reference.get("kind") == "screenshot"
+    return reference.get("content_type") or (
+        "image/png" if is_image else "text/plain; charset=utf-8")
+
+
+def evidence_disposition(reference: dict) -> str:
+    kind = reference.get("kind") or ""
+    suffix = _EVIDENCE_SUFFIXES.get(kind)
+    if suffix is None:
+        suffix = "json" if evidence_media_type(reference).startswith("application/json") else "txt"
+    disposition = "inline" if kind == "screenshot" else "attachment"
+    name = reference.get("sha256", "evidence")[:16]
+    return f'{disposition}; filename="{name}.{suffix}"'
+
 
 async def _response(reference: dict) -> StreamingResponse:
-    is_image = reference.get("kind") == "screenshot"
-    content_type = reference.get("content_type") or (
-        "image/png" if is_image else "text/plain; charset=utf-8")
-    suffix = "png" if is_image else "json" if content_type == "application/json" else "txt"
     return StreamingResponse(
         await stream_evidence(reference["bucket"], reference["object_key"]),
-        media_type=content_type,
+        media_type=evidence_media_type(reference),
         headers={
-            "Content-Disposition": f"{'inline' if is_image else 'attachment'}; "
-                                   f"filename=\"{reference.get('sha256', 'evidence')[:16]}.{suffix}\"",
+            "Content-Disposition": evidence_disposition(reference),
             "X-Content-Type-Options": "nosniff",
             "Cache-Control": "private, no-store",
             "Content-Security-Policy": "default-src 'none'; sandbox",

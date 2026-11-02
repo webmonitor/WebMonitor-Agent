@@ -38,7 +38,7 @@ async def initialize_bucket() -> None:
 
 
 CONTENT_TYPES = {"screenshot": "image/png", "json": "application/json",
-                 "html": "text/plain; charset=utf-8"}
+                 "html": "text/html; charset=utf-8"}
 
 
 async def upload_evidence(*, prefix: str, kind: str, data: bytes) -> dict:

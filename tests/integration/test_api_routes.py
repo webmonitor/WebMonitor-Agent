@@ -399,3 +399,42 @@ async def test_invitations_require_admin_and_issue_a_link(client, session):
     assert denied.status_code == 403
     assert denied.json()["error"]["code"] == "forbidden"
     assert (await client.get("/api/v1/members/invitations")).status_code == 403
+
+
+@pytest.mark.asyncio
+async def test_html_evidence_downloads_with_an_html_filename(client, session, monkeypatch):
+    from webmonitor.api.routes import evidence as evidence_route
+
+    user = await ensure_admin(session)
+    await sign_in(client)
+    conversation = Conversation(user_id=user.id, title="archive")
+    session.add(conversation)
+    await session.flush()
+    draft = Draft(user_id=user.id, conversation_id=conversation.id, revision=1,
+        spec={"url": "https://example.com/"},
+        preview={"revision": 1, "spec_hash": "a" * 64, "extracted_data": {},
+                 "coverage": {},
+                 "evidence_refs": [{"kind": "html", "bucket": "evidence",
+                                    "object_key": "page", "size_bytes": 24,
+                                    "content_type": "text/html; charset=utf-8",
+                                    "sha256": "c" * 64}],
+                 "rendered_emails": [], "recipients": [], "warnings": [],
+                 "rule_simulation": {}, "created_at": "2026-01-01T00:00:00+00:00",
+                 "expires_at": "2036-01-01T00:00:00+00:00"})
+    session.add(draft)
+    await session.commit()
+
+    async def chunks():
+        yield b"<html>archived page</html>"
+
+    async def fake_stream(bucket, key):
+        assert (bucket, key) == ("evidence", "page")
+        return chunks()
+
+    monkeypatch.setattr(evidence_route, "stream_evidence", fake_stream)
+    response = await client.get(f"/api/v1/drafts/{draft.id}/evidence/0")
+    assert response.status_code == 200
+    assert response.headers["content-disposition"] == \
+        'attachment; filename="cccccccccccccccc.html"'
+    assert response.text == "<html>archived page</html>"
+    assert response.headers["x-content-type-options"] == "nosniff"
