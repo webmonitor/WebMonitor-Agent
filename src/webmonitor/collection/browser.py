@@ -1,5 +1,6 @@
 """Bounded fresh-context Chromium collection, without a sandbox fallback."""
 import asyncio
+import json
 from contextlib import suppress
 from time import monotonic
 
@@ -8,6 +9,7 @@ from playwright.async_api import TimeoutError as PlaywrightTimeoutError
 from playwright.async_api import async_playwright
 
 from webmonitor.collection.extraction import extract_fields
+from webmonitor.collection.network import network_candidate
 from webmonitor.collection.types import (
     MAX_HTML_BYTES,
     CollectionResult,
@@ -32,9 +34,17 @@ def _browser_slots() -> asyncio.Semaphore:
 # Real SPA notice pages routinely need more than the old 100 requests / 20 MB.
 MAX_REQUESTS = 200
 MAX_RESOURCE_BYTES = 48 * 1024 * 1024
+# Network capture is evidence for choosing an API, never a bulk download.
+MAX_CANDIDATES = 8
+MAX_CANDIDATE_BYTES = 131072
+NETWORK_DRAIN_SECONDS = 5.0
 
 
-async def collect_browser(url: str, spec: DraftSpec | None = None) -> CollectionResult:
+async def collect_browser(url: str, spec: DraftSpec | None = None, *,
+                          network: bool = False) -> CollectionResult:
+    network_tasks: set[asyncio.Task] = set()
+    candidates: list[dict] = []
+    skipped = {'non_json': 0, 'large': 0, 'limit': 0}
     async with _browser_slots():
         started = monotonic()
         browser = context = None
@@ -154,6 +164,43 @@ async def collect_browser(url: str, spec: DraftSpec | None = None) -> Collection
                             if oversized:
                                 spawn(fail(DomainError('collection_limit', 422, details={'limit': 'resource_bytes'})))
                         cdp.on('Network.responseReceived', response_received)
+
+                        if network:
+                            async def record(response):
+                                try:
+                                    request = response.request
+                                    if request.resource_type not in {'xhr', 'fetch'}:
+                                        return
+                                    declared = (response.headers.get('content-type')
+                                                or '').split(';', 1)[0].strip().lower()
+                                    if declared != 'application/json' and not declared.endswith('+json'):
+                                        skipped['non_json'] += 1
+                                        return
+                                    body = await response.body()
+                                except PlaywrightError:
+                                    return
+                                if len(body) > MAX_CANDIDATE_BYTES:
+                                    skipped['large'] += 1
+                                    return
+                                try:
+                                    json.loads(body)
+                                except ValueError:
+                                    return
+                                if len(candidates) >= MAX_CANDIDATES:
+                                    skipped['limit'] += 1
+                                    return
+                                candidates.append(network_candidate(
+                                    method=request.method, url=request.url,
+                                    status=response.status, content_type=declared,
+                                    headers=dict(request.headers),
+                                    request_body=request.post_data, body=body))
+
+                            def on_response(response):
+                                task = asyncio.create_task(record(response))
+                                network_tasks.add(task)
+                                task.add_done_callback(network_tasks.discard)
+
+                            page.on('response', on_response)
                         response = await page.goto(target, wait_until='networkidle', timeout=30000)
                         if response and response.status == 403 and response.headers.get('x-squid-error', '').startswith('ERR_ACCESS_DENIED'):
                             raise DomainError('url_forbidden', 422)
@@ -161,6 +208,23 @@ async def collect_browser(url: str, spec: DraftSpec | None = None) -> Collection
                             status = response.status if response else 0
                             raise DomainError('target_http_error', 503 if status >= 500 else 422,
                                               details={'status_code': status})
+                        if network:
+                            pending = list(network_tasks)
+                            if pending:
+                                with suppress(TimeoutError):
+                                    await asyncio.wait_for(
+                                        asyncio.gather(*pending, return_exceptions=True),
+                                        timeout=NETWORK_DRAIN_SECONDS)
+                            if failure:
+                                raise failure
+                            return CollectionResult(
+                                await validate_target(page.url), None, None, {},
+                                {'scope': 'bounded',
+                                 'description': 'Network capture only.'},
+                                int((monotonic() - started) * 1000), [],
+                                {'collection_mode': 'browser',
+                                 'network': {'candidates': candidates, 'skipped': skipped,
+                                             'truncated': bool(skipped['limit'])}})
                         snapshots = []
                         paginated = False
 
@@ -270,5 +334,8 @@ async def collect_browser(url: str, spec: DraftSpec | None = None) -> Collection
         finally:
             for task in tuple(tasks):
                 task.cancel()
-            if tasks:
-                await asyncio.gather(*tuple(tasks), return_exceptions=True)
+            for task in tuple(network_tasks):
+                task.cancel()
+            if tasks or network_tasks:
+                await asyncio.gather(*tuple(tasks), *tuple(network_tasks),
+                                     return_exceptions=True)

@@ -37,12 +37,16 @@ async def initialize_bucket() -> None:
     await asyncio.to_thread(ensure)
 
 
+CONTENT_TYPES = {"screenshot": "image/png", "json": "application/json",
+                 "html": "text/plain; charset=utf-8"}
+
+
 async def upload_evidence(*, prefix: str, kind: str, data: bytes) -> dict:
     """Return a self-describing reference; the object exists before it is referenced."""
     settings = get_settings()
     bucket = settings.s3_bucket
     key = f"{prefix}/{uuid4()}"
-    content_type = "image/png" if kind == "screenshot" else "text/plain; charset=utf-8"
+    content_type = CONTENT_TYPES.get(kind, "text/plain; charset=utf-8")
     digest = hashlib.sha256(data).hexdigest()
     try:
         await asyncio.to_thread(s3_client().put_object, Bucket=bucket, Key=key, Body=data,

@@ -17,6 +17,23 @@ export const renderedEmailSchema = z.object({
   preview_html: z.string().optional(),
 });
 
+const previewSourceSchema = z.object({
+  kind: z.string(),
+  steps: z.array(
+    z.object({
+      id: z.string(),
+      method: z.string(),
+      url: z.string(),
+      status: z.number(),
+      pages: z.number().optional(),
+    }),
+  ),
+  assertions: z.array(
+    z.object({ type: z.string(), path: z.string().optional(), passed: z.boolean() }),
+  ),
+  pages: z.number(),
+});
+
 export const draftPreviewSchema = z.object({
   revision: z.number(),
   spec_hash: z.string(),
@@ -30,6 +47,7 @@ export const draftPreviewSchema = z.object({
   warnings: z.array(z.string()),
   created_at: z.string(),
   expires_at: z.string(),
+  source: previewSourceSchema.nullish(),
 });
 
 const ruleSchema = z.object({
@@ -57,7 +75,8 @@ const fieldShape = {
   name: z.string(),
   type: z.string(),
   semantic: z.string().optional(),
-  selector: z.string().optional(),
+  selector: z.string().nullish(),
+  path: z.string().nullish(),
   attribute: z.string().nullish(),
   required: z.boolean().optional(),
   normalize: normalizationSchema.optional(),
@@ -79,6 +98,38 @@ const browserStepSchema = z.object({
   max_pages: z.number().optional(),
 });
 
+const requestSchema = z.object({
+  method: z.string().optional(),
+  url: z.string(),
+  headers: z.record(z.string(), z.string()).optional(),
+  body: z.unknown().optional(),
+});
+
+const assertionSchema = z.object({
+  type: z.string(),
+  path: z.string().optional(),
+  equals: z.union([z.string(), z.number(), z.boolean(), z.null()]).optional(),
+});
+
+const pagePaginationSchema = z.object({
+  kind: z.string().optional(),
+  page_param: z.string().optional(),
+  start_page: z.number().optional(),
+  size_param: z.string().nullish(),
+  size: z.number().nullish(),
+  total_path: z.string().nullish(),
+  stop: z.string().optional(),
+  max_pages: z.number().optional(),
+  max_items: z.number().optional(),
+});
+
+const sourceSchema = z.object({
+  kind: z.string().optional(),
+  steps: z.array(z.object({ id: z.string(), request: requestSchema })),
+  assertions: z.array(assertionSchema).optional(),
+  pagination: pagePaginationSchema.nullish(),
+});
+
 export const draftSpecSchema = z.object({
   name: z.string().optional(),
   url: z.string().optional(),
@@ -96,6 +147,7 @@ export const draftSpecSchema = z.object({
     .object({ scope: z.string().optional(), description: z.string().optional() })
     .optional(),
   browser_steps: z.array(browserStepSchema).optional(),
+  source: sourceSchema.nullish(),
 });
 
 export type DraftPreview = z.infer<typeof draftPreviewSchema>;

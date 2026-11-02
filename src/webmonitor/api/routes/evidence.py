@@ -18,7 +18,7 @@ async def _response(reference: dict) -> StreamingResponse:
     is_image = reference.get("kind") == "screenshot"
     content_type = reference.get("content_type") or (
         "image/png" if is_image else "text/plain; charset=utf-8")
-    suffix = "png" if is_image else "txt"
+    suffix = "png" if is_image else "json" if content_type == "application/json" else "txt"
     return StreamingResponse(
         await stream_evidence(reference["bucket"], reference["object_key"]),
         media_type=content_type,

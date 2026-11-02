@@ -52,3 +52,17 @@ async def test_stopping_an_ended_stream_drains_it():
 @pytest.mark.asyncio
 async def test_stopping_without_a_stream_is_a_no_op():
     await orchestration._stop_stream(None)
+
+
+def test_a_dropped_model_connection_is_retryable_only_before_an_answer():
+    from openai import APIConnectionError, APITimeoutError
+
+    dropped = APIConnectionError(request=None)
+    timeout = APITimeoutError(request=None)
+    assert orchestration._retryable_model_error(dropped)
+    assert orchestration._retryable_model_error(timeout)
+    assert orchestration._should_retry(dropped, messages_written=0)
+    assert not orchestration._should_retry(dropped, messages_written=1)
+    for error in (ValueError('bad input'), orchestration.DomainError('model_unavailable', 503)):
+        assert not orchestration._retryable_model_error(error)
+        assert not orchestration._should_retry(error, messages_written=0)

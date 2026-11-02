@@ -677,6 +677,37 @@ export interface paths {
 export type webhooks = Record<string, never>;
 export interface components {
     schemas: {
+        /** ApiRequest */
+        ApiRequest: {
+            /**
+             * Method
+             * @default GET
+             * @enum {string}
+             */
+            method: "GET" | "POST";
+            /** Url */
+            url: string;
+            /** Headers */
+            headers?: {
+                [key: string]: string;
+            };
+            /** Body */
+            body?: unknown | null;
+        };
+        /** ApiSource */
+        ApiSource: {
+            /**
+             * Kind
+             * @default json
+             * @constant
+             */
+            kind: "json";
+            /** Steps */
+            steps: components["schemas"]["SourceStep"][];
+            /** Assertions */
+            assertions?: (components["schemas"]["JsonEqualsAssertion"] | components["schemas"]["JsonPresentAssertion"])[];
+            pagination?: components["schemas"]["PagePagination"] | null;
+        };
         /** ApproveRequest */
         ApproveRequest: {
             /**
@@ -860,6 +891,7 @@ export interface components {
             coverage: components["schemas"]["Coverage"];
             /** Browser Steps */
             browser_steps?: (components["schemas"]["WaitForSelector"] | components["schemas"]["Scroll"] | components["schemas"]["ClickNext"])[];
+            source?: components["schemas"]["ApiSource"] | null;
         };
         /** DraftSpecUpdate */
         DraftSpecUpdate: {
@@ -972,7 +1004,9 @@ export interface components {
             /** Semantic */
             semantic: string;
             /** Selector */
-            selector: string;
+            selector?: string | null;
+            /** Path */
+            path?: string | null;
             /** Attribute */
             attribute?: string | null;
             /**
@@ -1206,6 +1240,28 @@ export interface components {
              * Format: date-time
              */
             created_at: string;
+        };
+        /** JsonEqualsAssertion */
+        JsonEqualsAssertion: {
+            /**
+             * @description discriminator enum property added by openapi-typescript
+             * @enum {string}
+             */
+            type: "json_equals";
+            /** Path */
+            path: string;
+            /** Equals */
+            equals: string | number | boolean | null;
+        };
+        /** JsonPresentAssertion */
+        JsonPresentAssertion: {
+            /**
+             * @description discriminator enum property added by openapi-typescript
+             * @enum {string}
+             */
+            type: "json_present";
+            /** Path */
+            path: string;
         };
         /** KeywordAbsent */
         KeywordAbsent: {
@@ -1493,6 +1549,47 @@ export interface components {
              */
             type: "number_percent_change";
         };
+        /** PagePagination */
+        PagePagination: {
+            /**
+             * Kind
+             * @default page
+             * @constant
+             */
+            kind: "page";
+            /**
+             * Page Param
+             * @default page
+             */
+            page_param: string;
+            /**
+             * Start Page
+             * @default 1
+             */
+            start_page: number;
+            /** Size Param */
+            size_param?: string | null;
+            /** Size */
+            size?: number | null;
+            /** Total Path */
+            total_path?: string | null;
+            /**
+             * Stop
+             * @default empty
+             * @enum {string}
+             */
+            stop: "empty" | "total_reached";
+            /**
+             * Max Pages
+             * @default 3
+             */
+            max_pages: number;
+            /**
+             * Max Items
+             * @default 500
+             */
+            max_items: number;
+        };
         /** Page[ConversationView] */
         Page_ConversationView_: {
             /** Items */
@@ -1668,6 +1765,12 @@ export interface components {
              * Format: date-time
              */
             collected_at: string;
+        };
+        /** SourceStep */
+        SourceStep: {
+            /** Id */
+            id: string;
+            request: components["schemas"]["ApiRequest"];
         };
         /** SpecVersion */
         SpecVersion: {

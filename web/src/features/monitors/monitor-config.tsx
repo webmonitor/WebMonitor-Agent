@@ -32,9 +32,11 @@ function normalizationEntries(normalize?: SpecField["normalize"]): string[] {
 function FieldRow({ field, labels }: { field: SpecField; labels: Record<string, string> }) {
   const { t } = useI18n();
   const normalize = normalizationEntries(field.normalize);
-  const selector = field.selector
-    ? `${field.selector}${field.attribute ? ` [${field.attribute}]` : ""}`
-    : "—";
+  const location = field.path
+    ? `${t("monitors.config.fieldPath")} · ${field.path}`
+    : field.selector
+      ? `${field.selector}${field.attribute ? ` [${field.attribute}]` : ""}`
+      : "—";
   return (
     <li className="py-2.5">
       <div className="flex flex-wrap items-baseline justify-between gap-x-3 gap-y-1">
@@ -48,7 +50,7 @@ function FieldRow({ field, labels }: { field: SpecField; labels: Record<string, 
           {field.required === false ? t("monitors.config.optional") : t("monitors.config.required")}
         </span>
       </div>
-      <p className="num mt-1 break-all text-[12px] text-muted-foreground">{selector}</p>
+      <p className="num mt-1 break-all text-[12px] text-muted-foreground">{location}</p>
       {normalize.length > 0 && (
         <p className="num mt-1 break-all text-[11px] text-muted-foreground">
           {t("monitors.config.normalize")} · {normalize.join(" · ")}
@@ -63,7 +65,7 @@ function FieldRow({ field, labels }: { field: SpecField; labels: Record<string, 
                 <span className="num ml-2 text-[11px] text-muted-foreground">{item.name}</span>
               </span>
               <span className="num break-all text-[11px] text-muted-foreground">
-                {item.selector ?? item.name}
+                {item.path ?? item.selector ?? item.name}
                 {item.attribute ? ` [${item.attribute}]` : ""}
                 {item.required === false ? ` · ${t("monitors.config.optional")}` : ""}
               </span>
@@ -186,6 +188,68 @@ export function MonitorConfig({
 
       <div className="grid gap-8 px-4 py-4 lg:grid-cols-2">
         <div>
+          {spec?.source && (
+            <div className="mb-5">
+              <h3 className="label-line">{t("monitors.config.source")}</h3>
+              <p className="mt-1 text-[13px]">
+                <span className="text-muted-foreground">{t("monitors.config.channel")} · </span>
+                {t("monitors.config.channelJson")}
+              </p>
+              <p className="label-line mt-3">{t("monitors.config.steps")}</p>
+              <ul className="mt-1 divide-y border-t">
+                {spec.source.steps.map((step) => (
+                  <li key={step.id} className="py-1.5">
+                    <span className="num text-[11px] text-muted-foreground">
+                      {t("monitors.config.step", { id: step.id })}
+                      {" · "}
+                      {t("monitors.config.method")} {step.request.method ?? "GET"}
+                    </span>
+                    <p className="num mt-0.5 break-all text-[12px]">
+                      <span className="text-muted-foreground">
+                        {t("monitors.config.requestUrl")}
+                      </span>{" "}
+                      {step.request.url}
+                    </p>
+                  </li>
+                ))}
+              </ul>
+              {(spec.source.assertions ?? []).length > 0 && (
+                <>
+                  <p className="label-line mt-3">{t("monitors.config.assertions")}</p>
+                  <ul className="mt-1 divide-y border-t">
+                    {(spec.source.assertions ?? []).map((assertion, index) => (
+                      <li key={`${assertion.type}-${index}`}
+                          className="num break-all py-1.5 text-[12px]">
+                        {assertion.type === "json_equals"
+                          ? t("monitors.config.assertionEquals", {
+                              path: assertion.path ?? "",
+                              value: String(assertion.equals ?? ""),
+                            })
+                          : t("monitors.config.assertionPresent", { path: assertion.path ?? "" })}
+                      </li>
+                    ))}
+                  </ul>
+                </>
+              )}
+              {spec.source.pagination && (
+                <>
+                  <p className="label-line mt-3">{t("monitors.config.pagination")}</p>
+                  <p className="num mt-1 break-all text-[12px]">
+                    {t("monitors.config.pageParam")} · {spec.source.pagination.page_param ?? "page"}
+                    {" · "}
+                    {t("monitors.config.pageSize")} · {spec.source.pagination.size ?? "—"}
+                    {" · "}
+                    {t("monitors.config.stop")} ·{" "}
+                    {spec.source.pagination.stop === "total_reached"
+                      ? t("monitors.config.stopTotal")
+                      : t("monitors.config.stopEmpty")}
+                    {" · "}
+                    {t("monitors.config.maxPages")} · {spec.source.pagination.max_pages ?? "—"}
+                  </p>
+                </>
+              )}
+            </div>
+          )}
           <h3 className="label-line">{t("monitors.config.fields")}</h3>
           {!spec || spec.fields.length === 0 ? (
             <p className="meta mt-1.5">{t("monitors.content.noFields")}</p>

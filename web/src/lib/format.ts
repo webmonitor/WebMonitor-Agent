@@ -49,6 +49,9 @@ const EVENT_KEYS: Partial<Record<string, MessageKey>> = {
 
 const STEP_KEYS: Partial<Record<string, MessageKey>> = {
   analyze_target: "format.step.analyze_target",
+  probe_target: "format.step.probe_target",
+  capture_network: "format.step.capture_network",
+  replay_request: "format.step.replay_request",
   list_notification_groups: "format.step.list_notification_groups",
   save_monitor_draft: "format.step.save_monitor_draft",
   preview_monitor: "format.step.preview_monitor",
@@ -86,12 +89,18 @@ const ERROR_KEYS: Partial<Record<string, MessageKey>> = {
   network_unavailable: "format.error.network_unavailable",
   request_failed: "format.error.request_failed",
   registration_failed: "format.error.registration_failed",
+  api_assertion_failed: "format.error.api_assertion_failed",
+  api_schema_invalid: "format.error.api_schema_invalid",
+  api_empty_result: "format.error.api_empty_result",
+  api_template_unresolved: "format.error.api_template_unresolved",
+  api_pagination_limit: "format.error.api_pagination_limit",
 };
 
 const WARNING_KEYS: Partial<Record<string, MessageKey>> = {
   pagination_coverage_unproven: "format.warning.pagination_coverage_unproven",
   coverage_bounded: "format.warning.coverage_bounded",
   template_contract_failed: "format.warning.template_contract_failed",
+  pagination_truncated: "format.warning.pagination_truncated",
 };
 
 const OPERATOR_KEYS: Partial<Record<string, MessageKey>> = {

@@ -2,6 +2,7 @@
 import re
 from datetime import UTC, datetime
 from decimal import Decimal, InvalidOperation
+from typing import Any
 from urllib.parse import urljoin
 from zoneinfo import ZoneInfo
 
@@ -18,7 +19,7 @@ _CURRENCY_SYMBOLS = {
     '¥': frozenset(('JPY', 'CNY')), '₹': frozenset(('INR',)),
     '₩': frozenset(('KRW',)), '₽': frozenset(('RUB',)),
 }
-_MISSING = object()
+MISSING = object()
 
 
 def invalid(field: str, reason: str) -> None:
@@ -121,6 +122,54 @@ def _scalar(value: str, field: FieldSpec, final_url: str, path: str):
     invalid(path, 'unsupported_type')
 
 
+def _text_of(value: Any, path: str, reason: str) -> str:
+    """String form of a JSON scalar; objects and arrays have no textual form."""
+    if isinstance(value, bool):
+        return 'true' if value else 'false'
+    if isinstance(value, (int, float)):
+        return format(Decimal(str(value)), 'f')
+    if isinstance(value, str):
+        return value
+    invalid(path, reason)
+
+
+def normalize_json_scalar(value: Any, field: FieldSpec, final_url: str, path: str):
+    """Apply one normalization contract to HTML text and to native JSON values."""
+    if value is None:
+        if field.required:
+            invalid(path, 'required_missing')
+        return MISSING
+    if field.type == 'boolean' and isinstance(value, bool):
+        return value
+    if field.type == 'text':
+        text = normalize_text(_text_of(value, path, 'invalid_text'), field.normalize)
+        if text == '' and field.required:
+            invalid(path, 'required_empty')
+        return text
+    if field.type == 'number':
+        return _decimal(normalize_text(_text_of(value, path, 'invalid_number'),
+                                       field.normalize), field, path)
+    if field.type == 'money':
+        return _money(normalize_text(_text_of(value, path, 'invalid_money'),
+                                     field.normalize), field, path)
+    if field.type == 'date':
+        return _date(normalize_text(_text_of(value, path, 'invalid_date'),
+                                    field.normalize), field, path)
+    if field.type == 'boolean':
+        text = normalize_text(_text_of(value, path, 'invalid_boolean'), field.normalize)
+        if text in field.normalize.true_values:
+            return True
+        if text in field.normalize.false_values:
+            return False
+        invalid(path, 'invalid_boolean')
+    if field.type == 'url':
+        text = normalize_text(_text_of(value, path, 'invalid_url'), field.normalize)
+        if not text:
+            invalid(path, 'invalid_url')
+        return validate_url(urljoin(final_url, text))
+    invalid(path, 'unsupported_type')
+
+
 def _extract(root: BeautifulSoup | Tag, field: FieldSpec, final_url: str, path: str):
     # A row's own attributes/text are selectable without escaping its scope.
     matches = [root] if field.selector == ':scope' and isinstance(root, Tag) and not isinstance(root, BeautifulSoup) else root.select(field.selector)
@@ -130,7 +179,7 @@ def _extract(root: BeautifulSoup | Tag, field: FieldSpec, final_url: str, path: 
             values = {}
             for item in field.item_fields:
                 value = _extract(row, item, final_url, f'{path}[{index}].{item.name}')
-                if value is not _MISSING:
+                if value is not MISSING:
                     values[item.name] = value
             rows.append(values)
         return rows
@@ -139,16 +188,16 @@ def _extract(root: BeautifulSoup | Tag, field: FieldSpec, final_url: str, path: 
     if not matches:
         if field.required:
             invalid(path, 'required_missing')
-        return _MISSING
+        return MISSING
     element = matches[0]
     if field.attribute is None:
         value = element.get_text(separator='')
     else:
-        value = element.get(field.attribute, _MISSING)
-        if value is _MISSING:
+        value = element.get(field.attribute, MISSING)
+        if value is MISSING:
             if field.required:
                 invalid(path, 'required_missing')
-            return _MISSING
+            return MISSING
         if isinstance(value, list):
             value = ' '.join(value)
     return _scalar(value, field, final_url, path)
@@ -161,6 +210,6 @@ def extract_fields(html: str, spec: DraftSpec, final_url: str) -> dict:
     fields = {}
     for field in spec.fields:
         value = _extract(root, field, final_url, field.name)
-        if value is not _MISSING:
+        if value is not MISSING:
             fields[field.name] = value
     return fields

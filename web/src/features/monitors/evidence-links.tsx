@@ -30,7 +30,9 @@ export function EvidenceLinks({
             ? full
               ? t("monitors.evidence.screenshotFull")
               : t("monitors.evidence.screenshot")
-            : t("monitors.evidence.archive")}
+            : reference.kind === "json"
+              ? t("monitors.evidence.json")
+              : t("monitors.evidence.archive")}
           <span className="num">{formatBytes(reference.size_bytes)}</span>
         </a>
       ))}

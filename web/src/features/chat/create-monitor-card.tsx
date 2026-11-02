@@ -39,7 +39,9 @@ function EvidenceLinks({ draftId, preview }: { draftId: string; preview: DraftPr
         >
           {reference.kind === "screenshot"
             ? t("chat.evidence.screenshot")
-            : t("chat.evidence.archive")}
+            : reference.kind === "json"
+              ? t("monitors.evidence.json")
+              : t("chat.evidence.archive")}
           <span className="num text-[10px]">{formatBytes(reference.size_bytes)}</span>
           <ExternalLink className="size-3.5" strokeWidth={1.5} />
         </a>
@@ -239,6 +241,34 @@ export function CreateMonitorCard({
       </div>
 
       <div className="space-y-4 px-4 py-3">
+        {preview.source && (
+          <div>
+            <h3 className="label-line">{t("chat.section.source")}</h3>
+            <p className="num mt-1 text-[12px] text-muted-foreground">
+              JSON
+              {" · "}
+              {t("chat.source.steps", { count: preview.source.steps.length })}
+              {" · "}
+              {t("chat.source.pages", { count: preview.source.pages })}
+              {" · "}
+              {t("chat.source.assertions", { count: preview.source.assertions.length })}
+            </p>
+            <ul className="mt-1.5 divide-y border-t">
+              {preview.source.steps.map((step) => (
+                <li key={step.id} className="num break-all py-1.5 text-[12px]">
+                  {step.method} {step.url} → {step.status}
+                </li>
+              ))}
+            </ul>
+            {preview.source.assertions.length > 0 && (
+              <p className="num mt-1.5 break-all text-[11px] text-muted-foreground">
+                {preview.source.assertions
+                  .map((assertion) => `${assertion.path ?? ""} ✓`)
+                  .join(" · ")}
+              </p>
+            )}
+          </div>
+        )}
         <div>
           <h3 className="label-line">{t("chat.section.extracted")}</h3>
           <dl className="mt-1.5 divide-y">

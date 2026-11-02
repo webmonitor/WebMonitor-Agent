@@ -55,6 +55,8 @@ class Settings(BaseSettings):
 
     agent_max_turns: int = 24
     agent_model_timeout_seconds: int = 120
+    agent_model_retries: int = 2
+    agent_max_attempts: int = 2
     agent_max_tokens: int = 8192
     agent_timeout_seconds: int = 300
     agent_history_messages: int = 30
@@ -91,12 +93,14 @@ class Settings(BaseSettings):
             raise ValueError("TARGET_POLICY other than public requires DEVELOPMENT_MODE=true")
         if self.target_policy == "allowlist" and not parse_target_origins(self.target_allowed_origins):
             raise ValueError("TARGET_POLICY=allowlist requires TARGET_ALLOWED_ORIGINS")
+        if self.agent_model_retries < 0:
+            raise ValueError("AGENT_MODEL_RETRIES must not be negative")
         for name in ("preview_ttl_minutes", "agent_concurrency", "http_concurrency",
                      "agent_model_timeout_seconds",
                      "browser_concurrency", "max_attempts", "max_active_monitors",
                      "login_attempts", "login_window_minutes", "agent_max_turns",
                      "agent_max_tokens", "agent_timeout_seconds", "agent_history_messages",
-                     "message_max_chars"):
+                     "agent_max_attempts", "message_max_chars"):
             if getattr(self, name) < 1:
                 raise ValueError(f"{name.upper()} must be at least 1")
         return self

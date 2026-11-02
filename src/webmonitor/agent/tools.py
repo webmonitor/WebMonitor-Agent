@@ -10,10 +10,11 @@ from pydantic import ValidationError
 from sqlalchemy import select
 
 from webmonitor.agent.runtime import RuntimeContext, current_draft
+from webmonitor.collection.probe import probe, replay
 from webmonitor.db import get_session_factory
 from webmonitor.errors import DomainError
 from webmonitor.models import Draft, Job, NotificationGroup, utc_now
-from webmonitor.schemas.monitors import DraftSpec
+from webmonitor.schemas.monitors import ApiRequest, DraftSpec
 from webmonitor.services import conversations, drafts, jobs
 
 
@@ -142,6 +143,44 @@ def _analysis(job: Job) -> dict:
             "warnings": result.get("warnings") or []}
 
 
+@function_tool(failure_error_function=safe_tool_error)
+async def probe_target(ctx: ToolContext[RuntimeContext], url: str) -> dict:
+    """Fetch a public URL once and report content type, text sample, embedded payload markers, comments and scripts. Use before choosing HTML, DOM or JSON."""
+    async def operation():
+        async with get_session_factory()() as session:
+            await _check(session, ctx)
+        return await probe(url)
+    return await _observed(ctx, operation)
+
+
+@function_tool(failure_error_function=safe_tool_error)
+async def capture_network(ctx: ToolContext[RuntimeContext], url: str) -> dict:
+    """Render the page once and return xhr/fetch JSON candidates with bounded request/response samples."""
+    async def operation():
+        async with get_session_factory()() as session:
+            job = await _check(session, ctx, lock=True)
+            # A capture is never reused: the page and its API responses can change.
+            created = await jobs.enqueue(session, user_id=job.user_id, kind="analyze", url=url,
+                spec={"collection_mode": "browser", "op": "network"},
+                conversation_id=job.conversation_id)
+            await session.commit()
+        finished = await jobs.wait(created.id, timeout=70)
+        if finished.status != "succeeded":
+            raise DomainError(finished.error_code or "analysis_failed", 503)
+        return _analysis(finished)
+    return await _observed(ctx, operation)
+
+
+@function_tool(failure_error_function=safe_tool_error, strict_mode=False)
+async def replay_request(ctx: ToolContext[RuntimeContext], request: dict) -> dict:
+    """Send one concrete HTTP request over egress and summarize the JSON response, list paths and pagination hints."""
+    async def operation():
+        async with get_session_factory()() as session:
+            await _check(session, ctx)
+        return await replay(ApiRequest.model_validate(request))
+    return await _observed(ctx, operation)
+
+
 def coerce_spec(value):
     """Accept the spec object, or the JSON string some providers emit for it."""
     if isinstance(value, DraftSpec):
@@ -157,7 +196,7 @@ def coerce_spec(value):
 @function_tool(failure_error_function=safe_tool_error, strict_mode=False)
 async def save_monitor_draft(ctx: ToolContext[RuntimeContext], spec: DraftSpec | str,
                              draft_id: str | None = None) -> dict:
-    """Save the current draft's full validated spec. Omitted draft_id updates the current draft; create a draft only when the conversation has none. Preserve unchanged settings and use only observed selectors and listed groups."""
+    """Save the current draft's full validated spec. Omitted draft_id updates the current draft; create a draft only when the conversation has none. Preserve unchanged settings and use only observed selectors, source.steps, path fields, assertions and pagination that were observed and replayed."""
     async def operation():
         parsed = coerce_spec(spec)
         async with get_session_factory()() as session:
@@ -239,5 +278,5 @@ async def request_creation(ctx: ToolContext[RuntimeContext], draft_id: str,
 
 
 def make_agent_tools() -> list:
-    return [list_notification_groups, analyze_target, save_monitor_draft, preview_monitor,
-            request_creation]
+    return [list_notification_groups, probe_target, analyze_target, capture_network,
+            replay_request, save_monitor_draft, preview_monitor, request_creation]

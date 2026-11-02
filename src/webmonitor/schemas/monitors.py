@@ -1,6 +1,7 @@
 """Validated monitor configuration shared by HTTP, Agent and workers."""
 import hashlib
 import json
+import re
 from datetime import UTC, datetime
 from decimal import Decimal
 from typing import Annotated, Any, Literal
@@ -53,6 +54,53 @@ def _timezone(value: str) -> str:
     return value
 
 
+# Request headers are replayed only from this fixed set; credentials never travel.
+REQUEST_HEADER_ALLOWLIST = frozenset({
+    'accept', 'accept-language', 'content-type', 'user-agent',
+    'referer', 'origin', 'x-requested-with',
+})
+# A step may substitute a scalar from an earlier response into a later URL.
+REQUEST_TEMPLATE = re.compile(
+    r'\{\{steps\.(?P<step>[a-z][a-z0-9_]{0,31})\.'
+    r'(?P<path>[A-Za-z0-9_$-]+(?:\.[A-Za-z0-9_$-]+|\[\d+\])*)\}\}')
+JSON_PATH = re.compile(r'^[A-Za-z0-9_$-]+(?:\.[A-Za-z0-9_$-]+|\[\d+\])*$')
+
+
+def clean_json_path(value: str) -> str:
+    """Normalize `$.data.list` and reject expressions, wildcards and empty paths."""
+    value = value[2:] if value.startswith('$.') else value
+    if not JSON_PATH.fullmatch(value):
+        raise ValueError('JSON paths use keys and numeric indices only')
+    return value
+
+
+def validate_http_url(value: str) -> str:
+    from urllib.parse import urlsplit
+    try:
+        parsed = urlsplit(value)
+        _ = parsed.port  # Force malformed port validation; egress owns port policy.
+    except ValueError as exc:
+        raise ValueError('invalid HTTP(S) URL') from exc
+    if parsed.scheme not in ('http', 'https') or not parsed.hostname or parsed.username is not None or parsed.password is not None:
+        raise ValueError('HTTP(S) URL without user information required')
+    return value
+
+
+def _static_authority(value: str) -> None:
+    """Templates belong in the path or query; the host must be a literal."""
+    start = value.find('://')
+    if start < 0:
+        return
+    tail = value[start + 3:]
+    end = len(tail)
+    for stop in '/?#':
+        index = tail.find(stop)
+        if index >= 0:
+            end = min(end, index)
+    if '{{' in tail[:end]:
+        raise ValueError('request URL templates must stay in the path or query')
+
+
 class Normalization(Contract):
     trim: StrictBool = True
     collapse_whitespace: StrictBool = False
@@ -97,7 +145,8 @@ class FieldSpec(Contract):
     name: str = Field(pattern=r'^[A-Za-z][A-Za-z0-9_]{0,63}$')
     type: Literal['text', 'number', 'money', 'date', 'boolean', 'url', 'list']
     semantic: str = Field(min_length=1, max_length=500)
-    selector: str = Field(min_length=1, max_length=1000)
+    selector: str | None = Field(default=None, min_length=1, max_length=1000)
+    path: str | None = Field(default=None, min_length=1, max_length=500)
     attribute: str | None = Field(default=None, pattern=r'^[A-Za-z_][A-Za-z0-9_:-]*$')
     required: StrictBool = True
     normalize: Normalization = Field(default_factory=Normalization)
@@ -112,7 +161,9 @@ class FieldSpec(Contract):
 
     @field_validator('selector')
     @classmethod
-    def css_only(cls, value: str) -> str:
+    def css_only(cls, value: str | None) -> str | None:
+        if value is None:
+            return None
         value = value.strip()
         if not value or value.startswith(('/', 'xpath=', 'javascript:', 'js=')) or '::' in value:
             raise ValueError('only CSS element selectors are supported')
@@ -124,8 +175,17 @@ class FieldSpec(Contract):
             raise ValueError('invalid CSS selector') from exc
         return value
 
+    @field_validator('path')
+    @classmethod
+    def path_only(cls, value: str | None) -> str | None:
+        return None if value is None else clean_json_path(value.strip())
+
     @model_validator(mode='after')
     def type_contract(self) -> 'FieldSpec':
+        if (self.selector is None) == (self.path is None):
+            raise ValueError('field requires exactly one of selector or path')
+        if self.path is not None and self.attribute is not None:
+            raise ValueError('attribute applies only to selector fields')
         normal = self.normalize
         if self.type == 'list':
             if not self.item_fields or self.attribute is not None:
@@ -283,6 +343,123 @@ class ClickNext(Contract):
 BrowserStep = Annotated[WaitForSelector | Scroll | ClickNext, Field(discriminator='type')]
 
 
+class ApiRequest(Contract):
+    method: Literal['GET', 'POST'] = 'GET'
+    url: str = Field(min_length=1, max_length=4096)
+    headers: dict[str, str] = Field(default_factory=dict)
+    body: Any | None = None
+
+    @field_validator('url')
+    @classmethod
+    def request_url(cls, value: str) -> str:
+        value = validate_http_url(value)
+        _static_authority(value)
+        return value
+
+    @field_validator('headers')
+    @classmethod
+    def request_headers(cls, value: dict[str, str]) -> dict[str, str]:
+        if len(value) > 10:
+            raise ValueError('at most 10 request headers are supported')
+        folded: dict[str, str] = {}
+        for name, item in value.items():
+            key = name.strip().casefold()
+            if key not in REQUEST_HEADER_ALLOWLIST:
+                raise ValueError(f'{name} is not a supported request header')
+            if key in folded:
+                raise ValueError('duplicate request header')
+            if not isinstance(item, str) or not 1 <= len(item) <= 1000 or '\r' in item or '\n' in item:
+                raise ValueError('invalid request header value')
+            if '{{' in item:
+                raise ValueError('templates are supported in request URLs only')
+            folded[key] = item
+        return folded
+
+    @model_validator(mode='after')
+    def body_contract(self) -> 'ApiRequest':
+        content_type = self.headers.get('content-type')
+        if content_type is not None and content_type.split(';', 1)[0].strip().lower() != 'application/json':
+            raise ValueError('request bodies must be application/json')
+        if self.method == 'GET':
+            if self.body is not None:
+                raise ValueError('GET requests cannot carry a body')
+            return self
+        if self.body is not None:
+            if not isinstance(self.body, (dict, list)):
+                raise ValueError('request bodies must be a JSON object or array')
+            encoded = canonical_json(self.body)
+            if len(encoded.encode('utf-8')) > 16384:
+                raise ValueError('request body exceeds 16384 bytes')
+            if '{{' in encoded:
+                raise ValueError('templates are supported in request URLs only')
+        return self
+
+
+class SourceStep(Contract):
+    id: str = Field(pattern=r'^[a-z][a-z0-9_]{0,31}$')
+    request: ApiRequest
+
+
+class JsonEqualsAssertion(Contract):
+    type: Literal['json_equals']
+    path: str = Field(min_length=1, max_length=500)
+    equals: str | int | float | bool | None
+
+    @field_validator('path')
+    @classmethod
+    def valid_path(cls, value: str) -> str:
+        return clean_json_path(value.strip())
+
+
+class JsonPresentAssertion(Contract):
+    type: Literal['json_present']
+    path: str = Field(min_length=1, max_length=500)
+
+    @field_validator('path')
+    @classmethod
+    def valid_path(cls, value: str) -> str:
+        return clean_json_path(value.strip())
+
+
+Assertion = Annotated[JsonEqualsAssertion | JsonPresentAssertion, Field(discriminator='type')]
+
+
+class PagePagination(Contract):
+    kind: Literal['page'] = 'page'
+    page_param: str = Field(default='page', pattern=r'^[A-Za-z][A-Za-z0-9_]{0,31}$')
+    start_page: int = Field(default=1, ge=1, le=10000, strict=True)
+    size_param: str | None = Field(default=None, pattern=r'^[A-Za-z][A-Za-z0-9_]{0,31}$')
+    size: int | None = Field(default=None, ge=1, le=1000, strict=True)
+    total_path: str | None = Field(default=None, min_length=1, max_length=500)
+    stop: Literal['empty', 'total_reached'] = 'empty'
+    max_pages: int = Field(default=3, ge=1, le=5, strict=True)
+    max_items: int = Field(default=500, ge=1, le=2000, strict=True)
+
+    @field_validator('total_path')
+    @classmethod
+    def valid_total_path(cls, value: str | None) -> str | None:
+        return None if value is None else clean_json_path(value.strip())
+
+
+class ApiSource(Contract):
+    kind: Literal['json'] = 'json'
+    steps: list[SourceStep] = Field(min_length=1, max_length=3)
+    assertions: list[Assertion] = Field(default_factory=list, max_length=8)
+    pagination: PagePagination | None = None
+
+    @model_validator(mode='after')
+    def ordered_steps(self) -> 'ApiSource':
+        declared: set[str] = set()
+        for step in self.steps:
+            if step.id in declared:
+                raise ValueError('duplicate step id')
+            referenced = {match.group('step') for match in REQUEST_TEMPLATE.finditer(step.request.url)}
+            if not referenced <= declared:
+                raise ValueError('templates may reference an earlier step only')
+            declared.add(step.id)
+        return self
+
+
 class DraftSpec(Contract):
     name: str = Field(min_length=1, max_length=200)
     url: str = Field(min_length=1, max_length=4096)
@@ -294,19 +471,12 @@ class DraftSpec(Contract):
     notification_group_ids: list[UUID] = Field(min_length=1)
     coverage: Coverage
     browser_steps: list[BrowserStep] = Field(default_factory=list)
+    source: ApiSource | None = None
 
     @field_validator('url')
     @classmethod
     def http_url(cls, value: str) -> str:
-        from urllib.parse import urlsplit
-        try:
-            parsed = urlsplit(value)
-            _ = parsed.port  # Force malformed port validation; egress owns port policy.
-        except ValueError as exc:
-            raise ValueError('invalid HTTP(S) URL') from exc
-        if parsed.scheme not in ('http', 'https') or not parsed.hostname or parsed.username is not None or parsed.password is not None:
-            raise ValueError('HTTP(S) URL without user information required')
-        return value
+        return validate_http_url(value)
 
     @model_validator(mode='after')
     def references(self) -> 'DraftSpec':
@@ -317,6 +487,7 @@ class DraftSpec(Contract):
             raise ValueError('duplicate notification group')
         if self.collection_mode == 'http' and self.browser_steps:
             raise ValueError('browser_steps require browser collection mode')
+        self._channel_fields()
         if any(field.type == 'list' for field in self.fields) and self.business_key is None:
             raise ValueError('list fields require a designated business_key')
         if self.business_key:
@@ -345,4 +516,31 @@ class DraftSpec(Contract):
                     if not set(rule.watch_fields) <= item_names or set(rule.watch_fields) & set(self.business_key.item_fields):
                         raise ValueError('watch_fields must be existing non-business-key fields')
         return self
+
+    def _channel_fields(self) -> None:
+        """One channel per spec: HTML selectors or JSON paths, never both."""
+        if self.source is not None:
+            if self.collection_mode != 'http' or self.browser_steps:
+                raise ValueError('source requires http mode without browser steps')
+            for field in self.fields:
+                if field.path is None or field.selector is not None:
+                    raise ValueError('json sources require path fields')
+                if any(item.path is None or item.selector is not None
+                       for item in field.item_fields or []):
+                    raise ValueError('json sources require path fields')
+            pagination = self.source.pagination
+            if pagination is not None:
+                if sum(field.type == 'list' for field in self.fields) != 1:
+                    raise ValueError('page pagination requires one list field')
+                if pagination.stop == 'total_reached' and pagination.total_path is None:
+                    raise ValueError('total_reached requires total_path')
+                if (pagination.size_param is None) != (pagination.size is None):
+                    raise ValueError('size_param and size must be set together')
+            return
+        for field in self.fields:
+            if field.selector is None or field.path is not None:
+                raise ValueError('html sources require selector fields')
+            if any(item.selector is None or item.path is not None
+                   for item in field.item_fields or []):
+                raise ValueError('html sources require selector fields')
 

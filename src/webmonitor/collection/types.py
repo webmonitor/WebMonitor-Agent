@@ -1,6 +1,7 @@
 """Collector result and bounded, untrusted structural analysis."""
 from dataclasses import dataclass, field
 from html import escape
+from typing import Literal
 
 from bs4 import BeautifulSoup
 
@@ -14,13 +15,14 @@ MAX_SUMMARY_BYTES = 20 * 1024
 @dataclass
 class CollectionResult:
     final_url: str
-    html: str
+    body: str | None
     screenshot: bytes | None
     fields: dict
     coverage: dict
     duration_ms: int
     warnings: list[str] = field(default_factory=list)
     analysis: dict = field(default_factory=dict)
+    body_kind: Literal['html', 'json'] = 'html'
 
 
 def analyze_html(html: str) -> tuple[dict, list[str]]:

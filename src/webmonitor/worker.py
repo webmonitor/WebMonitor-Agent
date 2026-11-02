@@ -14,6 +14,7 @@ from uuid import UUID, uuid4
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from webmonitor.agent.orchestration import execute_job as execute_agent_job
+from webmonitor.collection.api import collect_api
 from webmonitor.collection.browser import collect_browser
 from webmonitor.collection.http import collect_http
 from webmonitor.config import get_settings
@@ -89,17 +90,24 @@ async def _collect(job_id: UUID, worker_id: str) -> None:
     spec = (DraftSpec.model_validate(stored)
             if kind in ("preview", "production") and stored else None)
     mode = (stored or {}).get("collection_mode", "http")
-    collector = collect_browser if mode == "browser" else collect_http
+    op = (stored or {}).get("op")
     current = asyncio.current_task()
     renewal = asyncio.create_task(_renew(job_id, worker_id, current))
     try:
-        result = await collector(url, spec)
+        if op == "network":
+            result = await collect_browser(url, network=True)
+        elif spec is not None and spec.source is not None:
+            result = await collect_api(url, spec)
+        else:
+            collector = collect_browser if mode == "browser" else collect_http
+            result = await collector(url, spec)
         refs = []
-        for evidence_kind, data in (("html", result.html.encode("utf-8")),
-                                    ("screenshot", result.screenshot)):
-            if data is not None:
-                refs.append(await upload_evidence(prefix=_prefix(job), kind=evidence_kind,
-                                                  data=data))
+        if result.body is not None:
+            refs.append(await upload_evidence(prefix=_prefix(job), kind=result.body_kind,
+                                              data=result.body.encode("utf-8")))
+        if result.screenshot is not None:
+            refs.append(await upload_evidence(prefix=_prefix(job), kind="screenshot",
+                                              data=result.screenshot))
         payload = {"final_url": result.final_url, "fields": result.fields,
                    "coverage": result.coverage, "evidence_refs": refs,
                    "duration_ms": result.duration_ms, "warnings": result.warnings,

@@ -1,11 +1,11 @@
-"""Decode HTML with the output limit applied inside zlib, before expansion allocation."""
+"""Decode a response body with the output limit applied inside zlib, before expansion allocation."""
 import zlib
 
 from webmonitor.collection.types import MAX_HTML_BYTES
 from webmonitor.errors import DomainError
 
 
-class BoundedHTMLDecoder:
+class BoundedDecoder:
     def __init__(self, encoding: str, limit: int = MAX_HTML_BYTES):
         self.encoding = encoding.strip().lower()
         if self.encoding not in {"", "identity", "gzip", "deflate"}:
@@ -41,7 +41,7 @@ class BoundedHTMLDecoder:
                 remaining = self.limit - len(self.data)
                 decoded = self.decoder.decompress(raw, remaining + 1)
                 if len(decoded) > remaining:
-                    raise DomainError("collection_limit", 422, details={"limit": "html_bytes"})
+                    raise DomainError("collection_limit", 422, details={"limit": "response_bytes"})
                 self.data.extend(decoded)
                 raw = self.decoder.unused_data if self.decoder.eof else self.decoder.unconsumed_tail
         except zlib.error:

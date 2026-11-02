@@ -179,6 +179,7 @@ async def build_preview(session: AsyncSession, draft: Draft, job: Job) -> dict:
         "recipients": emails,
         "recipient_sources": recipients,
         "warnings": warnings,
+        "source": (result.get("analysis") or {}).get("source"),
         "created_at": now.isoformat(),
         "expires_at": None,
     }
