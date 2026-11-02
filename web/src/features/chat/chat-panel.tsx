@@ -23,6 +23,7 @@ import {
   useStartConversation,
   type DraftView,
   type JobView,
+  type MessageView,
 } from "@/lib/api/hooks";
 import { CreateMonitorCard } from "@/features/chat/create-monitor-card";
 import { useFormat } from "@/lib/format";
@@ -54,47 +55,105 @@ function mergeSteps(steps: JobView["steps"]) {
   return merged;
 }
 
-/** The collapsed "what the assistant did" trail: a text disclosure, not a chip. */
-function WorkLog({ job, open = false }: { job: JobView; open?: boolean }) {
-  const { t } = useI18n();
+function StepList({ steps }: { steps: JobView["steps"] }) {
   const { errorText, stepLabel } = useFormat();
+  return (
+    <ol className="mt-2 space-y-1.5">
+      {steps.map((step, index) => (
+        <li
+          key={`${step.name}-${index}`}
+          className={`flex items-start gap-2 ${
+            step.status === "failed"
+              ? "text-error"
+              : step.status === "started"
+                ? "text-foreground"
+                : "text-muted-foreground"
+          }`}
+        >
+          <span
+            aria-hidden
+            className={`mt-[0.4rem] size-1.5 shrink-0 rounded-full ${
+              step.status === "failed"
+                ? "bg-error"
+                : step.status === "succeeded"
+                  ? "bg-success"
+                  : "bg-primary animate-pulse"
+            }`}
+          />
+          <span className="min-w-0 flex-1 leading-5">
+            {stepLabel(step.name)}
+            {step.error_code && (
+              <span className="block text-[11.5px] leading-5 text-error">
+                {errorText(step.error_code)}
+              </span>
+            )}
+          </span>
+        </li>
+      ))}
+    </ol>
+  );
+}
+
+/**
+ * The run's trail. While the assistant works it stays open under the current
+ * step; once the run is done it folds into one quiet line above the answer.
+ */
+function WorkLog({ job, active = false }: { job: JobView; active?: boolean }) {
+  const { t } = useI18n();
+  const { stepLabel } = useFormat();
   const steps = mergeSteps(job.steps);
   if (steps.length === 0) return null;
+  const done = steps.filter((step) => step.status === "succeeded").length;
   const failed = steps.filter((step) => step.status === "failed").length;
+
+  if (active) {
+    const current = [...steps].reverse().find((step) => step.status === "started") ?? steps.at(-1)!;
+    return (
+      <div className="text-[12.5px]">
+        <p className="flex items-center gap-2 text-muted-foreground">
+          <span aria-hidden className="size-1.5 shrink-0 animate-pulse rounded-full bg-primary" />
+          <span className="min-w-0 truncate">{stepLabel(current.name)}</span>
+          <span className="num ml-auto shrink-0 text-[11px] tabular-nums">
+            {done}/{steps.length}
+          </span>
+        </p>
+        <StepList steps={steps} />
+      </div>
+    );
+  }
+
   return (
-    <details open={open} className="group mt-2 text-[13px]">
+    <details className="group text-[12.5px]">
       <summary className="inline-flex cursor-pointer list-none items-center gap-1 text-muted-foreground transition-colors duration-150 select-none hover:text-foreground [&::-webkit-details-marker]:hidden">
         <ChevronRight className="size-3.5 transition-transform duration-150 group-open:rotate-90" strokeWidth={1.5} />
         {failed > 0
           ? t("chat.worklog.incomplete", { total: steps.length, failed })
           : t("chat.worklog.view", { total: steps.length })}
       </summary>
-      <ol className="mt-2 space-y-2 border-l pl-4">
-        {steps.map((step, index) => (
-          <li key={`${step.name}-${index}`} className="flex items-start gap-2">
-            <span
-              aria-hidden
-              className={`mt-[0.45rem] size-1.5 shrink-0 rounded-full ${
-                step.status === "failed"
-                  ? "bg-error"
-                  : step.status === "succeeded"
-                    ? "bg-success"
-                    : "bg-muted-foreground/40"
-              }`}
-            />
-            <span className="min-w-0 flex-1">
-              <span className="block leading-5">{stepLabel(step.name)}</span>
-              {(step.error_code || step.detail) && (
-                <span className="block break-words text-[12px] leading-5 text-muted-foreground">
-                  {step.error_code ? errorText(step.error_code) : step.detail?.slice(0, 240)}
-                </span>
-              )}
-            </span>
-          </li>
-        ))}
-      </ol>
+      <StepList steps={steps} />
     </details>
   );
+}
+
+type Turn = { id: string; role: string; jobId: string | null; content: string };
+
+/**
+ * One turn is one user message and everything the assistant said while handling
+ * it. Progress messages arrive as separate rows; joining them keeps the turn's
+ * prose at normal paragraph rhythm instead of one 32px gap per fragment.
+ */
+function buildTurns(messages: MessageView[]): Turn[] {
+  const turns: Turn[] = [];
+  for (const message of messages) {
+    const last = turns.at(-1);
+    if (last && message.role === "assistant" && last.role === "assistant"
+        && last.jobId === message.job_id) {
+      last.content = `${last.content}\n\n${message.content}`;
+      continue;
+    }
+    turns.push({ id: message.id, role: message.role, jobId: message.job_id, content: message.content });
+  }
+  return turns;
 }
 
 /** Assistant prose: no bubble, no avatar — full-width text, the way it reads best. */
@@ -149,6 +208,25 @@ export function ChatPanel({
   const limit = snapshot?.limits.message_max_chars ?? 32000;
   const messages = snapshot?.messages ?? [];
   const activeStep = running?.steps.at(-1);
+  const jobsById = new Map(agentJobs?.map((job) => [job.id, job]));
+  const turns = buildTurns(messages);
+  if (running) {
+    const last = turns.at(-1);
+    if (last?.role === "assistant" && last.jobId === running.id) {
+      last.content = [last.content, running.partial_text].filter(Boolean).join("\n\n");
+    } else {
+      turns.push({
+        id: `running-${running.id}`,
+        role: "assistant",
+        jobId: running.id,
+        content: running.partial_text,
+      });
+    }
+  }
+  const shownJobs = new Set(turns.map((turn) => turn.jobId));
+  const strayTrail = !running && lastJob && lastJob.status !== "failed"
+    && lastJob.status !== "cancelled" && lastJob.steps.length > 0
+    && !shownJobs.has(lastJob.id) ? lastJob : undefined;
 
   useEffect(() => {
     if (!pinned) return;
@@ -277,48 +355,40 @@ export function ChatPanel({
               </div>
             )}
 
-            <ol className="space-y-8">
-              {messages.map((message) =>
-                message.role === "user" ? (
-                  <li key={message.id} className="flex justify-end">
-                    <div className="max-w-[85%] rounded-[0.875rem] bg-muted px-3.5 py-2.5 text-[15px] leading-7 break-words whitespace-pre-wrap">
-                      {message.content}
-                    </div>
+            <ol className="space-y-6">
+              {turns.map((turn) => {
+                if (turn.role === "user") {
+                  return (
+                    <li key={turn.id} className="flex justify-end">
+                      <div className="max-w-[85%] rounded-[0.875rem] bg-muted px-3.5 py-2.5 text-[15px] leading-7 break-words whitespace-pre-wrap">
+                        {turn.content}
+                      </div>
+                    </li>
+                  );
+                }
+                const job = turn.jobId ? jobsById.get(turn.jobId) : undefined;
+                const live = Boolean(running && turn.jobId === running.id);
+                const trail = job && job.steps.length > 0 && job.id !== failed?.id;
+                return (
+                  <li key={turn.id} className="min-w-0 space-y-2.5">
+                    {trail && <WorkLog job={job} active={live} />}
+                    {turn.content ? (
+                      <AssistantText content={turn.content} />
+                    ) : live && !trail ? (
+                      <Thinking
+                        label={activeStep ? `${stepLabel(activeStep.name)}…` : t("chat.thinking")}
+                      />
+                    ) : null}
                   </li>
-                ) : (
-                  <li key={message.id} className="min-w-0">
-                    <AssistantText content={message.content} />
-                  </li>
-                ),
-              )}
+                );
+              })}
 
-              {running && (
+              {/* A run that left no prose still owes the reader its trail. */}
+              {strayTrail && (
                 <li className="min-w-0">
-                  {running.partial_text ? (
-                    <AssistantText content={running.partial_text} />
-                  ) : (
-                    <Thinking
-                      label={activeStep ? `${stepLabel(activeStep.name)}…` : t("chat.thinking")}
-                    />
-                  )}
-                  {running.partial_text && activeStep && (
-                    <p className="mt-2 text-[13px] text-muted-foreground">
-                      {stepLabel(activeStep.name)}…
-                    </p>
-                  )}
-                  <WorkLog job={running} />
+                  <WorkLog job={strayTrail} />
                 </li>
               )}
-
-              {/* A finished turn keeps its trail available, collapsed. */}
-              {!running &&
-                lastJob &&
-                lastJob.status !== "failed" &&
-                lastJob.steps.length > 0 && (
-                  <li className="min-w-0">
-                    <WorkLog job={lastJob} />
-                  </li>
-                )}
 
               {!running && stopped && (
                 <li className="flex items-center gap-2.5 text-[15px] text-muted-foreground">
