@@ -36,14 +36,16 @@ async def require_conversation(session: AsyncSession, user: CurrentUser, convers
 
 
 async def list_conversations(session: AsyncSession, user: CurrentUser, limit: int,
-                             offset: int) -> Page[ConversationView]:
+                             offset: int, *, archived: bool = False) -> Page[ConversationView]:
     query = select(Conversation)
     if user.role != "admin":
         query = query.where(Conversation.user_id == user.user_id)
+    query = query.where(Conversation.archived_at.is_not(None) if archived
+                         else Conversation.archived_at.is_(None))
     rows = (await session.scalars(query.order_by(Conversation.updated_at.desc(), Conversation.id.desc())
         .limit(limit).offset(offset))).all()
     total = await session.scalar(select(func.count()).select_from(query.subquery()))
-    return Page[ConversationView](items=[_conversation_view(row) for row in rows],
+    return Page[ConversationView](items=[conversation_view(row) for row in rows],
                                   total=total or 0)
 
 
@@ -56,10 +58,10 @@ async def create_conversation(session: AsyncSession, user: CurrentUser,
     if message is not None:
         await post_message(session, user, conversation.id, content=message.content,
                            client_message_id=message.client_message_id)
-    return _conversation_view(conversation)
+    return conversation_view(conversation)
 
 
-def _conversation_view(conversation: Conversation) -> ConversationView:
+def conversation_view(conversation: Conversation) -> ConversationView:
     return ConversationView(id=conversation.id, title=conversation.title,
         created_at=conversation.created_at, updated_at=conversation.updated_at)
 
@@ -99,7 +101,7 @@ async def snapshot(session: AsyncSession, user: CurrentUser,
     visible_jobs = sorted([*runs, *previews], key=lambda job: (job.created_at, job.id))
     settings = get_settings()
     return ConversationSnapshot(
-        conversation=_conversation_view(conversation),
+        conversation=conversation_view(conversation),
         messages=[MessageView(id=row.id, role=row.role, content=row.content, job_id=row.job_id,
                               client_message_id=row.client_message_id, created_at=row.created_at)
                   for row in messages],
@@ -119,6 +121,9 @@ async def post_message(session: AsyncSession, user: CurrentUser, conversation_id
         raise DomainError("message_too_long", 422,
                           details={"limit": settings.message_max_chars})
     conversation = await require_conversation(session, user, conversation_id, lock=True)
+    if conversation.archived_at is not None:
+        # A new message returns an archived conversation to the sidebar.
+        conversation.archived_at = None
     existing = await session.scalar(select(Message).where(
         Message.conversation_id == conversation.id,
         Message.client_message_id == client_message_id))
@@ -149,6 +154,24 @@ async def post_message(session: AsyncSession, user: CurrentUser, conversation_id
 async def active_job(session: AsyncSession, conversation_id: UUID) -> Job | None:
     return await session.scalar(select(Job).where(Job.conversation_id == conversation_id,
         Job.kind == "agent", Job.status.in_(ACTIVE)))
+
+
+async def archive_conversation(session: AsyncSession, user: CurrentUser,
+                               conversation_id: UUID) -> Conversation:
+    conversation = await require_conversation(session, user, conversation_id, lock=True)
+    if conversation.archived_at is None:
+        conversation.archived_at = utc_now()
+        await session.flush()
+    return conversation
+
+
+async def restore_conversation(session: AsyncSession, user: CurrentUser,
+                               conversation_id: UUID) -> Conversation:
+    conversation = await require_conversation(session, user, conversation_id, lock=True)
+    if conversation.archived_at is not None:
+        conversation.archived_at = None
+        await session.flush()
+    return conversation
 
 
 async def cancel(session: AsyncSession, user: CurrentUser, conversation_id: UUID) -> JobView:

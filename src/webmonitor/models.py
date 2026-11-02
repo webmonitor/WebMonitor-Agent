@@ -102,6 +102,7 @@ class Conversation(UUIDPrimaryKey, Created, Updated, Base):
     __table_args__ = (Index("ix_conversations_user_updated", "user_id", "updated_at"),)
     user_id: Mapped[UUID] = mapped_column(ForeignKey("users.id"))
     title: Mapped[str | None] = mapped_column(String(200))
+    archived_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
 
 
 class Message(UUIDPrimaryKey, Created, Base):

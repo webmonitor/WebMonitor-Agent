@@ -438,3 +438,33 @@ async def test_html_evidence_downloads_with_an_html_filename(client, session, mo
         'attachment; filename="cccccccccccccccc.html"'
     assert response.text == "<html>archived page</html>"
     assert response.headers["x-content-type-options"] == "nosniff"
+
+
+@pytest.mark.asyncio
+async def test_conversations_archive_restore_and_message(client, session):
+    await ensure_admin(session)
+    headers = await sign_in(client)
+    keep = await client.post("/api/v1/conversations", headers=headers, json={"title": "Keep open"})
+    archive = await client.post("/api/v1/conversations", headers=headers, json={"title": "Archive me"})
+    assert keep.status_code == 201 and archive.status_code == 201
+    keep_id, archive_id = keep.json()["id"], archive.json()["id"]
+
+    assert (await client.post(f"/api/v1/conversations/{archive_id}/archive",
+                              headers=headers)).status_code == 200
+    listed = await client.get("/api/v1/conversations")
+    assert [item["id"] for item in listed.json()["items"]] == [keep_id]
+    hidden = await client.get("/api/v1/conversations?archived=true")
+    assert [item["id"] for item in hidden.json()["items"]] == [archive_id]
+
+    # Writing into an archived conversation brings it back to the sidebar.
+    posted = await client.post(f"/api/v1/conversations/{archive_id}/messages", headers=headers,
+        json={"content": "继续", "client_message_id": str(uuid4())})
+    assert posted.status_code == 202
+    listed = await client.get("/api/v1/conversations")
+    assert archive_id in [item["id"] for item in listed.json()["items"]]
+
+    assert (await client.post(f"/api/v1/conversations/{archive_id}/archive",
+                              headers=headers)).status_code == 200
+    assert (await client.post(f"/api/v1/conversations/{archive_id}/restore",
+                              headers=headers)).status_code == 200
+    assert (await client.get("/api/v1/conversations?archived=true")).json()["items"] == []

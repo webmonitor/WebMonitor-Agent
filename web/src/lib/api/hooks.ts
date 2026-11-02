@@ -52,8 +52,29 @@ function usePagedQuery<T extends { id: string }>(key: readonly unknown[], path: 
   return { ...query, data };
 }
 
-export function useConversations() {
-  return usePagedQuery<ConversationView>(["conversations"], "/conversations", 15000);
+export function useConversations(archived = false) {
+  return usePagedQuery<ConversationView>(
+    ["conversations", archived ? "archived" : "active"],
+    archived ? "/conversations?archived=true" : "/conversations",
+    15000,
+  );
+}
+
+function useConversationArchive(action: "archive" | "restore") {
+  const cache = useQueryClient();
+  return useMutation({
+    mutationFn: (id: string) =>
+      api<ConversationView>(`/conversations/${id}/${action}`, { method: "POST" }),
+    onSuccess: () => void cache.invalidateQueries({ queryKey: ["conversations"] }),
+  });
+}
+
+export function useArchiveConversation() {
+  return useConversationArchive("archive");
+}
+
+export function useRestoreConversation() {
+  return useConversationArchive("restore");
 }
 
 export function useConversation(id: string | null) {

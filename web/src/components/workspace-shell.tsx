@@ -4,6 +4,7 @@ import { usePathname, useRouter, useSearchParams } from "next/navigation";
 import { Suspense, useEffect, useState, type ReactNode } from "react";
 import {
   Activity,
+  Archive,
   Bell,
   LogOut,
   Menu,
@@ -14,7 +15,7 @@ import {
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { LanguageSwitcher } from "@/components/language-switcher";
-import { useConversations, useMonitors } from "@/lib/api/hooks";
+import { useArchiveConversation, useConversations, useMonitors } from "@/lib/api/hooks";
 import { useAuth } from "@/lib/providers";
 import { useI18n } from "@/lib/i18n";
 import { useFormat } from "@/lib/format";
@@ -25,10 +26,12 @@ const CONVERSATION_PREVIEW = 8;
 /* One row height for every navigation item, so the sidebar reads as a column. */
 const ROW = "flex h-8 items-center gap-2 rounded-md px-2 text-[13px] transition-colors duration-150";
 
-function ConversationList() {
+function ConversationList({ onNavigate }: { onNavigate: () => void }) {
   const { t } = useI18n();
-  const { dayLabel, formatRelative } = useFormat();
+  const { dayLabel, errorText, formatRelative } = useFormat();
   const conversations = useConversations();
+  const archive = useArchiveConversation();
+  const router = useRouter();
   const params = useSearchParams();
   const pathname = usePathname();
   const active = pathname === "/app" ? params.get("conversation") : null;
@@ -71,11 +74,12 @@ function ConversationList() {
             {group.items.map((conversation) => {
               const isCurrent = conversation.id === active;
               return (
-                <li key={conversation.id}>
+                <li key={conversation.id} className="group relative">
                   <Link
                     href={`/app?conversation=${conversation.id}`}
+                    onClick={onNavigate}
                     aria-current={isCurrent ? "page" : undefined}
-                    className={`${ROW} ${
+                    className={`${ROW} pr-8 ${
                       isCurrent
                         ? "bg-secondary text-foreground"
                         : "text-muted-foreground hover:bg-muted hover:text-foreground"
@@ -88,12 +92,29 @@ function ConversationList() {
                       {formatRelative(conversation.updated_at)}
                     </span>
                   </Link>
+                  <button
+                    type="button"
+                    aria-label={t("chat.archive.action")}
+                    disabled={archive.isPending}
+                    className="absolute top-1/2 right-1 grid size-6 -translate-y-1/2 place-items-center rounded-md text-muted-foreground transition-[color,opacity] duration-150 hover:text-foreground disabled:opacity-45 sm:opacity-0 sm:group-hover:opacity-100 sm:group-focus-within:opacity-100"
+                    onClick={() => archive.mutate(conversation.id, {
+                      onSuccess: () => {
+                        if (isCurrent) router.replace("/app");
+                        onNavigate();
+                      },
+                    })}
+                  >
+                    <Archive className="size-3.5" strokeWidth={1.5} />
+                  </button>
                 </li>
               );
             })}
           </ul>
         </div>
       ))}
+      {archive.error && (
+        <p role="alert" className="px-2 pt-1 text-[11px] text-error">{errorText(archive.error)}</p>
+      )}
       {items.length > CONVERSATION_PREVIEW && (
         <button
           className="mt-1 h-7 px-2 text-left text-[11px] text-muted-foreground transition-colors duration-150 hover:text-foreground"
@@ -160,22 +181,15 @@ function MonitorList({ onNavigate }: { onNavigate: () => void }) {
 
 function SectionLabel({
   children,
-  count,
   action,
 }: {
   children: ReactNode;
-  count?: number;
   action?: ReactNode;
 }) {
   return (
     <div className="mt-6 flex items-baseline justify-between gap-2 px-2 pb-1 first:mt-0">
       <span className="text-[11px] leading-4 font-medium text-foreground/70">{children}</span>
-      <span className="flex items-center gap-2">
-        {typeof count === "number" && (
-          <span className="num text-[11px] text-muted-foreground">{count}</span>
-        )}
-        {action}
-      </span>
+      {action}
     </div>
   );
 }
@@ -188,7 +202,6 @@ export function WorkspaceShell({ children }: { children: ReactNode }) {
   const [open, setOpen] = useState(false);
   const [logoutError, setLogoutError] = useState<Error | null>(null);
   const { errorText } = useFormat();
-  const monitors = useMonitors();
 
   const links = [
     { href: "/app/events", label: t("common.events"), icon: Activity },
@@ -250,9 +263,11 @@ export function WorkspaceShell({ children }: { children: ReactNode }) {
         ? t("common.notifications")
         : pathname.startsWith("/app/members")
           ? t("common.members")
-          : pathname.startsWith("/app/archived")
-            ? t("common.archived")
-            : t("common.monitors");
+          : pathname.startsWith("/app/archived-conversations")
+            ? t("chat.archive.title")
+            : pathname.startsWith("/app/archived")
+              ? t("common.archived")
+              : t("common.monitors");
 
   return (
     <div className="flex h-dvh overflow-hidden bg-background">
@@ -315,7 +330,6 @@ export function WorkspaceShell({ children }: { children: ReactNode }) {
 
         <div className="min-h-0 flex-1 overflow-y-auto border-t px-2 pt-3 pb-4">
           <SectionLabel
-            count={monitors.data?.total}
             action={
               <Link
                 href="/app/archived"
@@ -328,9 +342,20 @@ export function WorkspaceShell({ children }: { children: ReactNode }) {
             {t("common.monitors")}
           </SectionLabel>
           <MonitorList onNavigate={() => setOpen(false)} />
-          <SectionLabel>{t("common.conversations")}</SectionLabel>
+          <SectionLabel
+            action={
+              <Link
+                href="/app/archived-conversations"
+                className="text-[11px] text-muted-foreground underline-offset-2 hover:text-foreground hover:underline"
+              >
+                {t("common.archived")}
+              </Link>
+            }
+          >
+            {t("common.conversations")}
+          </SectionLabel>
           <Suspense fallback={null}>
-            <ConversationList />
+            <ConversationList onNavigate={() => setOpen(false)} />
           </Suspense>
         </div>
 

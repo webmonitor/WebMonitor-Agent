@@ -32,8 +32,9 @@ def _no_store(response: Response) -> None:
 
 @router.get("/conversations", response_model=Page[ConversationView])
 async def list_conversations(session: DatabaseSession, user: AuthenticatedUser,
-                             limit: int = Query(50, ge=1, le=100), offset: int = Query(0, ge=0)):
-    return await conversations.list_conversations(session, user, limit, offset)
+                             limit: int = Query(50, ge=1, le=100), offset: int = Query(0, ge=0),
+                             archived: bool = False):
+    return await conversations.list_conversations(session, user, limit, offset, archived=archived)
 
 
 @router.post("/conversations", response_model=ConversationView, status_code=201)
@@ -41,6 +42,24 @@ async def create_conversation(payload: ConversationCreate, session: DatabaseSess
                               user: AuthenticatedUser):
     result = await conversations.create_conversation(session, user, payload.title,
                                                      message=payload.message)
+    await session.commit()
+    return result
+
+
+@router.post("/conversations/{conversation_id}/archive", response_model=ConversationView)
+async def archive_conversation(conversation_id: UUID, session: DatabaseSession,
+                               user: AuthenticatedUser):
+    conversation = await conversations.archive_conversation(session, user, conversation_id)
+    result = conversations.conversation_view(conversation)
+    await session.commit()
+    return result
+
+
+@router.post("/conversations/{conversation_id}/restore", response_model=ConversationView)
+async def restore_conversation(conversation_id: UUID, session: DatabaseSession,
+                               user: AuthenticatedUser):
+    conversation = await conversations.restore_conversation(session, user, conversation_id)
+    result = conversations.conversation_view(conversation)
     await session.commit()
     return result
 
