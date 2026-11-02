@@ -283,7 +283,7 @@ docker compose up -d --wait --no-deps api web
 
 `:latest` follows stable releases; a pinned version keeps an install repeatable. Deployment files come from `main`, so keep the copies you actually started with.
 
-Record the current image version and back up data you need to retain before updating. The commands above update only the application services while leaving the running database and evidence services in place.
+Record the current image version before updating. The commands above update only the application services while leaving the running database and evidence services in place.
 
 ### Roll back
 
