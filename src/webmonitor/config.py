@@ -53,12 +53,13 @@ class Settings(BaseSettings):
     target_policy: str = "public"
     target_allowed_origins: str = ""
 
-    agent_max_turns: int = 24
+    agent_max_turns: int = 40
     agent_model_timeout_seconds: int = 120
     agent_model_retries: int = 2
     agent_max_attempts: int = 2
     agent_max_tokens: int = 8192
-    agent_timeout_seconds: int = 300
+    agent_timeout_seconds: int = 600
+    agent_runs_per_hour: int = 30
     agent_history_messages: int = 30
     agent_concurrency: int = 2
     http_concurrency: int = 8
@@ -100,7 +101,7 @@ class Settings(BaseSettings):
                      "browser_concurrency", "max_attempts", "max_active_monitors",
                      "login_attempts", "login_window_minutes", "agent_max_turns",
                      "agent_max_tokens", "agent_timeout_seconds", "agent_history_messages",
-                     "agent_max_attempts", "message_max_chars"):
+                     "agent_max_attempts", "message_max_chars", "agent_runs_per_hour"):
             if getattr(self, name) < 1:
                 raise ValueError(f"{name.upper()} must be at least 1")
         return self

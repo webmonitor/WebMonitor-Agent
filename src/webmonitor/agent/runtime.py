@@ -20,6 +20,9 @@ class RuntimeContext:
     draft_revision: int | None = None
     draft_spec: DraftSpec | None = None
     monitor_id: UUID | None = None
+    # Monotonic seconds from `loop.time()` when this attempt's run budget expires.
+    # None means no run budget, which only happens outside `execute_job`.
+    deadline: float | None = None
 
     def update_draft(self, draft: Draft) -> None:
         self.draft_id = draft.id

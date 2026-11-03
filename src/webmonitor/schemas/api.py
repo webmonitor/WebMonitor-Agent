@@ -115,6 +115,8 @@ class JobStep(BaseModel):
     at: str
     error_code: str | None = None
     detail: str | None = None
+    # A started step has no duration yet; a finished one reports its own elapsed time.
+    duration_ms: int | None = None
 
 
 class JobAttempt(BaseModel):

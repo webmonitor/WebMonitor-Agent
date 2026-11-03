@@ -17,7 +17,7 @@ from agents import (
     Runner,
     set_tracing_disabled,
 )
-from agents.exceptions import ModelBehaviorError
+from agents.exceptions import MaxTurnsExceeded, ModelBehaviorError
 from openai import APIConnectionError, APIStatusError, AsyncOpenAI
 from sqlalchemy import select
 
@@ -173,7 +173,8 @@ async def _retry(job_id: UUID, worker_id: str, *, error: str) -> bool:
 
 
 async def _finish(job_id: UUID, worker_id: str, *, error: str | None = None,
-                  reason: str | None = None, cancelled: bool = False) -> None:
+                  reason: str | None = None, cancelled: bool = False,
+                  result: dict | None = None) -> None:
     async with get_session_factory()() as session:
         try:
             # A cancellation only blocks further progress; the owner still writes
@@ -185,14 +186,12 @@ async def _finish(job_id: UUID, worker_id: str, *, error: str | None = None,
         if cancelled:
             await jobs.finish(session, job, "cancelled", error_code="run_cancelled")
         elif error:
-            message = ("Saved drafts remain available; preview again before creating."
-                       if error == "confirmation_required"
-                       else "The model service could not complete this request.")
+            message = RUN_ERROR_MESSAGES.get(error, "The request could not be completed.")
             if reason:
                 message += f" ({reason})"
             await jobs.finish(session, job, "failed", error_code=error, error_message=message)
         else:
-            await jobs.finish(session, job, "succeeded")
+            await jobs.finish(session, job, "succeeded", result=result)
         await session.commit()
 
 
@@ -283,14 +282,33 @@ async def _context(job_id: UUID, worker_id: str) -> RuntimeContext:
         return runtime
 
 
-def _reason(exc: Exception) -> str:
-    if isinstance(exc, APIStatusError):
-        return f"upstream_http_{exc.status_code}"
-    if isinstance(exc, DomainError):
-        return exc.code
+RUN_ERROR_MESSAGES = {
+    "confirmation_required": "Saved drafts remain available; preview again before creating.",
+    "run_timeout": "The request exceeded its time limit. Saved drafts are unchanged.",
+    "max_turns_exceeded": "The request needed too many steps. Ask for a smaller change.",
+    "model_output_invalid": "The model returned an unusable tool call. Try again.",
+    "model_unavailable": "The model service could not complete this request.",
+    "run_failed": "The request could not be completed.",
+}
+
+
+def _failure(exc: Exception) -> tuple[str, str | None]:
+    """One stable code per failure class; the run's message is chosen from the code."""
+    # A run-budget expiry raises built-in TimeoutError, which APIConnectionError's
+    # branch would otherwise claim if it were checked first.
+    if isinstance(exc, TimeoutError):
+        return "run_timeout", None
+    if isinstance(exc, MaxTurnsExceeded):
+        return "max_turns_exceeded", None
     if isinstance(exc, ModelBehaviorError):
-        return str(exc)[:200]
-    return type(exc).__name__
+        return "model_output_invalid", str(exc)[:200] or None
+    if isinstance(exc, DomainError):
+        return exc.code, None
+    if isinstance(exc, APIStatusError):
+        return "model_unavailable", f"upstream_http_{exc.status_code}"
+    if isinstance(exc, APIConnectionError):
+        return "model_unavailable", "connection"
+    return "run_failed", type(exc).__name__
 
 
 STOP_STREAM_SECONDS = 5.0
@@ -335,6 +353,8 @@ async def execute_job(job_id: UUID, worker_id: str) -> None:
     try:
         set_tracing_disabled(True)
         runtime = await _context(job_id, worker_id)
+        # A retried attempt builds a fresh context, so the budget always restarts here.
+        runtime.deadline = asyncio.get_running_loop().time() + settings.agent_timeout_seconds
         history = await _history(runtime.conversation_id, settings.agent_history_messages)
         if not history:
             raise DomainError("conversation_empty", 409)
@@ -375,7 +395,13 @@ async def execute_job(job_id: UUID, worker_id: str) -> None:
                 await asyncio.gather(flusher, return_exceptions=True)
                 flusher = None
             await flush()
-            await _finish(job_id, worker_id)
+            usage = stream.context_wrapper.usage
+            await _finish(job_id, worker_id, result={
+                "model": settings.openai_model,
+                "usage": {"requests": usage.requests, "input_tokens": usage.input_tokens,
+                          "output_tokens": usage.output_tokens,
+                          "total_tokens": usage.total_tokens},
+            })
     except asyncio.CancelledError:
         await _stop_stream(stream)
         try:
@@ -401,14 +427,14 @@ async def execute_job(job_id: UUID, worker_id: str) -> None:
                 pass
             return
         logger.exception("Agent run failed: job=%s error=%s", job_id, type(exc).__name__)
-        code = exc.code if isinstance(exc, DomainError) else "model_unavailable"
+        code, reason = _failure(exc)
         try:
             # A dropped model connection can be repeated: restart the turn from
             # the stored conversation while no assistant message was written.
             if (_should_retry(exc, messages_written=messages_written)
                     and await _retry(job_id, worker_id, error=code)):
                 return
-            await _finish(job_id, worker_id, error=code, reason=_reason(exc))
+            await _finish(job_id, worker_id, error=code, reason=reason)
         except DomainError:
             pass
     finally:

@@ -1,6 +1,7 @@
 """SDK tools dispatch only deterministic domain and collection services."""
 import asyncio
 import json
+from datetime import timedelta
 from uuid import UUID
 
 from agents import function_tool
@@ -16,6 +17,20 @@ from webmonitor.errors import DomainError
 from webmonitor.models import Draft, Job, NotificationGroup, utc_now
 from webmonitor.schemas.monitors import ApiRequest, DraftSpec
 from webmonitor.services import conversations, drafts, jobs
+
+WAIT_SECONDS = 70.0
+WAIT_MARGIN_SECONDS = 5.0
+ANALYSIS_REUSE_SECONDS = 900
+
+
+def _wait_timeout(deadline: float | None) -> float:
+    """Clamp a child-job wait inside the run budget so a long wait cannot eat it."""
+    if deadline is None:
+        return WAIT_SECONDS
+    remaining = deadline - asyncio.get_running_loop().time()
+    if remaining <= WAIT_MARGIN_SECONDS:
+        raise DomainError("run_budget_exhausted", 409)
+    return min(WAIT_SECONDS, remaining - WAIT_MARGIN_SECONDS)
 
 
 def _validation_details(errors) -> list[dict]:
@@ -66,17 +81,23 @@ async def _check(session, ctx, *, lock=False):
 
 
 async def _step(ctx, *, name: str, status: str, error_code: str | None = None,
-                detail: str | None = None) -> None:
+                detail: str | None = None, duration_ms: int | None = None) -> None:
     async with get_session_factory()() as session:
         job = await _check(session, ctx, lock=True)
         job.steps = list(job.steps or []) + [{"name": name, "status": status,
                                               "at": utc_now().isoformat(),
                                               "error_code": error_code,
-                                              "detail": detail}]
+                                              "detail": detail,
+                                              "duration_ms": duration_ms}]
         await session.commit()
 
 
 async def _observed(ctx, operation):
+    started = asyncio.get_running_loop().time()
+
+    def elapsed() -> int:
+        return round((asyncio.get_running_loop().time() - started) * 1000)
+
     await _step(ctx, name=ctx.tool_name, status="started")
     try:
         result = await operation()
@@ -86,9 +107,10 @@ async def _observed(ctx, operation):
         payload = json.loads(safe_tool_error(ctx, exc))["error"]
         await _step(ctx, name=ctx.tool_name, status="failed",
                     error_code=payload["code"],
-                    detail=json.dumps(payload.get("details") or [], ensure_ascii=False)[:500])
+                    detail=json.dumps(payload.get("details") or [], ensure_ascii=False)[:500],
+                    duration_ms=elapsed())
         raise
-    await _step(ctx, name=ctx.tool_name, status="succeeded")
+    await _step(ctx, name=ctx.tool_name, status="succeeded", duration_ms=elapsed())
     return result
 
 
@@ -123,22 +145,33 @@ async def analyze_target(ctx: ToolContext[RuntimeContext], url: str,
                            and item.status == "succeeded" for item in prior):
                     raise DomainError("http_analysis_required", 409)
             else:
-                done = next((item for item in prior if item.status == "succeeded"
-                             and item.spec and item.spec.get("collection_mode") == "http"), None)
+                done = _reusable_analysis(prior, utc_now())
                 if done is not None:
                     return _analysis(done)
+            # Only a real collection needs the budget, and it must be refused
+            # before enqueuing: a job nobody waits for would still be collected.
+            timeout = _wait_timeout(ctx.context.deadline)
             created = await jobs.enqueue(session, user_id=job.user_id, kind="analyze", url=url,
                 spec={"collection_mode": collection_mode},
                 conversation_id=job.conversation_id)
             await session.commit()
-        finished = await jobs.wait(created.id, timeout=70)
+        finished = await jobs.wait(created.id, timeout=timeout, cancel_on_timeout=True)
         return _analysis(finished)
     return await _observed(ctx, operation)
+
+
+def _reusable_analysis(rows, now):
+    """Reuse an HTTP analysis only while the page it describes is still fresh."""
+    cutoff = now - timedelta(seconds=ANALYSIS_REUSE_SECONDS)
+    return next((item for item in rows if item.status == "succeeded"
+                 and item.spec and item.spec.get("collection_mode") == "http"
+                 and item.created_at >= cutoff), None)
 
 
 def _analysis(job: Job) -> dict:
     result = job.result or {}
     return {"job_id": str(job.id), "final_url": result.get("final_url"),
+            "analyzed_at": job.created_at.isoformat() if job.created_at else None,
             "analysis": result.get("analysis") or {}, "coverage": result.get("coverage") or {},
             "warnings": result.get("warnings") or []}
 
@@ -157,6 +190,7 @@ async def probe_target(ctx: ToolContext[RuntimeContext], url: str) -> dict:
 async def capture_network(ctx: ToolContext[RuntimeContext], url: str) -> dict:
     """Render the page once and return xhr/fetch JSON candidates with bounded request/response samples."""
     async def operation():
+        timeout = _wait_timeout(ctx.context.deadline)
         async with get_session_factory()() as session:
             job = await _check(session, ctx, lock=True)
             # A capture is never reused: the page and its API responses can change.
@@ -164,7 +198,7 @@ async def capture_network(ctx: ToolContext[RuntimeContext], url: str) -> dict:
                 spec={"collection_mode": "browser", "op": "network"},
                 conversation_id=job.conversation_id)
             await session.commit()
-        finished = await jobs.wait(created.id, timeout=70)
+        finished = await jobs.wait(created.id, timeout=timeout, cancel_on_timeout=True)
         if finished.status != "succeeded":
             raise DomainError(finished.error_code or "analysis_failed", 503)
         return _analysis(finished)
@@ -224,6 +258,8 @@ async def preview_monitor(ctx: ToolContext[RuntimeContext], draft_id: str,
                           revision: int) -> dict:
     """Run real extraction, evidence storage, rule simulation and recipient rendering. Required before requesting creation approval."""
     async def operation():
+        # A preview starts a real collection job; refuse before it exists.
+        timeout = _wait_timeout(ctx.context.deadline)
         async with get_session_factory()() as session:
             await _check(session, ctx, lock=True)
             draft = await drafts.require_draft(session, ctx.context.user, UUID(draft_id), lock=True)
@@ -231,7 +267,7 @@ async def preview_monitor(ctx: ToolContext[RuntimeContext], draft_id: str,
                 raise DomainError("stale_revision", 409)
             preview_job = await drafts.start_preview(session, ctx.context.user, draft.id)
             await session.commit()
-        await jobs.wait(preview_job.id, timeout=70)
+        await jobs.wait(preview_job.id, timeout=timeout, cancel_on_timeout=True)
         async with get_session_factory()() as session:
             await _check(session, ctx, lock=True)
             draft = await session.scalar(select(Draft).where(Draft.id == UUID(draft_id))

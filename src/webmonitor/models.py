@@ -134,6 +134,7 @@ class Job(UUIDPrimaryKey, Created, Base):
               postgresql_where=text("kind = 'agent' AND status IN ('queued', 'running')")),
         Index("ix_jobs_claimable", "kind", "status", "available_at"),
         Index("ix_jobs_conversation", "conversation_id", "created_at"),
+        Index("ix_jobs_user_kind_created", "user_id", "kind", "created_at"),
     )
     user_id: Mapped[UUID] = mapped_column(ForeignKey("users.id"))
     kind: Mapped[str] = mapped_column(String(16))

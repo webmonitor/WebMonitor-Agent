@@ -1,4 +1,5 @@
 """Conversation reads and the two commands: post a message, approve a draft."""
+from datetime import timedelta
 from uuid import UUID
 
 from sqlalchemy import func, select
@@ -138,6 +139,15 @@ async def post_message(session: AsyncSession, user: CurrentUser, conversation_id
         Job.kind == "agent", Job.status.in_(ACTIVE)))
     if active is not None:
         raise DomainError("run_in_progress", 409, details={"job_id": str(active.id)})
+    # Caps cost per rolling hour across all of a user's conversations;
+    # uq_jobs_active_agent stays the hard per-conversation concurrency guard.
+    count, oldest = (await session.execute(select(func.count(), func.min(Job.created_at)).where(
+        Job.user_id == user.user_id, Job.kind == "agent",
+        Job.created_at >= utc_now() - timedelta(hours=1)))).one()
+    if (count or 0) >= settings.agent_runs_per_hour:
+        retry_after = max(1, int((oldest + timedelta(hours=1) - utc_now()).total_seconds()))
+        raise DomainError("rate_limited", 429, details={
+            "retry_after": retry_after, "limit": settings.agent_runs_per_hour})
     if not conversation.title:
         # The first message names the conversation until the agent generates a
         # title; the UI truncates for display.

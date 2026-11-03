@@ -40,8 +40,15 @@ async def enqueue(session: AsyncSession, *, user_id: UUID, kind: str, url: str |
     return job
 
 
-async def wait(job_id: UUID, *, timeout: float = 70.0) -> Job:
-    """Poll a committed job in its own session; the caller's transaction stays open."""
+async def wait(job_id: UUID, *, timeout: float = 70.0,
+               cancel_on_timeout: bool = False) -> Job:
+    """Poll a committed job in its own session; the caller's transaction stays open.
+
+    `cancel_on_timeout` belongs to a caller that started the job for its own turn:
+    leaving it queued would burn a worker slot after nobody reads the result.
+    Queued work becomes `cancelled` immediately; running work stops at its next
+    lease check. Only observe a job owned by someone else, never cancel it here.
+    """
     deadline = asyncio.get_running_loop().time() + timeout
     while True:
         async with get_session_factory()() as session:
@@ -51,6 +58,13 @@ async def wait(job_id: UUID, *, timeout: float = 70.0) -> Job:
                     return job
                 raise DomainError(job.error_code or "job_failed", 409)
         if asyncio.get_running_loop().time() >= deadline:
+            if cancel_on_timeout:
+                async with get_session_factory()() as session:
+                    job = await session.scalar(select(Job).where(Job.id == job_id)
+                        .with_for_update().execution_options(populate_existing=True))
+                    if job is not None:
+                        await cancel(session, job)
+                    await session.commit()
             raise DomainError("job_timeout", 504)
         await asyncio.sleep(0.25)
 
