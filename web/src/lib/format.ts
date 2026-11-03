@@ -72,6 +72,12 @@ const ERROR_KEYS: Partial<Record<string, MessageKey>> = {
   storage_unavailable: "format.error.storage_unavailable",
   template_contract_failed: "format.error.template_contract_failed",
   model_unavailable: "format.error.model_unavailable",
+  model_output_invalid: "format.error.model_output_invalid",
+  run_timeout: "format.error.run_timeout",
+  max_turns_exceeded: "format.error.max_turns_exceeded",
+  run_budget_exhausted: "format.error.run_budget_exhausted",
+  run_failed: "format.error.run_failed",
+  job_timeout: "format.error.job_timeout",
   lease_expired: "format.error.lease_expired",
   preview_missing: "format.error.preview_missing",
   preview_expired: "format.error.preview_expired",
@@ -296,6 +302,24 @@ export function useFormat() {
       return target ? `${label} (${eventLabel(target)})` : label;
     }
 
+    /** A tool step's own elapsed time: "0.4s", "12s", "1m 12s". */
+    function formatDuration(ms?: number | null): string {
+      if (ms === null || ms === undefined || !Number.isFinite(ms) || ms < 0) return "—";
+      const seconds = ms / 1000;
+      if (seconds < 10) return `${seconds.toFixed(1)}s`;
+      if (seconds < 60) return `${Math.round(seconds)}s`;
+      const minutes = Math.floor(seconds / 60);
+      return `${minutes}m ${Math.round(seconds - minutes * 60)}s`;
+    }
+
+    /** Token totals stay readable in a quiet meta line: 812, 6.4k, 128k. */
+    function formatTokens(count?: number | null): string {
+      if (!count || !Number.isFinite(count)) return "—";
+      if (count < 1000) return numbers.format(count);
+      if (count < 100_000) return `${(count / 1000).toFixed(1)}k`;
+      return `${Math.round(count / 1000)}k`;
+    }
+
     function formatInterval(seconds?: number | null): string {
       if (!seconds) return "—";
       if (seconds % 86400 === 0) return t("format.interval", { duration: locale === "zh-CN" ? `${seconds / 86400} 天` : `${seconds / 86400} days` });
@@ -402,6 +426,8 @@ export function useFormat() {
       stepLabel,
       errorText,
       warningText,
+      formatDuration,
+      formatTokens,
       formatInterval,
       formatTimezone,
       coverageLabel,

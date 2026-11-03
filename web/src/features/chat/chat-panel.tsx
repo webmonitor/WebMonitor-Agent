@@ -19,6 +19,7 @@ import { ApiError } from "@/lib/api/client";
 import {
   useCancelRun,
   useConversation,
+  useJobDetail,
   useSendMessage,
   useStartConversation,
   type DraftView,
@@ -56,7 +57,7 @@ function mergeSteps(steps: JobView["steps"]) {
 }
 
 function StepList({ steps }: { steps: JobView["steps"] }) {
-  const { errorText, stepLabel } = useFormat();
+  const { errorText, stepLabel, formatDuration } = useFormat();
   return (
     <ol className="mt-2 space-y-1.5">
       {steps.map((step, index) => (
@@ -88,9 +89,33 @@ function StepList({ steps }: { steps: JobView["steps"] }) {
               </span>
             )}
           </span>
+          {typeof step.duration_ms === "number" && (
+            <span className="num mt-[0.05rem] shrink-0 text-[11px] text-muted-foreground/70">
+              {formatDuration(step.duration_ms)}
+            </span>
+          )}
         </li>
       ))}
     </ol>
+  );
+}
+
+/** The run's stored usage; read only when the reader opens the trail. */
+function RunCost({ jobId }: { jobId: string }) {
+  const { t } = useI18n();
+  const { formatTokens } = useFormat();
+  const detail = useJobDetail(jobId);
+  const result = detail.data?.result;
+  const model = typeof result?.model === "string" ? result.model : null;
+  const usage = result?.usage;
+  const total = usage && typeof usage === "object" && "total_tokens" in usage
+    && typeof usage.total_tokens === "number" ? usage.total_tokens : null;
+  if (total === null || total <= 0) return null;
+  const tokens = formatTokens(total);
+  return (
+    <p className="num mt-2 text-[11px] text-muted-foreground/70">
+      {model ? t("chat.cost.usage", { model, tokens }) : t("chat.cost.tokens", { tokens })}
+    </p>
   );
 }
 
@@ -101,6 +126,7 @@ function StepList({ steps }: { steps: JobView["steps"] }) {
 function WorkLog({ job, active = false }: { job: JobView; active?: boolean }) {
   const { t } = useI18n();
   const { stepLabel } = useFormat();
+  const [open, setOpen] = useState(false);
   const steps = mergeSteps(job.steps);
   if (steps.length === 0) return null;
   const done = steps.filter((step) => step.status === "succeeded").length;
@@ -123,7 +149,10 @@ function WorkLog({ job, active = false }: { job: JobView; active?: boolean }) {
   }
 
   return (
-    <details className="group text-[12.5px]">
+    <details
+      className="group text-[12.5px]"
+      onToggle={(event) => setOpen(event.currentTarget.open)}
+    >
       <summary className="inline-flex cursor-pointer list-none items-center gap-1 text-muted-foreground transition-colors duration-150 select-none hover:text-foreground [&::-webkit-details-marker]:hidden">
         <ChevronRight className="size-3.5 transition-transform duration-150 group-open:rotate-90" strokeWidth={1.5} />
         {failed > 0
@@ -131,6 +160,7 @@ function WorkLog({ job, active = false }: { job: JobView; active?: boolean }) {
           : t("chat.worklog.view", { total: steps.length })}
       </summary>
       <StepList steps={steps} />
+      {open && <RunCost jobId={job.id} />}
     </details>
   );
 }

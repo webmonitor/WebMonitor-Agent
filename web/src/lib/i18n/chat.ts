@@ -4,6 +4,8 @@ export const en = {
   "chat.examples.stock": "Check the stock count daily and let me know when it changes",
   "chat.worklog.view": "{total} steps",
   "chat.worklog.incomplete": "{failed} of {total} steps didn't finish",
+  "chat.cost.usage": "{model} · {tokens} tokens",
+  "chat.cost.tokens": "{tokens} tokens",
   "chat.select.title": "Choose a conversation first",
   "chat.select.body":
     "Pick an existing conversation on the left, or start a new one with New conversation at the top.",
@@ -87,6 +89,8 @@ export const zh: Record<keyof typeof en, string> = {
   "chat.examples.stock": "每天检查一次库存数量，有变化就告诉我",
   "chat.worklog.view": "{total} 步操作",
   "chat.worklog.incomplete": "{total} 步，{failed} 步未完成",
+  "chat.cost.usage": "{model} · {tokens} token",
+  "chat.cost.tokens": "{tokens} token",
   "chat.select.title": "先选一个对话",
   "chat.select.body": "在左侧选择一个已有对话，或点顶部的「新对话」开始新的一个。",
   "chat.newConversation": "新对话",
