@@ -190,7 +190,7 @@ export function EventCard({
   acknowledging?: boolean;
 }) {
   const { t } = useI18n();
-  const { eventLabel, formatTime } = useFormat();
+  const { eventLabel, errorText, formatTime } = useFormat();
   const unread = !event.acknowledged_at;
   return (
     <li className="py-3">
@@ -231,6 +231,12 @@ export function EventCard({
       <div className="mt-2">
         <ChangeRows change={event.change} type={event.type} />
       </div>
+      {event.notifications_skipped && (
+        <p role="status" className="mt-2 text-[11px] leading-5 text-warning">
+          {t("activity.eventCard.notificationsSkipped")}{" "}
+          {errorText(event.notifications_skipped)}
+        </p>
+      )}
       <div className="mt-1.5 flex flex-wrap gap-x-4 gap-y-1">
         {event.snapshot_id && (
           <Link

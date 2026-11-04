@@ -40,6 +40,9 @@ function newClientMessageId(): string {
   return random ?? `${Date.now()}-${Math.random().toString(16).slice(2)}`;
 }
 
+const OVERLAP = 20;
+const MAX_PAGES = 20;
+
 function usePagedQuery<T extends { id: string }>(key: readonly unknown[], path: string,
                                                 interval: number, limit = 50) {
   const query = useInfiniteQuery({
@@ -47,11 +50,22 @@ function usePagedQuery<T extends { id: string }>(key: readonly unknown[], path: 
     initialPageParam: 0,
     queryFn: ({ pageParam, signal }) => api<Page<T>>(
       `${path}${path.includes("?") ? "&" : "?"}limit=${limit}&offset=${pageParam}`, { signal }),
-    getNextPageParam: (last, pages) => {
+    // Rows shift between requests, so each page re-reads a few rows behind the
+    // last offset; ids decide both "is there more" and the merged list.
+    getNextPageParam: (last, pages, lastParam) => {
+      if (last.items.length === 0 || pages.length >= MAX_PAGES) return undefined;
       const loaded = pages.reduce((count, page) => count + page.items.length, 0);
-      return loaded < last.total && last.items.length > 0 ? loaded : undefined;
+      const unique = new Set(pages.flatMap((page) => page.items.map((row) => row.id))).size;
+      if (unique >= last.total) return undefined;
+      // Never overlap a whole page away: small limits must still move forward.
+      const overlap = Math.min(OVERLAP, Math.floor(limit / 2));
+      const next = Math.max(0, loaded - overlap);
+      return next > lastParam ? next : undefined;
     },
-    refetchInterval: interval,
+    maxPages: MAX_PAGES,
+    // Polling every page keeps the overlap fresh but multiplies background work;
+    // once a list spans several pages, refresh only on user actions.
+    refetchInterval: (query) => (query.state.data?.pages.length ?? 0) > 1 ? false : interval,
   });
   const data = useMemo(() => query.data ? {
     items: [...new Map(query.data.pages.flatMap((page) => page.items).map((row) => [row.id, row])).values()],
@@ -95,11 +109,11 @@ export function useConversation(id: string | null) {
   });
 }
 
-export function useMonitors(archived = false) {
+export function useMonitors(archived = false, limit = 100) {
   return usePagedQuery<MonitorView>(
-    ["monitors", archived ? "archived" : "active"],
+    ["monitors", archived ? "archived" : "active", limit],
     archived ? "/monitors?archived=true" : "/monitors",
-    15000,
+    15000, limit,
   );
 }
 
@@ -124,13 +138,25 @@ export function useJobDetail(id: string | null) {
   });
 }
 
-export function useEvents(monitorId?: string, eventType?: string) {
+export function useEvents(monitorId?: string, eventType?: string, acknowledged?: boolean) {
   const query = new URLSearchParams();
   if (monitorId) query.set("monitor_id", monitorId);
   if (eventType) query.set("event_type", eventType);
+  if (acknowledged !== undefined) query.set("acknowledged", String(acknowledged));
   const suffix = query.toString();
-  return usePagedQuery<EventView>(["events", monitorId ?? "all", eventType ?? "all"],
+  return usePagedQuery<EventView>(
+    ["events", monitorId ?? "all", eventType ?? "all", acknowledged === undefined ? "any" : String(acknowledged)],
     `/events${suffix ? `?${suffix}` : ""}`, 15000);
+}
+
+/** The unread badge counts on the server so it matches the filtered list exactly. */
+export function useUnreadEventCount() {
+  return useQuery({
+    queryKey: ["events", "unread-count"],
+    queryFn: () => api<Page<EventView>>("/events?acknowledged=false&limit=1"),
+    select: (page) => page.total,
+    refetchInterval: 15000,
+  });
 }
 
 export function useSnapshots(monitorId: string) {
@@ -151,12 +177,28 @@ export function useSpecVersions(monitorId: string) {
     `/monitors/${monitorId}/specs`, 30000);
 }
 
-export function useGroups() {
-  return usePagedQuery<Group>(["groups"], "/notification-groups", 30000);
+export function useGroups(limit = 100) {
+  return usePagedQuery<Group>(["groups", limit], "/notification-groups", 30000, limit);
 }
 
-export function useDeliveries() {
-  return usePagedQuery<Delivery>(["deliveries"], "/email-deliveries", 15000);
+export function useDeliveries(status?: string, monitorId?: string) {
+  const query = new URLSearchParams();
+  if (status) query.set("status", status);
+  if (monitorId) query.set("monitor_id", monitorId);
+  const suffix = query.toString();
+  return usePagedQuery<Delivery>(
+    ["deliveries", status ?? "all", monitorId ?? "all"],
+    `/email-deliveries${suffix ? `?${suffix}` : ""}`, 15000);
+}
+
+/** A failed or cancelled delivery can be queued again; the server resets the attempt budget. */
+export function useRetryDelivery() {
+  const cache = useQueryClient();
+  return useMutation({
+    mutationFn: (id: string) =>
+      api<Delivery>(`/email-deliveries/${id}/retry`, { method: "POST" }),
+    onSuccess: () => void cache.invalidateQueries({ queryKey: ["deliveries"] }),
+  });
 }
 
 export function useStartConversation() {

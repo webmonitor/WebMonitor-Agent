@@ -263,6 +263,9 @@ export function ChatPanel({
 
   useEffect(() => {
     setPinned(true);
+    // Switching conversations never carries the previous draft or failure over.
+    setDraft("");
+    setError(null);
   }, [conversationId]);
 
   useEffect(() => {
@@ -282,12 +285,12 @@ export function ChatPanel({
         // The conversation is created together with its first message, so an
         // abandoned draft never leaves an empty conversation behind.
         const conversation = await start.mutateAsync(content);
-        setDraft("");
+        setDraft((current) => (current === content ? "" : current));
         router.replace(`/app?conversation=${conversation.id}`);
         return;
       }
       await send.mutateAsync(content);
-      setDraft("");
+      setDraft((current) => (current === content ? "" : current));
       // Your own message always brings the conversation back to the latest turn.
       setPinned(true);
     } catch (failure) {

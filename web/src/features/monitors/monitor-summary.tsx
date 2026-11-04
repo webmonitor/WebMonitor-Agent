@@ -3,6 +3,7 @@ import Link from "next/link";
 import { ArrowUpRight } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
 import { useMonitor } from "@/lib/api/hooks";
+import { fieldTypes } from "@/features/monitors/field-values";
 import { parseSpec } from "@/lib/api/preview";
 import { useFormat } from "@/lib/format";
 import { useI18n } from "@/lib/i18n";
@@ -22,6 +23,7 @@ export function MonitorSummary({ monitorId }: { monitorId: string }) {
   const spec = parseSpec(row.spec);
   const fields = spec?.fields ?? [];
   const labels = fieldLabels(fields);
+  const types = fieldTypes(fields);
   const values = row.baseline?.extracted_data ?? {};
 
   return (
@@ -54,7 +56,7 @@ export function MonitorSummary({ monitorId }: { monitorId: string }) {
                 <dd className="num min-w-0 truncate text-right text-[13px]">
                   {Array.isArray(value)
                     ? t("monitors.content.itemsCount", { count: value.length })
-                    : formatValue(value)}
+                    : formatValue(value, types[field.name])}
                 </dd>
               </div>
             );

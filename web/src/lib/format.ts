@@ -86,8 +86,49 @@ const ERROR_KEYS: Partial<Record<string, MessageKey>> = {
   preview_stale: "format.error.preview_stale",
   stale_revision: "format.error.stale_revision",
   run_in_progress: "format.error.run_in_progress",
+  draft_not_editable: "format.error.draft_not_editable",
   notification_recipients_empty: "format.error.notification_recipients_empty",
-  notification_group_unavailable: "format.error.notification_group_unavailable",
+  account_exists: "format.error.account_exists",
+  administrator_required: "format.error.administrator_required",
+  cannot_disable_self: "format.error.cannot_disable_self",
+  collection_limit: "format.error.collection_limit",
+  conversation_empty: "format.error.conversation_empty",
+  csrf_invalid: "format.error.csrf_invalid",
+  database_unavailable: "format.error.database_unavailable",
+  delivery_aborted: "format.error.delivery_aborted",
+  delivery_attempts_exhausted: "format.error.delivery_attempts_exhausted",
+  draft_empty: "format.error.draft_empty",
+  draft_missing: "format.error.draft_missing",
+  email_not_allowed: "format.error.email_not_allowed",
+  execution_superseded: "format.error.execution_superseded",
+  group_in_use: "format.error.group_in_use",
+  group_name_conflict: "format.error.group_name_conflict",
+  http_analysis_required: "format.error.http_analysis_required",
+  idempotency_conflict: "format.error.idempotency_conflict",
+  internal_error: "format.error.internal_error",
+  invalid_email: "format.error.invalid_email",
+  invalid_invitation_ttl: "format.error.invalid_invitation_ttl",
+  invalid_password: "format.error.invalid_password",
+  job_conflict: "format.error.job_conflict",
+  message_empty: "format.error.message_empty",
+  message_too_long: "format.error.message_too_long",
+  monitor_archived: "format.error.monitor_archived",
+  not_found: "format.error.not_found",
+  not_ready: "format.error.not_ready",
+  origin_invalid: "format.error.origin_invalid",
+  quota_exceeded: "format.error.quota_exceeded",
+  request_too_large: "format.error.request_too_large",
+  run_cancelled: "format.error.run_cancelled",
+  run_not_active: "format.error.run_not_active",
+  smtp_configuration_error: "format.error.smtp_configuration_error",
+  smtp_network_error: "format.error.smtp_network_error",
+  smtp_protocol_error: "format.error.smtp_protocol_error",
+  smtp_recipient_refused: "format.error.smtp_recipient_refused",
+  smtp_rejected: "format.error.smtp_rejected",
+  smtp_tls_failed: "format.error.smtp_tls_failed",
+  template_generation_failed: "format.error.template_generation_failed",
+  unsupported_content_encoding: "format.error.unsupported_content_encoding",
+  worker_unavailable: "format.error.worker_unavailable",
   forbidden: "format.error.forbidden",
   unauthenticated: "format.error.unauthenticated",
   rate_limited: "format.error.rate_limited",
@@ -144,6 +185,11 @@ export function useFormat() {
     const dateTime = new Intl.DateTimeFormat(intl, {
       month: "numeric", day: "numeric", hour: "2-digit", minute: "2-digit", hour12: false,
     });
+    const dateTimeYear = new Intl.DateTimeFormat(intl, {
+      year: "numeric", month: "numeric", day: "numeric", hour: "2-digit", minute: "2-digit", hour12: false,
+    });
+    const monthDay = new Intl.DateTimeFormat(intl, { month: "long", day: "numeric" });
+    const monthDayYear = new Intl.DateTimeFormat(intl, { year: "numeric", month: "long", day: "numeric" });
     const fullDateTime = new Intl.DateTimeFormat(intl, {
       year: "numeric", month: "long", day: "numeric", hour: "2-digit", minute: "2-digit", hour12: false,
     });
@@ -165,7 +211,8 @@ export function useFormat() {
       const yesterday = new Date(now);
       yesterday.setDate(now.getDate() - 1);
       if (sameDay(date, yesterday)) return `${t("format.yesterday")} ${time}`;
-      return dateTime.format(date);
+      // A different year is the one thing a month/day pair cannot convey.
+      return (date.getFullYear() === now.getFullYear() ? dateTime : dateTimeYear).format(date);
     }
 
     function formatClock(value?: string | null): string {
@@ -206,7 +253,7 @@ export function useFormat() {
       const yesterday = new Date(now);
       yesterday.setDate(now.getDate() - 1);
       if (sameDay(date, yesterday)) return t("format.yesterday");
-      return new Intl.DateTimeFormat(intl, { month: "long", day: "numeric" }).format(date);
+      return (date.getFullYear() === now.getFullYear() ? monthDay : monthDayYear).format(date);
     }
 
     function money(value: Record<string, unknown>): string | null {
@@ -217,18 +264,18 @@ export function useFormat() {
       return currency ? `${currency} ${amount}` : String(amount);
     }
 
-    function formatValue(value: unknown): string {
+    function formatValue(value: unknown, type?: string): string {
       if (value === null || value === undefined || value === "") return "—";
       if (typeof value === "boolean") return value ? t("format.yes") : t("format.no");
       if (typeof value === "number") return numbers.format(value);
       if (typeof value === "string") {
+        // Only a declared date field drops its time: the type is the contract.
+        if (type === "date") {
+          const date = toDate(value);
+          return date ? valueDate.format(date) : value;
+        }
         const date = /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}/.test(value) ? toDate(value) : null;
-        if (!date) return value;
-        // A stored date usually normalizes to local midnight; dropping the time
-        // keeps the ledger readable and always keeps the year that disambiguates it.
-        return date.getHours() === 0 && date.getMinutes() === 0
-          ? valueDate.format(date)
-          : fullDateTime.format(date);
+        return date ? fullDateTime.format(date) : value;
       }
       if (Array.isArray(value)) {
         if (value.length === 0) return t("format.empty");

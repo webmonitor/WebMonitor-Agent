@@ -14,6 +14,13 @@ import { useFormat } from "@/lib/format";
 import { useI18n } from "@/lib/i18n";
 import { ListPagination } from "@/components/list-pagination";
 
+function splitEmails(value: string): string[] {
+  return value
+    .split(/[\s,;]+/)
+    .map((email) => email.trim().toLowerCase())
+    .filter(Boolean);
+}
+
 export function GroupsPanel() {
   const { user } = useAuth();
   const { t } = useI18n();
@@ -25,6 +32,7 @@ export function GroupsPanel() {
   const [name, setName] = useState("");
   const [emails, setEmails] = useState("");
   const [error, setError] = useState<{ code: string | null } | null>(null);
+  const [pendingDelete, setPendingDelete] = useState<Group | null>(null);
 
   const admin = user?.role === "admin";
   const items = groups.data?.items ?? [];
@@ -38,11 +46,17 @@ export function GroupsPanel() {
 
   async function save() {
     setError(null);
-    const members = emails
-      .split(/[\s,;]+/)
-      .map((email) => email.trim().toLowerCase())
-      .filter(Boolean)
-      .map((email) => ({ email, active: true }));
+    // A disabled recipient stays disabled: editing the list must not re-enable anyone.
+    const previous = new Map(
+      (editing && editing !== "new" ? editing.members : []).map((member) => [
+        member.email,
+        member.active,
+      ]),
+    );
+    const members = splitEmails(emails).map((email) => ({
+      email,
+      active: previous.get(email) ?? true,
+    }));
     try {
       await write.mutateAsync({
         id: editing && editing !== "new" ? editing.id : undefined,
@@ -55,6 +69,16 @@ export function GroupsPanel() {
       setEditing(null);
     } catch (failure) {
       setError({ code: failure instanceof ApiError ? failure.code : null });
+    }
+  }
+
+  async function confirmDelete() {
+    if (!pendingDelete) return;
+    try {
+      await remove.mutateAsync(pendingDelete.id);
+      setPendingDelete(null);
+    } catch {
+      // The mutation error is rendered below; the dialog stays open to explain it.
     }
   }
 
@@ -114,23 +138,29 @@ export function GroupsPanel() {
                     size="sm"
                     className="h-7 px-2 text-xs text-muted-foreground"
                     disabled={remove.isPending || !group.enabled}
-                    onClick={() => remove.mutate(group.id)}
+                    onClick={() => setPendingDelete(group)}
                   >
-                    {t("activity.groups.disable")}
+                    {t("activity.groups.delete")}
                   </Button>
                 </div>
               )}
             </div>
-            {group.members.length === 0 ? (
+            {group.member_count === 0 ? (
               <p className="meta">{t("activity.groups.noMembers")}</p>
-            ) : (
+            ) : admin ? (
               <ul className="flex flex-wrap gap-x-3 gap-y-1">
                 {group.members.map((member) => (
                   <li key={member.email} className="num truncate text-[12px] text-muted-foreground">
                     {member.email}
+                    {!member.active && ` (${t("activity.groups.disabled")})`}
                   </li>
                 ))}
               </ul>
+            ) : (
+              // Members see how many people are reached, never who they are.
+              <p className="meta">
+                {t("activity.groups.activeCount", { count: group.member_count })}
+              </p>
             )}
           </li>
         ))}
@@ -182,6 +212,33 @@ export function GroupsPanel() {
                 {write.isPending ? t("activity.groups.form.saving") : t("activity.groups.form.save")}
               </Button>
             </div>
+          </div>
+        </DialogContent>
+      </Dialog>
+
+      <Dialog open={pendingDelete !== null} onOpenChange={(value) => !value && setPendingDelete(null)}>
+        <DialogContent className="max-w-md">
+          <DialogHeader>
+            <DialogTitle className="text-base">{t("activity.groups.deleteTitle")}</DialogTitle>
+          </DialogHeader>
+          <p className="meta leading-5">{t("activity.groups.deleteBody")}</p>
+          {remove.error && (
+            <p className="mt-3 text-xs text-error" role="alert">
+              {errorText(remove.error)}
+            </p>
+          )}
+          <div className="mt-4 flex justify-end gap-2 border-t pt-4">
+            <Button variant="ghost" size="sm" onClick={() => setPendingDelete(null)}>
+              {t("activity.groups.form.cancel")}
+            </Button>
+            <Button
+              size="sm"
+              variant="destructive"
+              disabled={remove.isPending}
+              onClick={() => void confirmDelete()}
+            >
+              {t("activity.groups.deleteConfirm")}
+            </Button>
           </div>
         </DialogContent>
       </Dialog>

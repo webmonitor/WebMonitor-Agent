@@ -1,9 +1,10 @@
 "use client";
-import { useMemo, useState, type ReactNode } from "react";
-import { ChevronDown } from "lucide-react";
+import { useMemo } from "react";
+import { useRouter, useSearchParams } from "next/navigation";
 import { PageBody, PageHeader } from "@/components/page-header";
 import { EmptyState } from "@/components/empty-state";
-import { useAckEvent, useEvents, useMonitors } from "@/lib/api/hooks";
+import { Select } from "@/components/ui/select";
+import { useAckEvent, useEvents, useMonitors, useUnreadEventCount } from "@/lib/api/hooks";
 import { useFormat } from "@/lib/format";
 import { useI18n } from "@/lib/i18n";
 import { EventCard } from "@/features/events/event-card";
@@ -15,55 +16,35 @@ const FILTERS: Filter[] = ["all", "unread"];
 
 const EVENT_TYPES = ["content_changed", "list_changed", "run_failed", "recovered"] as const;
 
-/**
- * A filter is one quiet control: hairline, 32px, the same chevron and focus ring
- * as every other control in the workspace.
- */
-function FilterSelect({
-  label,
-  value,
-  onChange,
-  className,
-  children,
-}: {
-  label: string;
-  value: string;
-  onChange: (value: string) => void;
-  className?: string;
-  children: ReactNode;
-}) {
-  return (
-    <span className={`relative inline-flex ${className ?? ""}`}>
-      <select
-        aria-label={label}
-        value={value}
-        onChange={(event) => onChange(event.target.value)}
-        className="h-8 w-full appearance-none truncate rounded-md border border-input bg-card pl-2.5 pr-7 text-xs text-foreground transition-colors duration-150 hover:bg-muted focus-visible:border-ring focus-visible:ring-2 focus-visible:ring-ring/25 focus-visible:outline-none"
-      >
-        {children}
-      </select>
-      <ChevronDown
-        aria-hidden
-        className="pointer-events-none absolute top-1/2 right-2 size-3.5 -translate-y-1/2 text-muted-foreground"
-        strokeWidth={1.5}
-      />
-    </span>
-  );
-}
-
 export function EventsPage() {
   const { t } = useI18n();
   const { dayLabel, eventLabel, errorText } = useFormat();
-  const [filter, setFilter] = useState<Filter>("all");
-  const [monitorId, setMonitorId] = useState("");
-  const [eventType, setEventType] = useState("");
-  const events = useEvents(monitorId || undefined, eventType || undefined);
+  const params = useSearchParams();
+  const router = useRouter();
+  const filter: Filter = params.get("unread") === "1" ? "unread" : "all";
+  const monitorId = params.get("monitor") ?? "";
+  const eventType = params.get("type") ?? "";
+  const events = useEvents(
+    monitorId || undefined,
+    eventType || undefined,
+    filter === "unread" ? false : undefined,
+  );
+  const unread = useUnreadEventCount();
   const monitors = useMonitors();
   const acknowledge = useAckEvent();
 
-  const items = events.data?.items ?? [];
-  const unreadCount = items.filter((event) => !event.acknowledged_at).length;
-  const visible = filter === "unread" ? items.filter((event) => !event.acknowledged_at) : items;
+  const visible = events.data?.items ?? [];
+  const total = events.data?.total ?? 0;
+  const unreadCount = unread.data ?? 0;
+
+  // The address is the filter state, so a shared or reloaded link shows the same list.
+  function setParam(name: string, value: string | null) {
+    const next = new URLSearchParams(params.toString());
+    if (value) next.set(name, value);
+    else next.delete(name);
+    const query = next.toString();
+    router.replace(query ? `/app/events?${query}` : "/app/events");
+  }
 
   const groups = useMemo(() => {
     const buckets: { day: string; events: typeof visible }[] = [];
@@ -84,27 +65,31 @@ export function EventsPage() {
           description={t("activity.events.description")}
           actions={
             <div className="flex flex-wrap items-center gap-2">
-              <FilterSelect
+              <Select
                 label={t("activity.events.filter.monitor")}
                 value={monitorId}
-                onChange={setMonitorId}
-                className="max-w-40"
-              >
-                <option value="">{t("activity.events.filter.allMonitors")}</option>
-                {(monitors.data?.items ?? []).map((monitor) => (
-                  <option key={monitor.id} value={monitor.id}>{monitor.name}</option>
-                ))}
-              </FilterSelect>
-              <FilterSelect
+                placeholder={t("activity.events.filter.allMonitors")}
+                onChange={(value) => setParam("monitor", value)}
+                className="w-40"
+                options={[
+                  { value: "", label: t("activity.events.filter.allMonitors") },
+                  ...(monitors.data?.items ?? []).map((monitor) => ({
+                    value: monitor.id,
+                    label: monitor.name,
+                  })),
+                ]}
+              />
+              <Select
                 label={t("activity.events.filter.type")}
                 value={eventType}
-                onChange={setEventType}
-              >
-                <option value="">{t("activity.events.filter.allTypes")}</option>
-                {EVENT_TYPES.map((value) => (
-                  <option key={value} value={value}>{eventLabel(value)}</option>
-                ))}
-              </FilterSelect>
+                placeholder={t("activity.events.filter.allTypes")}
+                onChange={(value) => setParam("type", value)}
+                className="w-36"
+                options={[
+                  { value: "", label: t("activity.events.filter.allTypes") },
+                  ...EVENT_TYPES.map((value) => ({ value, label: eventLabel(value) })),
+                ]}
+              />
               <span className="inline-flex items-center gap-0.5">
                 {FILTERS.map((value) => (
                   <button
@@ -116,7 +101,7 @@ export function EventsPage() {
                         ? "bg-secondary font-medium text-foreground"
                         : "text-muted-foreground hover:text-foreground"
                     }`}
-                    onClick={() => setFilter(value)}
+                    onClick={() => setParam("unread", value === "unread" ? "1" : null)}
                   >
                     {value === "unread"
                       ? unreadCount
@@ -138,7 +123,7 @@ export function EventsPage() {
           </p>
         )}
 
-        {!events.isPending && !events.error && visible.length === 0 && !events.hasNextPage && (
+        {!events.isPending && !events.error && total === 0 && (
           <EmptyState
             title={
               filter === "unread"

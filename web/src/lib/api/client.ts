@@ -22,23 +22,39 @@ export function clearSessionClient() {
   csrf = undefined;
   window.dispatchEvent(new Event("wm:session-ended"));
 }
+async function errorOf(response: Response): Promise<{ code: string; message: string; details: Record<string, unknown> }> {
+  const body = await response.json().catch(() => ({}));
+  return {
+    code: body.error?.code ?? "request_failed",
+    message: body.error?.message ?? "",
+    details: body.error?.details ?? {},
+  };
+}
 export async function api<T>(path: string, options: RequestInit = {}): Promise<T> {
   if (!path.startsWith("/") || path.startsWith("//")) throw new Error("API path must be relative");
   const headers = new Headers(options.headers);
   const method = (options.method ?? "GET").toUpperCase();
-  if (!["GET", "HEAD", "OPTIONS"].includes(method)) headers.set("X-CSRF-Token", await csrfToken());
+  const safe = ["GET", "HEAD", "OPTIONS"].includes(method);
   if (options.body && !(options.body instanceof FormData)) headers.set("Content-Type", "application/json");
-  let response: Response;
-  try { response = await fetch(`/api/v1${path}`, { ...options, method, headers, credentials: "same-origin", cache: "no-store" }); }
-  catch { throw new ApiError("network_unavailable", 0, ""); }
+  const send = async (): Promise<Response> => {
+    if (!safe) headers.set("X-CSRF-Token", await csrfToken());
+    try { return await fetch(`/api/v1${path}`, { ...options, method, headers, credentials: "same-origin", cache: "no-store" }); }
+    catch { throw new ApiError("network_unavailable", 0, ""); }
+  };
+  let response = await send();
+  // A stale security token is recoverable exactly once: drop it and retry the same request.
+  if (!response.ok && !safe && response.status === 403) {
+    const failure = await errorOf(response.clone());
+    if (failure.code === "csrf_invalid") { csrf = undefined; response = await send(); }
+  }
   if (!response.ok) {
-    const body = await response.json().catch(() => ({}));
+    const failure = await errorOf(response);
+    // Signing out is the session owner's decision: clear the client session and
+    // let the auth provider navigate once, instead of forcing a full reload here.
     if (response.status === 401 && !["/auth/login", "/auth/register", "/auth/me"].includes(path)) {
       clearSessionClient();
-      if (window.location.pathname.startsWith("/app")) window.location.assign(`/login?returnTo=${encodeURIComponent(window.location.pathname + window.location.search)}`);
     }
-    throw new ApiError(body.error?.code ?? "request_failed", response.status,
-      body.error?.message ?? "", body.error?.details ?? {});
+    throw new ApiError(failure.code, response.status, failure.message, failure.details);
   }
   if (response.status === 204) return undefined as T;
   return response.json() as Promise<T>;

@@ -73,6 +73,7 @@ export function MonitorEditor({
   const [saving, setSaving] = useState(false);
   const preparingRef = useRef(false);
   const attemptedRef = useRef(false);
+  const openRef = useRef(false);
   const lastSeedRef = useRef(seedToken);
   const prepareRef = useRef<() => void>(() => {});
   const preview = useStartPreview(session?.conversationId ?? "");
@@ -86,6 +87,9 @@ export function MonitorEditor({
     setError(null);
     try {
       const result = await derive.mutateAsync(monitorId);
+      // The dialog may have been closed while the draft was being derived; the
+      // next open derives its own draft instead of resurrecting this one.
+      if (!openRef.current) return;
       const seed = seedSpec ?? spec;
       setSession({
         conversationId: result.conversation_id,
@@ -114,14 +118,21 @@ export function MonitorEditor({
   }, [seedToken]);
 
   // Prepare one draft per open; a failure waits for the explicit retry button.
+  // Closing discards the session so the next open derives a fresh draft.
   useEffect(() => {
-    if (!open) {
-      attemptedRef.current = false;
+    openRef.current = open;
+    if (open) {
+      if (attemptedRef.current || session) return;
+      attemptedRef.current = true;
+      prepareRef.current();
       return;
     }
-    if (attemptedRef.current || session) return;
-    attemptedRef.current = true;
-    prepareRef.current();
+    attemptedRef.current = false;
+    setSession(null);
+    setStage("edit");
+    setJson("");
+    setBaseline("");
+    setError(null);
   }, [open, session]);
 
   const parsed = useMemo(() => {

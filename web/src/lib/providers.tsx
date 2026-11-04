@@ -24,19 +24,24 @@ function AuthProvider({children}: {children: React.ReactNode}) {
       window.location.assign("/login");
     }
   }, [query.data, cache]);
+  const refetch = query.refetch;
   React.useEffect(()=>{
-    const clear=()=>cache.clear();
+    // A 401 anywhere in the app ends the session: drop cached data and re-read
+    // the profile so the navigation below happens exactly once.
+    const clear=()=>{ cache.clear(); if (hadUser.current) void refetch(); };
     window.addEventListener("wm:session-ended",clear);
     return ()=>window.removeEventListener("wm:session-ended",clear);
-  },[cache]);
+  },[cache, refetch]);
   async function logout() {
     await api<void>("/auth/logout",{method:"POST"});
+    // An explicit sign-out navigates once; the listener must not re-read the profile.
+    hadUser.current = false;
     clearSessionClient(); cache.clear(); window.location.assign("/login");
   }
   return <AuthContext.Provider value={{user:query.data ?? undefined,isPending:query.isPending,error:query.error,refresh:query.refetch,logout}}>{children}</AuthContext.Provider>;
 }
 export function useAuth(){const context=React.useContext(AuthContext);if(!context)throw new Error("AuthProvider missing");return context;}
 export function Providers({children, initialLocale}: {children:React.ReactNode; initialLocale: Locale}) {
-  const [client]=React.useState(()=>new QueryClient({defaultOptions:{queries:{retry:1,refetchOnWindowFocus:false}}}));
+  const [client]=React.useState(()=>new QueryClient({defaultOptions:{queries:{retry:1,refetchOnWindowFocus:false,staleTime:10_000}}}));
   return <I18nProvider initialLocale={initialLocale}><QueryClientProvider client={client}><AuthProvider>{children}</AuthProvider></QueryClientProvider></I18nProvider>;
 }

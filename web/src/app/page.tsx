@@ -20,7 +20,8 @@ const featureItems = [
 
 /**
  * The hero shows the one artifact this product produces: a change record.
- * The watched value is whatever the page holds; only "before" and "after" are fixed.
+ * A watched list is compared by business key, so the mail carries the rows that
+ * appeared, not a second copy of the whole list.
  */
 function ChangeRecord() {
   const { t } = useI18n();
@@ -36,20 +37,25 @@ function ChangeRecord() {
         <p className="num text-[11px] text-muted-foreground">{t("public.sample.url")}</p>
       </div>
 
-      <div className="mt-5 grid grid-cols-[1fr_auto_1fr] items-end gap-3 border-t pt-4">
-        <div>
-          <p className="label-line">{t("public.sample.previous")}</p>
-          <p className="num mt-1 text-[1.125rem] text-muted-foreground line-through decoration-muted-foreground/40">
-            {t("public.sample.previousValue")}
-          </p>
-        </div>
-        <ArrowRight className="mb-1.5 size-4 text-muted-foreground/60" strokeWidth={1.5} />
-        <div className="text-right">
-          <p className="label-line">{t("public.sample.current")}</p>
-          <p className="num mt-1 text-[1.375rem] leading-tight font-medium text-primary">
-            {t("public.sample.currentValue")}
-          </p>
-        </div>
+      <div className="mt-5 flex items-baseline gap-2 border-t pt-4">
+        <span className="num text-[13px] text-muted-foreground line-through decoration-muted-foreground/40">
+          {t("public.sample.previousCount")}
+        </span>
+        <ArrowRight className="size-3.5 text-muted-foreground/60" strokeWidth={1.5} />
+        <span className="num text-[15px] font-medium text-primary">
+          {t("public.sample.currentCount")}
+        </span>
+      </div>
+
+      <div className="mt-3 rounded-lg border bg-muted/30 px-3 py-2.5">
+        <p className="label-line flex items-center gap-1.5">
+          <span aria-hidden className="text-success">+</span>
+          {t("public.sample.added")}
+        </p>
+        <p className="mt-1.5 text-[13px] font-medium">{t("public.sample.addedTitle")}</p>
+        <p className="num mt-0.5 text-[11px] text-muted-foreground">
+          {t("public.sample.addedMeta")}
+        </p>
       </div>
 
       <figcaption className="mt-4 border-t pt-3 text-xs leading-5 text-muted-foreground">

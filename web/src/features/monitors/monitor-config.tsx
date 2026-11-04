@@ -77,6 +77,12 @@ function FieldRow({ field, labels }: { field: SpecField; labels: Record<string, 
   );
 }
 
+/** The approved design travels as a frozen snapshot, not a typed schema. */
+function templateName(monitor: MonitorDetail): string | null {
+  const snapshot = monitor.email_template as { name?: unknown } | null | undefined;
+  return typeof snapshot?.name === "string" ? snapshot.name : null;
+}
+
 function stepText(
   step: BrowserStep,
   labels: { wait: string; scroll: string; next: string },
@@ -315,7 +321,7 @@ export function MonitorConfig({
           <div>
             <h3 className="label-line">{t("monitors.config.template")}</h3>
             <p className="mt-1 text-[13px]">
-              {monitor.email_template_name || t("templates.systemDefault")}
+              {templateName(monitor) || t("templates.systemDefault")}
             </p>
           </div>
 

@@ -42,7 +42,7 @@ import { useFormat } from "@/lib/format";
 import { useI18n } from "@/lib/i18n";
 import { ChangeRows } from "@/features/events/event-card";
 import { EvidenceLinks } from "@/features/monitors/evidence-links";
-import { FieldValues } from "@/features/monitors/field-values";
+import { FieldValues, fieldTypes } from "@/features/monitors/field-values";
 import { MonitorConfig } from "@/features/monitors/monitor-config";
 import { MonitorEditor } from "@/features/monitors/monitor-editor";
 import { ListPagination } from "@/components/list-pagination";
@@ -133,6 +133,7 @@ export function MonitorPage({
   const spec = parseSpec(row.spec);
   const fields = spec?.fields ?? [];
   const labels = fieldLabels(fields);
+  const types = fieldTypes(fields);
   const archived = Boolean(row.archived_at);
   const busy = pause.isPending || resume.isPending || run.isPending;
   const monitorEvents = (events.data?.items ?? []).filter((event) => event.monitor_id === row.id);
@@ -470,6 +471,7 @@ export function MonitorPage({
               <FieldValues
                 values={values}
                 labels={labels}
+                types={types}
                 businessKey={spec?.business_key?.item_fields ?? []}
                 maxItems={3}
               />
@@ -536,6 +538,7 @@ export function MonitorPage({
                   <FieldValues
                     values={detail.data.snapshot.extracted_data}
                     labels={labels}
+                    types={types}
                     businessKey={spec?.business_key?.item_fields ?? []}
                   />
                   <p className="meta mt-2">

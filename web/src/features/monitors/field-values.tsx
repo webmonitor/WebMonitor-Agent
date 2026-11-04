@@ -36,6 +36,26 @@ function primaryIndex(
 }
 
 /**
+ * Each field's declared type, keyed by name. The type decides how a value is
+ * written — a date field shows a date, everything else keeps its full time.
+ */
+export function fieldTypes(
+  fields: { name: string; type?: string; item_fields?: unknown }[],
+): Record<string, string> {
+  const types: Record<string, string> = {};
+  const collect = (items: { name: string; type?: string; item_fields?: unknown }[]) => {
+    for (const field of items) {
+      if (field.type) types[field.name] ??= field.type;
+      if (Array.isArray(field.item_fields)) {
+        collect(field.item_fields as { name: string; type?: string; item_fields?: unknown }[]);
+      }
+    }
+  };
+  collect(fields);
+  return types;
+}
+
+/**
  * One row of a list: the entry's name on its own line, then the facts that
  * identify it. Dates and links are unambiguous, so they carry no label; every
  * other field keeps its name.
@@ -43,10 +63,12 @@ function primaryIndex(
 function RecordRow({
   item,
   labels,
+  types,
   businessKey,
 }: {
   item: unknown;
   labels: Record<string, string>;
+  types?: Record<string, string>;
   businessKey: readonly string[];
 }) {
   const { formatValue } = useFormat();
@@ -60,7 +82,7 @@ function RecordRow({
   return (
     <div className="min-w-0 space-y-0.5">
       {title && (
-        <p className="text-[13px] leading-5 break-words">{formatValue(title[1])}</p>
+        <p className="text-[13px] leading-5 break-words">{formatValue(title[1], types?.[title[0]])}</p>
       )}
       {rest.length > 0 && (
         <p className="flex flex-wrap items-baseline gap-x-3 gap-y-0.5 text-[11px] leading-4 text-muted-foreground">
@@ -77,11 +99,11 @@ function RecordRow({
                   <ExternalLink className="size-3 shrink-0" strokeWidth={1.5} />
                 </a>
               ) : isIsoDate(value) ? (
-                <span className="num">{formatValue(value)}</span>
+                <span className="num">{formatValue(value, types?.[key])}</span>
               ) : (
                 <>
                   <span>{labels[key] ?? key}</span>
-                  <span className="num text-foreground">{formatValue(value)}</span>
+                  <span className="num text-foreground">{formatValue(value, types?.[key])}</span>
                 </>
               )}
             </span>
@@ -100,6 +122,7 @@ function RecordRow({
 export function FieldValues({
   values,
   labels,
+  types,
   businessKey = [],
   mode = "full",
   emptyLabel,
@@ -107,6 +130,8 @@ export function FieldValues({
 }: {
   values: Record<string, unknown>;
   labels: Record<string, string>;
+  /** Declared field types, from `fieldTypes`; only `date` changes the rendering. */
+  types?: Record<string, string>;
   /** Item fields that name a row; the monitor's business key. */
   businessKey?: readonly string[];
   mode?: "compact" | "full";
@@ -135,7 +160,7 @@ export function FieldValues({
                 </dd>
               ) : (
                 <dd className="num min-w-0 max-w-[65%] text-right text-[13px] break-words">
-                  {formatValue(value)}
+                  {formatValue(value, types?.[name])}
                 </dd>
               )}
             </div>
@@ -147,7 +172,7 @@ export function FieldValues({
                   <ul className={mode === "full" ? "divide-y border-t" : "space-y-1.5"}>
                     {shown.map((item, index) => (
                       <li key={index} className={mode === "full" ? "py-1.5 text-[12px]" : "text-[12px]"}>
-                        <RecordRow item={item} labels={labels} businessKey={businessKey} />
+                        <RecordRow item={item} labels={labels} types={types} businessKey={businessKey} />
                       </li>
                     ))}
                   </ul>

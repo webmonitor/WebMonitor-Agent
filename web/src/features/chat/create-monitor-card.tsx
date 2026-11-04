@@ -4,7 +4,7 @@ import { AlertTriangle, CheckCircle2, ExternalLink, Mail, RefreshCw, Settings2 }
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { DraftSettingsPanel } from "@/features/chat/draft-settings-panel";
-import { FieldValues } from "@/features/monitors/field-values";
+import { FieldValues, fieldTypes } from "@/features/monitors/field-values";
 import { ApiError } from "@/lib/api/client";
 import {
   useApproveDraft,
@@ -30,15 +30,6 @@ type CardError =
   | { kind: "previewStale" }
   | { kind: "repreview" }
   | { kind: "create" };
-
-function hostOf(url?: string | null): string {
-  if (!url) return "";
-  try {
-    return new URL(url).host;
-  } catch {
-    return url;
-  }
-}
 
 function expiresAt(previews: (ExtractionPreview | DeliveryPreview | null)[]): string | null {
   const values = previews.flatMap((preview) => (preview ? [preview.expires_at] : []));
@@ -96,9 +87,7 @@ export function CreateMonitorCard({
     errorText,
     eventLabel,
     fieldLabels,
-    formatInterval,
     formatRelative,
-    formatTimezone,
     warningText,
     statusLabel,
   } = useFormat();
@@ -292,28 +281,6 @@ export function CreateMonitorCard({
         </div>
       </header>
 
-      {/* The record header: which page, how often, in which zone. */}
-      <div className="space-y-1.5 border-b px-4 py-3">
-        <p className="truncate text-[13px] font-medium">
-          {spec?.name ?? t("chat.approve.untitled")}
-        </p>
-        <a
-          className="block truncate text-xs text-primary underline-offset-2 hover:underline"
-          href={extraction.final_url ?? spec?.url}
-          target="_blank"
-          rel="noreferrer"
-        >
-          {hostOf(extraction.final_url ?? spec?.url)}
-        </a>
-        <p className="num text-[11px] text-muted-foreground">
-          {settings?.schedule
-            ? `${formatInterval(settings.schedule.interval_seconds)} · ${t("chat.approve.timezone", {
-                zone: formatTimezone(settings.schedule.timezone),
-              })}`
-            : t("settings.schedule.required")}
-        </p>
-      </div>
-
       <div className="space-y-4 px-4 py-3">
         {extraction.source && (
           <div>
@@ -349,6 +316,7 @@ export function CreateMonitorCard({
             <FieldValues
               values={extraction.extracted_data}
               labels={labels}
+              types={fieldTypes(spec?.fields ?? [])}
               businessKey={spec?.business_key?.item_fields ?? []}
               mode="compact"
               maxItems={3}
@@ -362,21 +330,6 @@ export function CreateMonitorCard({
             {coverageLabel(extraction.coverage.scope)}
             {extraction.coverage.description ? ` · ${extraction.coverage.description}` : ""}
           </p>
-        </div>
-
-        <div>
-          <h3 className="label-line">{t("chat.section.recipients")}</h3>
-          {!delivery || delivery.recipients.length === 0 ? (
-            <p className="mt-1 text-[13px] text-warning">{t("chat.recipients.empty")}</p>
-          ) : (
-            <ul className="mt-1 flex flex-wrap gap-x-3 gap-y-1">
-              {delivery.recipients.map((recipient) => (
-                <li key={recipient} className="num truncate text-[12px] text-muted-foreground">
-                  {recipient}
-                </li>
-              ))}
-            </ul>
-          )}
         </div>
 
         <EvidenceLinks draftId={draft.id} preview={extraction} />

@@ -295,6 +295,7 @@ function EmailPreview({ emails }: { emails: RenderedEmailView[] }) {
   const { t } = useI18n();
   const { eventLabel } = useFormat();
   const [selectedType, setSelectedType] = useState<string | null>(null);
+  if (emails.length === 0) return null;
   const selected = emails.find((email) => email.event_type === selectedType) ?? emails[0];
   return (
     <div className="space-y-2">

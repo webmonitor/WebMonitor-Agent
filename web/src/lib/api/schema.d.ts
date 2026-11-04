@@ -81,7 +81,10 @@ export interface paths {
         };
         get?: never;
         put?: never;
-        /** Logout */
+        /**
+         * Logout
+         * @description Signing out never needs a valid session: the cookies are cleared regardless.
+         */
         post: operations["logout_api_v1_auth_logout_post"];
         delete?: never;
         options?: never;
@@ -639,6 +642,26 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v1/email-deliveries/{delivery_id}/retry": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Retry Delivery
+         * @description Requeue one delivery the user can see, resetting its attempt history.
+         */
+        post: operations["retry_delivery_api_v1_email_deliveries__delivery_id__retry_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/v1/email-templates": {
         parameters: {
             query?: never;
@@ -1008,6 +1031,23 @@ export interface components {
             /** Email Template Id */
             email_template_id?: string | null;
         };
+        /** DerivedDraft */
+        DerivedDraft: {
+            /**
+             * Conversation Id
+             * Format: uuid
+             */
+            conversation_id: string;
+            /**
+             * Draft Id
+             * Format: uuid
+             */
+            draft_id: string;
+            /** Spec Revision */
+            spec_revision: number;
+            /** Settings Revision */
+            settings_revision: number;
+        };
         /** DividerBlock */
         DividerBlock: {
             /**
@@ -1222,6 +1262,8 @@ export interface components {
             created_at: string;
             /** Acknowledged At */
             acknowledged_at: string | null;
+            /** Notifications Skipped */
+            notifications_skipped?: string | null;
         };
         /** EvidenceLinkBlock */
         EvidenceLinkBlock: {
@@ -1312,6 +1354,11 @@ export interface components {
             enabled: boolean;
             /** Members */
             members: components["schemas"]["MemberSpec"][];
+            /**
+             * Member Count
+             * @default 0
+             */
+            member_count: number;
             /**
              * Created At
              * Format: date-time
@@ -1711,8 +1758,6 @@ export interface components {
             notification_group_ids: string[];
             /** Email Template Id */
             email_template_id?: string | null;
-            /** Email Template Name */
-            email_template_name?: string | null;
             /**
              * Next Run At
              * Format: date-time
@@ -1806,8 +1851,6 @@ export interface components {
             notification_group_ids: string[];
             /** Email Template Id */
             email_template_id?: string | null;
-            /** Email Template Name */
-            email_template_name?: string | null;
             /**
              * Next Run At
              * Format: date-time
@@ -2990,12 +3033,12 @@ export interface operations {
         requestBody?: never;
         responses: {
             /** @description Successful Response */
-            200: {
+            201: {
                 headers: {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": unknown;
+                    "application/json": components["schemas"]["DerivedDraft"];
                 };
             };
             /** @description Validation Error */
@@ -3403,6 +3446,7 @@ export interface operations {
                 offset?: number;
                 monitor_id?: string | null;
                 event_type?: ("content_changed" | "list_changed" | "run_failed" | "recovered") | null;
+                acknowledged?: boolean | null;
             };
             header?: never;
             path?: never;
@@ -3597,6 +3641,8 @@ export interface operations {
             query?: {
                 limit?: number;
                 offset?: number;
+                status?: ("queued" | "sending" | "retrying" | "sent" | "failed" | "cancelled") | null;
+                monitor_id?: string | null;
             };
             header?: never;
             path?: never;
@@ -3625,6 +3671,37 @@ export interface operations {
         };
     };
     read_delivery_api_v1_email_deliveries__delivery_id__get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                delivery_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Delivery"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    retry_delivery_api_v1_email_deliveries__delivery_id__retry_post: {
         parameters: {
             query?: never;
             header?: never;

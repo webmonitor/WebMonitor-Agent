@@ -3,7 +3,7 @@ import Link from "next/link";
 import { ArrowLeft, ExternalLink } from "lucide-react";
 import { PageBody, PageHeader } from "@/components/page-header";
 import { EvidenceLinks } from "@/features/monitors/evidence-links";
-import { FieldValues } from "@/features/monitors/field-values";
+import { FieldValues, fieldTypes } from "@/features/monitors/field-values";
 import { useMonitor, useSnapshot } from "@/lib/api/hooks";
 import { parseSpec } from "@/lib/api/preview";
 import { useFormat } from "@/lib/format";
@@ -46,6 +46,7 @@ export function SnapshotPage({
   const row = snapshot.data;
   const spec = parseSpec(monitor.data?.spec);
   const labels = fieldLabels(spec?.fields ?? []);
+  const types = fieldTypes(spec?.fields ?? []);
   const coverage = row.coverage as { scope?: string; description?: string };
 
   return (
@@ -99,6 +100,7 @@ export function SnapshotPage({
             <FieldValues
               values={row.extracted_data}
               labels={labels}
+              types={types}
               businessKey={spec?.business_key?.item_fields ?? []}
             />
           </div>

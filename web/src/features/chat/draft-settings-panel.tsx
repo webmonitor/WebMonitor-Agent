@@ -5,6 +5,7 @@ import { Bell, CheckCircle2, Mail } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
+import { Select } from "@/components/ui/select";
 import { ApiError } from "@/lib/api/client";
 import {
   useEmailTemplates,
@@ -43,7 +44,7 @@ export function DraftSettingsPanel({
   const { t } = useI18n();
   const { errorText, formatInterval } = useFormat();
   const { user } = useAuth();
-  const groups = useGroups();
+  const groups = useGroups(100);
   const templates = useEmailTemplates();
   const update = useUpdateDraft();
 
@@ -110,6 +111,11 @@ export function DraftSettingsPanel({
   }
 
   const groupItems = groups.data?.items ?? [];
+  // A selected group can disappear (an administrator deletes it); it stays
+  // visible as a removable row instead of silently blocking every save.
+  const missing = groups.data
+    ? selectedGroups.filter((id) => !groupItems.some((group) => group.id === id))
+    : [];
   const templateItems = templates.data?.items ?? [];
   const delivery = draft.delivery_preview;
 
@@ -137,12 +143,28 @@ export function DraftSettingsPanel({
         </div>
         {groups.isPending ? (
           <p className="meta">{t("common.loading")}</p>
-        ) : groupItems.length === 0 ? (
+        ) : groupItems.length === 0 && missing.length === 0 ? (
           <p className="meta">{t("settings.groups.empty")}</p>
         ) : (
           <ul className="space-y-1.5">
+            {missing.map((id) => (
+              <li key={id} className="flex items-start gap-2 text-[13px]">
+                <span className="min-w-0 flex-1">
+                  <span className="block text-warning">{t("settings.groups.missing")}</span>
+                  <span className="num block truncate text-[11px] text-muted-foreground">{id}</span>
+                </span>
+                <Button
+                  type="button"
+                  variant="ghost"
+                  size="sm"
+                  className="h-7 shrink-0 px-2 text-xs text-muted-foreground"
+                  onClick={() => toggleGroup(id)}
+                >
+                  {t("settings.groups.remove")}
+                </Button>
+              </li>
+            ))}
             {groupItems.map((group) => {
-              const active = group.members.filter((member) => member.active).length;
               const checked = selectedGroups.includes(group.id);
               return (
                 <li key={group.id}>
@@ -151,13 +173,14 @@ export function DraftSettingsPanel({
                       type="checkbox"
                       className="mt-1 size-3.5 accent-[var(--primary)]"
                       checked={checked}
-                      disabled={!group.enabled}
+                      // A disabled group can still be unchecked; only selecting it is blocked.
+                      disabled={!group.enabled && !checked}
                       onChange={() => toggleGroup(group.id)}
                     />
                     <span className="min-w-0 flex-1">
                       <span className="block truncate">{group.name}</span>
                       <span className="num block text-[11px] text-muted-foreground">
-                        {t("settings.groups.activeMembers", { count: active })}
+                        {t("activity.groups.activeCount", { count: group.member_count })}
                       </span>
                     </span>
                   </label>
@@ -236,22 +259,20 @@ export function DraftSettingsPanel({
             {t("settings.template.manage")}
           </Link>
         </div>
-        <select
-          aria-label={t("settings.template.title")}
-          className="flex h-10 w-full min-w-0 rounded-lg border border-input bg-card px-3 py-2 text-sm text-foreground focus-visible:border-ring focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/25"
+        <Select
+          label={t("settings.template.title")}
+          size="md"
           value={templateId ?? ""}
-          onChange={(event) => {
+          placeholder={t("templates.systemDefault")}
+          onChange={(value) => {
             setSavedAt(null);
-            setTemplateId(event.target.value || null);
+            setTemplateId(value || null);
           }}
-        >
-          <option value="">{t("templates.systemDefault")}</option>
-          {templateItems.map((template) => (
-            <option key={template.id} value={template.id}>
-              {template.name}
-            </option>
-          ))}
-        </select>
+          options={[
+            { value: "", label: t("templates.systemDefault") },
+            ...templateItems.map((template) => ({ value: template.id, label: template.name })),
+          ]}
+        />
         <p className="meta">{t("templates.systemDefault.body")}</p>
       </div>
 
