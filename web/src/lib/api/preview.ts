@@ -100,6 +100,7 @@ const fieldShape = {
   path: z.string().nullish(),
   attribute: z.string().nullish(),
   required: z.boolean().optional(),
+  allow_empty: z.boolean().optional(),
   normalize: normalizationSchema.optional(),
   min_items: z.number().nullish(),
   max_items: z.number().nullish(),

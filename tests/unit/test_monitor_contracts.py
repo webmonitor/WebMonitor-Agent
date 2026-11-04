@@ -72,6 +72,25 @@ def test_unknown_code_and_scalar_list_options_rejected():
               min_items=2, max_items=1)
 
 
+def test_allow_empty_is_explicit_and_limited_to_text_and_lists():
+    assert field('text', allow_empty=True).allow_empty is True
+    with pytest.raises(ValidationError):
+        field('number', allow_empty=True, normalize={'decimal_separator': '.'})
+    with pytest.raises(ValidationError):
+        field('list', allow_empty=True, min_items=1,
+              item_fields=[{'name': 'id', 'type': 'text', 'semantic': 'ID', 'selector': '.id'}])
+
+
+def test_list_removal_needs_allow_empty_and_accepts_bounded_coverage():
+    base = json_source_spec()
+    base['change_rules'] = {'mode': 'any', 'rules': [{'type': 'list_removed', 'field': 'items'}]}
+    with pytest.raises(ValidationError):
+        MonitorSpec.model_validate(base)
+    base['fields'][0]['allow_empty'] = True
+    bounded = {**base, 'coverage': {'scope': 'bounded', 'description': 'Observed rows'}}
+    assert MonitorSpec.model_validate(bounded).coverage.scope == 'bounded'
+
+
 def test_canonical_hash_normalizes_timezone_and_object_order():
     utc = datetime(2026, 10, 2, 12, tzinfo=UTC)
     offset = utc.astimezone(timezone(timedelta(hours=8)))

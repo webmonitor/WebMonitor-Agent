@@ -28,15 +28,20 @@ def _validate(field: FieldSpec, value, previous, path: str) -> None:
     if value is _MISSING:
         if field.required:
             invalid(path, 'required_missing')
-        if not _empty(previous):
+        if not _empty(previous) and not field.allow_empty:
             invalid(path, 'historical_value_missing')
         return
     if value is None:
-        invalid(path, 'invalid_null')
+        if field.allow_empty and field.type == 'list':
+            value = []
+        elif field.allow_empty and field.type == 'text':
+            value = ''
+        else:
+            invalid(path, 'invalid_null')
     if field.type == 'list':
         if not isinstance(value, list):
             invalid(path, 'invalid_list')
-        if previous is not _MISSING and not _empty(previous) and not value:
+        if previous is not _MISSING and not _empty(previous) and not value and not field.allow_empty:
             invalid(path, 'historical_nonempty_to_empty')
         if field.min_items is not None and len(value) < field.min_items:
             invalid(path, 'min_items')
@@ -50,9 +55,9 @@ def _validate(field: FieldSpec, value, previous, path: str) -> None:
             for item in field.item_fields:
                 _validate(item, row.get(item.name, _MISSING), _MISSING, f'{path}[{index}].{item.name}')
         return
-    if value == '' and field.required:
+    if value == '' and field.required and not field.allow_empty:
         invalid(path, 'required_empty')
-    if _empty(value) and not _empty(previous):
+    if _empty(value) and not _empty(previous) and not field.allow_empty:
         invalid(path, 'historical_nonempty_to_empty')
     if field.type == 'text':
         if not isinstance(value, str):
@@ -101,8 +106,6 @@ def validate_collection(spec: MonitorSpec, fields: dict, previous: dict | None =
             invalid('', 'invalid_coverage')
     if not isinstance(actual, Coverage):
         invalid('', 'invalid_coverage')
-    if actual.scope == 'bounded' and any(rule.type == 'list_removed' for rule in spec.change_rules.rules):
-        invalid('', 'deletion_requires_full_coverage')
     if spec.coverage.scope == 'full' and actual.scope != 'full':
         invalid('', 'coverage_incomplete')
     for field in spec.fields:

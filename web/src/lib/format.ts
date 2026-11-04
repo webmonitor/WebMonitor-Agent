@@ -148,6 +148,7 @@ const ERROR_KEYS: Partial<Record<string, MessageKey>> = {
 const WARNING_KEYS: Partial<Record<string, MessageKey>> = {
   pagination_coverage_unproven: "format.warning.pagination_coverage_unproven",
   coverage_bounded: "format.warning.coverage_bounded",
+  deletion_coverage_bounded: "format.warning.deletion_coverage_bounded",
   template_contract_failed: "format.warning.template_contract_failed",
   pagination_truncated: "format.warning.pagination_truncated",
 };

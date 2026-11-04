@@ -58,12 +58,30 @@ def analyze_html(html: str) -> tuple[dict, list[str]]:
             'unsupported': warnings.copy(), 'full_list_evidence': full_list_evidence(html)}, warnings
 
 
+def deletion_scope(spec, coverage: dict, warnings: list[str]) -> dict:
+    """A bounded page can report removals only for the rows it observed."""
+    if coverage.get('scope') == 'bounded' and any(
+            rule.type == 'list_removed' for rule in spec.change_rules.rules):
+        if 'deletion_coverage_bounded' not in warnings:
+            warnings.append('deletion_coverage_bounded')
+        coverage = {**coverage,
+                    'description': coverage['description'] +
+                    ' Removal detection covers only the observed rows.'}
+    return coverage
+
+
 def collection_coverage(spec, warnings: list[str], *, paginated: bool = False, html: str = '') -> dict:
     if spec is None:
         return {'scope': 'bounded', 'description': 'Observed rendered/document content only; full dataset coverage is not proven.'}
     if warnings or paginated:
-        return {'scope': 'bounded', 'description': 'Observed pages only; iframe/shadow, pagination or virtual-list coverage is not proven. ' + spec.coverage.description}
-    if spec.coverage.scope == 'full' and any(field.type == 'list' for field in spec.fields) and not contract_lists_complete(html, spec):
+        coverage = {'scope': 'bounded',
+                    'description': 'Observed pages only; iframe/shadow, pagination or virtual-list coverage is not proven. ' + spec.coverage.description}
+    elif (spec.coverage.scope == 'full'
+          and any(field.type == 'list' for field in spec.fields)
+          and not contract_lists_complete(html, spec)):
         warnings.append('list_total_coverage_unproven')
-        return {'scope': 'bounded', 'description': 'The selected rows do not account for every declared list position; full list coverage is unproven.'}
-    return spec.coverage.model_dump()
+        coverage = {'scope': 'bounded',
+                    'description': 'The selected rows do not account for every declared list position; full list coverage is unproven.'}
+    else:
+        coverage = spec.coverage.model_dump()
+    return deletion_scope(spec, coverage, warnings)

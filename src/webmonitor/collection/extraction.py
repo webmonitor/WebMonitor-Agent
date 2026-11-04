@@ -101,7 +101,7 @@ def _date(value: str, field: FieldSpec, path: str) -> str:
 
 def _scalar(value: str, field: FieldSpec, final_url: str, path: str):
     value = normalize_text(value, field.normalize)
-    if value == '' and field.required:
+    if value == '' and field.required and not field.allow_empty:
         invalid(path, 'required_empty')
     if field.type == 'text':
         return value
@@ -138,6 +138,10 @@ def _text_of(value: Any, path: str, reason: str) -> str:
 def normalize_json_scalar(value: Any, field: FieldSpec, final_url: str, path: str):
     """Apply one normalization contract to HTML text and to native JSON values."""
     if value is None:
+        if field.allow_empty and field.type == 'list':
+            return []
+        if field.allow_empty and field.type == 'text':
+            return ''
         if field.required:
             invalid(path, 'required_missing')
         return MISSING
@@ -145,7 +149,7 @@ def normalize_json_scalar(value: Any, field: FieldSpec, final_url: str, path: st
         return value
     if field.type == 'text':
         text = normalize_text(_text_of(value, path, 'invalid_text'), field.normalize)
-        if text == '' and field.required:
+        if text == '' and field.required and not field.allow_empty:
             invalid(path, 'required_empty')
         return text
     if field.type == 'number':
@@ -190,6 +194,8 @@ def _extract(root: BeautifulSoup | Tag, field: FieldSpec, final_url: str, path: 
     if not matches:
         if field.required:
             invalid(path, 'required_missing')
+        if field.allow_empty and field.type == 'text':
+            return ''
         return MISSING
     element = matches[0]
     if field.attribute is None:

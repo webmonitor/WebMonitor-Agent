@@ -1,12 +1,13 @@
 """Bounded fresh-context Chromium collection, without a sandbox fallback."""
 import asyncio
+import base64
 import json
 from contextlib import suppress
 from time import monotonic
 
 from playwright.async_api import Error as PlaywrightError
+from playwright.async_api import Page, async_playwright
 from playwright.async_api import TimeoutError as PlaywrightTimeoutError
-from playwright.async_api import async_playwright
 
 from webmonitor.collection.extraction import extract_fields
 from webmonitor.collection.network import network_candidate
@@ -23,6 +24,10 @@ from webmonitor.schemas.monitors import MonitorSpec
 from webmonitor.security.egress import validate_target
 
 _slots: asyncio.Semaphore | None = None
+NAVIGATION_TIMEOUT_MS = 30000
+# A page can keep polling analytics or ads forever. Wait for a quiet network
+# only as a best effort; content extraction must not fail on a missing idle.
+SETTLE_TIMEOUT_MS = 5000
 
 
 def _browser_slots() -> asyncio.Semaphore:
@@ -30,6 +35,23 @@ def _browser_slots() -> asyncio.Semaphore:
     if _slots is None:
         _slots = asyncio.Semaphore(get_settings().browser_concurrency)
     return _slots
+
+
+async def _navigate(page: Page, target: str):
+    """Load the document; dynamic content is settled separately and best-effort."""
+    try:
+        return await page.goto(target, wait_until='domcontentloaded',
+                               timeout=NAVIGATION_TIMEOUT_MS)
+    except PlaywrightTimeoutError:
+        raise DomainError('collection_timeout', 503) from None
+
+
+async def _settle(page: Page, timeout_ms: int = SETTLE_TIMEOUT_MS) -> None:
+    """Let late scripts render, but never fail a collection for a busy page."""
+    with suppress(PlaywrightTimeoutError):
+        await page.wait_for_load_state('networkidle', timeout=timeout_ms)
+
+
 # Images, media and fonts are blocked, so these budgets cover scripts and data.
 # Real SPA notice pages routinely need more than the old 100 requests / 20 MB.
 MAX_REQUESTS = 200
@@ -212,7 +234,8 @@ async def collect_browser(url: str, spec: MonitorSpec | None = None, *,
                                 task.add_done_callback(network_tasks.discard)
 
                             page.on('response', on_response)
-                        response = await page.goto(target, wait_until='networkidle', timeout=30000)
+                        response = await _navigate(page, target)
+                        await _settle(page)
                         if response and response.status == 403 and response.headers.get('x-squid-error', '').startswith('ERR_ACCESS_DENIED'):
                             raise DomainError('url_forbidden', 422)
                         if response is None or response.status >= 400:
@@ -277,7 +300,7 @@ async def collect_browser(url: str, spec: MonitorSpec | None = None, *,
                                             break
                                         await capture()
                                         await button.click()
-                                        await page.wait_for_load_state('networkidle', timeout=10000)
+                                        await _settle(page)
                         await capture()
                         html, final_url = snapshots[-1]
                         analysis, warnings = analyze_html(html)
@@ -290,7 +313,11 @@ async def collect_browser(url: str, spec: MonitorSpec | None = None, *,
                         if paginated and 'pagination_coverage_unproven' not in warnings:
                             warnings.append('pagination_coverage_unproven')
                         coverage = collection_coverage(spec, warnings, paginated=paginated, html=html)
-                        screenshot = await page.screenshot(type='png', full_page=False, timeout=10000)
+                        # Playwright's screenshot waits for document.fonts.ready;
+                        # blocked web fonts can keep that promise pending forever.
+                        shot = await cdp.send('Page.captureScreenshot', {
+                            'format': 'png', 'captureBeyondViewport': False})
+                        screenshot = base64.b64decode(shot['data'])
                         if failure:
                             raise failure
                         analysis.update(collection_mode='browser', unsupported=warnings.copy(),

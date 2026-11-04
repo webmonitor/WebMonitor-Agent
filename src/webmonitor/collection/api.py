@@ -15,7 +15,7 @@ import httpx
 from webmonitor.collection.extraction import MISSING
 from webmonitor.collection.fetch import FetchResult, content_type_base, decode_text, fetch_bounded
 from webmonitor.collection.json_extract import extract_json_field, extract_json_fields, resolve_path
-from webmonitor.collection.types import CollectionResult
+from webmonitor.collection.types import CollectionResult, deletion_scope
 from webmonitor.collection.validation import validate_collection
 from webmonitor.errors import DomainError
 from webmonitor.schemas.monitors import (
@@ -157,7 +157,7 @@ async def _paginate(request: ApiRequest, step: dict, pagination: PagePagination,
         rows = extract_json_field(body, list_field, fetched.final_url, list_field.name)
         rows = [] if rows is MISSING else rows
         items.extend(rows)
-        if pages == 1 and not items:
+        if pages == 1 and not items and not list_field.allow_empty:
             raise DomainError('api_empty_result', 422, details={'field': list_field.name})
         if total is not None:
             if len(items) > total:
@@ -213,7 +213,8 @@ async def collect_api(url: str, spec: MonitorSpec, *,
             if source.pagination is None:
                 fields = extract_json_fields(last_body, spec, page_one.final_url)
                 for field in spec.fields:
-                    if field.type == 'list' and not fields.get(field.name):
+                    if (field.type == 'list' and not fields.get(field.name)
+                            and not field.allow_empty):
                         raise DomainError('api_empty_result', 422,
                                           details={'field': field.name})
                 pages, truncated = 1, False
@@ -227,8 +228,11 @@ async def collect_api(url: str, spec: MonitorSpec, *,
                     raise DomainError('api_pagination_limit', 422,
                                       details={'pages': pages,
                                                'items': len(fields[list_field.name])})
-            coverage = {'scope': spec.coverage.scope, 'description': spec.coverage.description}
             warnings = ['pagination_truncated'] if truncated else []
+            coverage = deletion_scope(
+                spec,
+                {'scope': spec.coverage.scope, 'description': spec.coverage.description},
+                warnings)
             analysis = {
                 'collection_mode': 'json',
                 'page_url': url,

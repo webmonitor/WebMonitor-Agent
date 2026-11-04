@@ -101,24 +101,42 @@ def test_persistent_predicate_does_not_swallow_new_change_in_mixed_any_rules():
     assert second['differences'][1]['before'] == 'B'
 
 
-def test_bounded_coverage_rejects_deletion_and_foreign_list_rules():
+def test_list_deletion_requires_allow_empty_and_the_designated_list():
     import pytest
     from pydantic import ValidationError
 
     row = [{'name': 'id', 'type': 'text', 'semantic': 'ID', 'selector': '.id'}]
     spec = make_spec([
-        {'name': 'products', 'type': 'list', 'semantic': 'Products', 'selector': '.product', 'item_fields': row},
+        {'name': 'products', 'type': 'list', 'semantic': 'Products', 'selector': '.product',
+         'item_fields': row, 'allow_empty': True},
         {'name': 'related', 'type': 'list', 'semantic': 'Related', 'selector': '.related', 'item_fields': row},
     ], [{'type': 'list_removed', 'field': 'products'}],
        business_key={'field': 'products', 'item_fields': ['id']})
     bounded = spec.model_dump(mode='json')
     bounded['coverage']['scope'] = 'bounded'
+    assert MonitorSpec.model_validate(bounded).coverage.scope == 'bounded'
+    bounded['fields'][0]['allow_empty'] = False
     with pytest.raises(ValidationError):
         MonitorSpec.model_validate(bounded)
     foreign = spec.model_dump(mode='json')
     foreign['change_rules']['rules'][0]['field'] = 'related'
     with pytest.raises(ValidationError):
         MonitorSpec.model_validate(foreign)
+
+
+def test_list_removal_can_end_in_an_empty_observed_list():
+    spec = make_spec([
+        {'name': 'products', 'type': 'list', 'semantic': 'Products', 'selector': '.product',
+         'item_fields': [{'name': 'id', 'type': 'text', 'semantic': 'Stable ID', 'selector': '.id'}],
+         'allow_empty': True},
+    ], [{'type': 'list_removed', 'field': 'products'}],
+       business_key={'field': 'products', 'item_fields': ['id']})
+    a = {'id': 'A'}
+    b = {'id': 'B'}
+    result = evaluate_rules(spec, {'products': [a, b]}, {'products': []}, {})
+    assert result['triggered'] is True
+    assert result['event_type'] == 'list_changed'
+    assert result['differences'][0]['items'] == [a, b]
 
 
 

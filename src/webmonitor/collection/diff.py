@@ -105,8 +105,6 @@ def evaluate_rules(spec: MonitorSpec, previous: dict | None, current: dict, prev
             new_rows = _rows(after, keys) if after is not _MISSING else {}
             if before is not _MISSING and after is not _MISSING:
                 old_rows = _rows(before, keys)
-                if old_rows and not new_rows:
-                    raise ValueError('nonempty historical list became empty')
                 if rule.type == 'list_added':
                     detail['items'] = [row for key, row in new_rows.items() if key not in old_rows]
                 elif rule.type == 'list_removed':

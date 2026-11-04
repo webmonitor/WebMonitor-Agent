@@ -216,6 +216,39 @@ async def test_empty_first_page_fails():
 
 
 @pytest.mark.asyncio
+async def test_empty_json_list_is_allowed_when_opted_in():
+    def empty(request):
+        return json_response({'code': 200, 'data': {'list': []}})
+
+    field = {**list_field(), 'allow_empty': True}
+    monitor = spec(steps=[step('https://api.example.com/items')], fields=[field])
+    result = await collect_api(monitor.url, monitor,
+                               transport=httpx.MockTransport(empty))
+    assert result.fields == {'items': []}
+    paged_monitor = spec(steps=[step('https://api.example.com/items')], fields=[field],
+                         coverage='bounded',
+                         pagination={'kind': 'page', 'size_param': 'size', 'size': 2,
+                                     'stop': 'empty'})
+    paged_result = await collect_api(paged_monitor.url, paged_monitor,
+                                     transport=httpx.MockTransport(empty))
+    assert paged_result.fields == {'items': []}
+
+
+@pytest.mark.asyncio
+async def test_bounded_api_deletion_is_reported_in_coverage():
+    field = {**list_field(), 'allow_empty': True}
+    monitor = spec(steps=[step('https://api.example.com/items')], fields=[field],
+                   coverage='bounded')
+    data = monitor.model_dump(mode='json')
+    data['change_rules']['rules'] = [{'type': 'list_removed', 'field': 'items'}]
+    monitor = MonitorSpec.model_validate(data)
+    result = await collect_api(monitor.url, monitor, transport=httpx.MockTransport(
+        lambda request: json_response({'code': 200, 'data': {'list': [{'id': '1'}]}})))
+    assert 'deletion_coverage_bounded' in result.warnings
+    assert 'observed rows' in result.coverage['description']
+
+
+@pytest.mark.asyncio
 async def test_response_failures_map_to_domain_errors():
     monitor = spec(steps=[step('https://api.example.com/items')])
 

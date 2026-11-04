@@ -151,6 +151,7 @@ class FieldSpec(Contract):
     path: str | None = Field(default=None, min_length=1, max_length=500)
     attribute: str | None = Field(default=None, pattern=r'^[A-Za-z_][A-Za-z0-9_:-]*$')
     required: StrictBool = True
+    allow_empty: StrictBool = False
     normalize: Normalization = Field(default_factory=Normalization)
     item_fields: list['FieldSpec'] | None = None
     min_items: int | None = Field(default=None, ge=0, strict=True)
@@ -192,6 +193,8 @@ class FieldSpec(Contract):
             raise ValueError('field requires exactly one of selector or path')
         if self.path is not None and self.attribute is not None:
             raise ValueError('attribute applies only to selector fields')
+        if self.allow_empty and self.type not in ('text', 'list'):
+            raise ValueError('allow_empty applies only to text and list fields')
         normal = self.normalize
         if self.type == 'list':
             if not self.item_fields or self.attribute is not None:
@@ -202,6 +205,8 @@ class FieldSpec(Contract):
                 raise ValueError('duplicate item field name')
             if self.min_items is not None and self.max_items is not None and self.min_items > self.max_items:
                 raise ValueError('min_items exceeds max_items')
+            if self.allow_empty and self.min_items:
+                raise ValueError('allow_empty requires min_items 0 or unset')
         elif self.item_fields is not None or self.min_items is not None or self.max_items is not None:
             raise ValueError('item_fields and item limits apply only to lists')
         if self.type in ('number', 'money'):
@@ -513,8 +518,8 @@ class MonitorSpec(Contract):
             if rule.type.startswith('list_'):
                 if target.type != 'list' or self.business_key is None or self.business_key.field != rule.field:
                     raise ValueError('list rules require the designated business_key list')
-                if rule.type == 'list_removed' and self.coverage.scope != 'full':
-                    raise ValueError('list deletion requires full coverage')
+                if rule.type == 'list_removed' and not target.allow_empty:
+                    raise ValueError('list deletion requires allow_empty on the list field')
                 if isinstance(rule, ListUpdated):
                     item_names = {item.name for item in target.item_fields or []}
                     if not set(rule.watch_fields) <= item_names or set(rule.watch_fields) & set(self.business_key.item_fields):

@@ -58,6 +58,13 @@ def test_optional_empty_text_cannot_replace_nonempty_baseline():
     rejected(lambda: validate_collection(spec, {}, {'value': 'trusted'}), 'historical_value_missing')
 
 
+def test_allow_empty_text_can_replace_nonempty_baseline():
+    spec = scalar(required=False, allow_empty=True)
+    validate_collection(spec, {'value': ''}, {'value': 'trusted'})
+    assert extract(spec, '<p>no value</p>') == {'value': ''}
+    validate_collection(spec, extract(spec, '<p>no value</p>'), {'value': 'trusted'})
+
+
 @pytest.mark.parametrize('raw,expected', [('1.234,50', '1234.50'), ('-0,25', '-0.25'), ('1234', '1234')])
 def test_explicit_decimal_and_thousands_separators(raw, expected):
     spec = scalar('number', normalize={'decimal_separator': ',', 'thousands_separator': '.'})
@@ -147,17 +154,19 @@ def test_initial_empty_list_and_historical_empty_are_distinct():
     spec = list_spec()
     validate_collection(spec, extract(spec, '<p>No products</p>'))
     rejected(lambda: validate_collection(spec, {'products': []}, {'products': [{'id': 'A'}]}), 'historical_nonempty_to_empty')
+    validate_collection(list_spec(allow_empty=True), {'products': []}, {'products': [{'id': 'A'}]})
     rejected(lambda: validate_collection(list_spec(min_items=1), {'products': []}), 'min_items')
     rejected(lambda: validate_collection(list_spec(max_items=1), {'products': [{'id': 'A'}, {'id': 'B'}]}), 'max_items')
 
 
-def test_current_coverage_downgrade_cannot_authorize_deletion():
-    data = list_spec().model_dump(mode='json')
+def test_bounded_deletion_requires_explicit_empty_not_full_coverage():
+    data = list_spec(allow_empty=True).model_dump(mode='json')
+    data['coverage']['scope'] = 'bounded'
     data['change_rules']['rules'] = [{'type': 'list_removed', 'field': 'products'}]
     spec = MonitorSpec.model_validate(data)
-    rejected(lambda: validate_collection(spec, {'products': [{'id': 'A'}]},
-                                        coverage={'scope': 'bounded', 'description': 'One page only'}),
-             'deletion_requires_full_coverage')
+    validate_collection(spec, {'products': []},
+                        previous={'products': [{'id': 'A'}]},
+                        coverage={'scope': 'bounded', 'description': 'One page only'})
 
 
 def test_same_business_key_cannot_change_currency_inside_list():

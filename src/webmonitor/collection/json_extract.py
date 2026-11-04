@@ -38,6 +38,8 @@ def _row(row: dict, field: FieldSpec, final_url: str, path: str) -> dict:
         except (KeyError, IndexError, TypeError):
             if item.required:
                 invalid(item_path, 'required_missing')
+            if item.allow_empty and item.type == 'text':
+                values[item.name] = ''
             continue
         value = normalize_json_scalar(raw, item, final_url, item_path)
         if value is not MISSING:
@@ -51,9 +53,13 @@ def extract_json_field(body: Any, field: FieldSpec, final_url: str, path: str):
     except (KeyError, IndexError, TypeError):
         if field.required:
             invalid(path, 'required_missing')
-        return MISSING
+        return [] if field.allow_empty and field.type == 'list' else MISSING
     if value is None:
         # JSON null is a present-but-empty value, exactly as it is for scalars.
+        if field.allow_empty and field.type == 'list':
+            return []
+        if field.allow_empty and field.type == 'text':
+            return ''
         if field.required:
             invalid(path, 'invalid_null')
         return MISSING
