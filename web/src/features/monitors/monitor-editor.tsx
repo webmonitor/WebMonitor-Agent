@@ -1,13 +1,12 @@
 "use client";
 import Link from "next/link";
 import { useEffect, useMemo, useRef, useState } from "react";
+import { useRouter } from "next/navigation";
 import { ExternalLink, RefreshCw } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
-import { CreateMonitorCard } from "@/features/chat/create-monitor-card";
 import { ApiError } from "@/lib/api/client";
 import {
-  useConversation,
   useDeriveDraft,
   useStartPreview,
   useUpdateDraft,
@@ -40,10 +39,9 @@ type EditorError =
 
 /**
  * A direct editor for the monitor's collection definition. It never writes the
- * monitor: saving replaces an editable draft, a real preview must run, and only
- * the approve endpoint publishes it — the same path the conversation uses.
- * Delivery settings (notification groups, cadence, template) belong to the
- * monitor's settings panel, not to this document.
+ * monitor: saving replaces an editable draft, starts one real preview, and hands
+ * the reader to the conversation, where the same approval card publishes it.
+ * Delivery settings belong to that card, not to this document.
  */
 export function MonitorEditor({
   monitorId,
@@ -64,8 +62,8 @@ export function MonitorEditor({
   const { errorText } = useFormat();
   const derive = useDeriveDraft();
   const update = useUpdateDraft();
+  const router = useRouter();
   const [session, setSession] = useState<Session | null>(null);
-  const [stage, setStage] = useState<"edit" | "review">("edit");
   const [json, setJson] = useState("");
   const [baseline, setBaseline] = useState("");
   const [error, setError] = useState<EditorError | null>(null);
@@ -77,8 +75,6 @@ export function MonitorEditor({
   const lastSeedRef = useRef(seedToken);
   const prepareRef = useRef<() => void>(() => {});
   const preview = useStartPreview(session?.conversationId ?? "");
-  const conversation = useConversation(stage === "review" ? session?.conversationId ?? null : null);
-  const draft = conversation.data?.drafts.find((item) => item.id === session?.draftId);
 
   async function prepare() {
     if (preparingRef.current) return;
@@ -112,7 +108,6 @@ export function MonitorEditor({
     if (seedToken === lastSeedRef.current) return;
     lastSeedRef.current = seedToken;
     setSession(null);
-    setStage("edit");
     setError(null);
     attemptedRef.current = false;
   }, [seedToken]);
@@ -129,7 +124,6 @@ export function MonitorEditor({
     }
     attemptedRef.current = false;
     setSession(null);
-    setStage("edit");
     setJson("");
     setBaseline("");
     setError(null);
@@ -176,8 +170,11 @@ export function MonitorEditor({
       setSession({ ...session, specRevision: updated.spec_revision });
       setJson(JSON.stringify(saved, null, 2));
       setBaseline(JSON.stringify(saved));
+      // One real preview starts here; the conversation shows its progress and
+      // the approval card publishes the draft.
       await preview.mutateAsync(session.draftId);
-      setStage("review");
+      onOpenChange(false);
+      router.push(`/app?conversation=${session.conversationId}`);
     } catch (failure) {
       if (failure instanceof ApiError) {
         const raw = failure.details.fields;
@@ -195,13 +192,6 @@ export function MonitorEditor({
     }
   }
 
-  function approved() {
-    setSession(null);
-    setStage("edit");
-    setError(null);
-    onOpenChange(false);
-  }
-
   const hint = unchanged ? t("monitors.editor.unchanged") : t("monitors.editor.saveHint");
   const disabled = preparing || saving || !session || !parsed || unchanged;
 
@@ -212,106 +202,49 @@ export function MonitorEditor({
           <DialogTitle className="pr-6">{t("monitors.editor.title")}</DialogTitle>
         </DialogHeader>
 
-        {stage === "edit" ? (
-          <div className="space-y-3">
-            <p className="t-body-sm text-muted-foreground">{t("monitors.editor.description")}</p>
-            <p className="t-body-sm text-muted-foreground">{t("monitors.editor.specOnly")}</p>
+        <div className="space-y-3">
+          <p className="t-body-sm text-muted-foreground">{t("monitors.editor.description")}</p>
+          <p className="t-body-sm text-muted-foreground">{t("monitors.editor.specOnly")}</p>
 
-            {preparing && <p className="meta">{t("monitors.editor.preparing")}</p>}
+          {preparing && <p className="meta">{t("monitors.editor.preparing")}</p>}
 
-            {error?.kind === "parse" && (
-              <p role="alert" className="text-sm text-error">
-                {t("monitors.editor.jsonInvalid", { message: error.message })}
-              </p>
-            )}
-            {error?.kind === "invalid" && (
-              <div role="alert" className="space-y-1 text-sm text-error">
-                <p>{t("monitors.editor.validation", { fields: error.fields.join(", ") })}</p>
-              </div>
-            )}
-            {error?.kind === "code" && (
-              <div role="alert" className="space-y-1 text-sm text-error">
-                <p>{errorText(error.code)}</p>
-                {error.code === "stale_revision" && (
-                  <p className="text-[13px] text-muted-soft">{t("monitors.editor.reopen")}</p>
-                )}
-                {error.code === "draft_not_editable" && (
-                  <p className="text-[13px] text-muted-soft">{t("monitors.editor.reopen")}</p>
-                )}
-              </div>
-            )}
-
-            <textarea
-              value={json}
-              onChange={(event) => {
-                setJson(event.target.value);
-                if (error) setError(null);
-              }}
-              spellCheck={false}
-              rows={18}
-              aria-label={t("monitors.editor.title")}
-              className="code-window max-h-[26rem] w-full resize-y focus-visible:ring-[3px] focus-visible:ring-primary/25"
-            />
-
-            <div className="flex flex-wrap items-center justify-between gap-2">
-              <p className="meta">{session ? hint : ""}</p>
-              <div className="flex items-center gap-2">
-                {session && (
-                  <Link
-                    href={`/app?conversation=${session.conversationId}`}
-                    className="inline-flex items-center gap-1 text-[12px] text-muted-soft underline-offset-2 hover:text-ink hover:underline"
-                  >
-                    {t("monitors.editor.openConversation")}
-                    <ExternalLink className="size-3.5" strokeWidth={1.5} />
-                  </Link>
-                )}
-                <Button variant="ghost" size="sm" onClick={() => onOpenChange(false)}>
-                  {t("monitors.editor.cancel")}
-                </Button>
-                <Button size="sm" onClick={() => void save()} disabled={disabled}>
-                  {saving ? t("monitors.editor.saving") : t("monitors.editor.save")}
-                </Button>
-              </div>
+          {error?.kind === "parse" && (
+            <p role="alert" className="text-sm text-error">
+              {t("monitors.editor.jsonInvalid", { message: error.message })}
+            </p>
+          )}
+          {error?.kind === "invalid" && (
+            <div role="alert" className="space-y-1 text-sm text-error">
+              <p>{t("monitors.editor.validation", { fields: error.fields.join(", ") })}</p>
             </div>
-
-            {error?.kind === "code" && !session && (
-              <Button
-                variant="outline"
-                size="sm"
-                className="h-7 px-2 text-[13px]"
-                onClick={() => {
-                  attemptedRef.current = false;
-                  prepareRef.current();
-                }}
-              >
-                <RefreshCw strokeWidth={1.5} />
-                {t("monitors.editor.retry")}
-              </Button>
-            )}
-          </div>
-        ) : (
-          <div className="space-y-3">
-            <div className="space-y-1">
-              <h3 className="t-title">{t("monitors.editor.review")}</h3>
-              <p className="t-body-sm text-muted-foreground">{t("monitors.editor.reviewDescription")}</p>
+          )}
+          {error?.kind === "code" && (
+            <div role="alert" className="space-y-1 text-sm text-error">
+              <p>{errorText(error.code)}</p>
+              {error.code === "stale_revision" && (
+                <p className="text-[13px] text-muted-soft">{t("monitors.editor.reopen")}</p>
+              )}
+              {error.code === "draft_not_editable" && (
+                <p className="text-[13px] text-muted-soft">{t("monitors.editor.reopen")}</p>
+              )}
             </div>
+          )}
 
-            {conversation.error && (
-              <p role="alert" className="text-sm text-error">{t("common.listError")}</p>
-            )}
-            {!conversation.error && !draft && <p className="meta">{t("monitors.loadingShort")}</p>}
-            {draft && session && (
-              <CreateMonitorCard
-                conversationId={session.conversationId}
-                draft={draft}
-                onApproved={approved}
-              />
-            )}
+          <textarea
+            value={json}
+            onChange={(event) => {
+              setJson(event.target.value);
+              if (error) setError(null);
+            }}
+            spellCheck={false}
+            rows={18}
+            aria-label={t("monitors.editor.title")}
+            className="code-window max-h-[26rem] w-full resize-y focus-visible:ring-[3px] focus-visible:ring-primary/25"
+          />
 
-            <div className="flex flex-wrap items-center justify-between gap-2">
-              <Button variant="ghost" size="sm" onClick={() => setStage("edit")}>
-                {t("monitors.editor.backToEdit")}
-              </Button>
+          <div className="flex flex-wrap items-center justify-between gap-2">
+            <p className="meta">{session ? hint : ""}</p>
+            <div className="flex items-center gap-2">
               {session && (
                 <Link
                   href={`/app?conversation=${session.conversationId}`}
@@ -321,9 +254,30 @@ export function MonitorEditor({
                   <ExternalLink className="size-3.5" strokeWidth={1.5} />
                 </Link>
               )}
+              <Button variant="ghost" size="sm" onClick={() => onOpenChange(false)}>
+                {t("monitors.editor.cancel")}
+              </Button>
+              <Button size="sm" onClick={() => void save()} disabled={disabled}>
+                {saving ? t("monitors.editor.saving") : t("monitors.editor.save")}
+              </Button>
             </div>
           </div>
-        )}
+
+          {error?.kind === "code" && !session && (
+            <Button
+              variant="outline"
+              size="sm"
+              className="h-7 px-2 text-[13px]"
+              onClick={() => {
+                attemptedRef.current = false;
+                prepareRef.current();
+              }}
+            >
+              <RefreshCw strokeWidth={1.5} />
+              {t("monitors.editor.retry")}
+            </Button>
+          )}
+        </div>
       </DialogContent>
     </Dialog>
   );

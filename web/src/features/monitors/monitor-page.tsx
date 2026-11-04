@@ -25,7 +25,6 @@ import { PageBody, PageHeader } from "@/components/page-header";
 import {
   useArchiveMonitor,
   useCancelJob,
-  useDeriveDraft,
   useEvents,
   useJobDetail,
   useMonitor,
@@ -44,6 +43,7 @@ import { ChangeRows } from "@/features/events/event-card";
 import { EvidenceLinks } from "@/features/monitors/evidence-links";
 import { FieldValues, fieldTypes } from "@/features/monitors/field-values";
 import { MonitorConfig } from "@/features/monitors/monitor-config";
+import { DeliverySettingsDialog } from "@/features/monitors/delivery-settings-dialog";
 import { MonitorEditor } from "@/features/monitors/monitor-editor";
 import { ListPagination } from "@/components/list-pagination";
 
@@ -82,7 +82,6 @@ export function MonitorPage({
   const pause = usePauseMonitor();
   const resume = useResumeMonitor();
   const run = useRunNow();
-  const derive = useDeriveDraft();
   const rename = useRenameMonitor();
   const archive = useArchiveMonitor();
   const restore = useRestoreMonitor();
@@ -95,6 +94,7 @@ export function MonitorPage({
   const [renaming, setRenaming] = useState(false);
   const [renameName, setRenameName] = useState("");
   const [archiving, setArchiving] = useState(false);
+  const [settingsOpen, setSettingsOpen] = useState(false);
   const [menuOpen, setMenuOpen] = useState(false);
   const menu = useRef<HTMLDivElement>(null);
   const detail = useJobDetail(openJob);
@@ -172,6 +172,22 @@ export function MonitorPage({
           }
           actions={
             <>
+              {/* Delivery sits next to the run action: it is a setting of this monitor, not a menu item. */}
+              {!archived && (row.status === "active" ? (
+                <Button variant="outline" size="sm" onClick={() => pause.mutate(row.id)} disabled={busy}>
+                  <Pause className="size-3.5" strokeWidth={1.5} />
+                  {t("monitors.action.pause")}
+                </Button>
+              ) : (
+                <Button variant="outline" size="sm" onClick={() => resume.mutate(row.id)} disabled={busy}>
+                  <Play className="size-3.5" strokeWidth={1.5} />
+                  {t("monitors.action.resume")}
+                </Button>
+              ))}
+              <Button variant="outline" size="sm" onClick={() => setSettingsOpen(true)}>
+                <Settings2 className="size-3.5" strokeWidth={1.5} />
+                {t("monitors.action.delivery")}
+              </Button>
               {archived ? (
                 <Button size="sm" onClick={() => restore.mutate(row.id)} disabled={restore.isPending}>
                   <RotateCcw className="size-3.5" strokeWidth={1.5} />
@@ -179,17 +195,6 @@ export function MonitorPage({
                 </Button>
               ) : (
                 <>
-                  {row.status === "active" ? (
-                    <Button variant="outline" size="sm" onClick={() => pause.mutate(row.id)} disabled={busy}>
-                      <Pause className="size-3.5" strokeWidth={1.5} />
-                      {t("monitors.action.pause")}
-                    </Button>
-                  ) : (
-                    <Button variant="outline" size="sm" onClick={() => resume.mutate(row.id)} disabled={busy}>
-                      <Play className="size-3.5" strokeWidth={1.5} />
-                      {t("monitors.action.resume")}
-                    </Button>
-                  )}
                   <Button size="sm" onClick={() => run.mutate(row.id)} disabled={busy || row.status !== "active"}>
                     <Zap className="size-3.5" strokeWidth={1.5} />
                     {t("monitors.action.runNow")}
@@ -209,22 +214,6 @@ export function MonitorPage({
                 </Button>
                 {menuOpen && (
                   <div className="absolute top-full right-0 z-20 mt-1 w-48 rounded-lg border border-hairline bg-popover p-1.5 shadow-pop">
-                    {!archived && (
-                      <button
-                        type="button"
-                        className="flex w-full items-center gap-2 rounded-md px-2 py-1.5 text-left text-[14px] transition-colors duration-150 hover:bg-surface-card disabled:opacity-45"
-                        disabled={derive.isPending}
-                        onClick={() => {
-                          setMenuOpen(false);
-                          derive.mutate(row.id, {
-                            onSuccess: (result) => router.push(`/app?conversation=${result.conversation_id}`),
-                          });
-                        }}
-                      >
-                        <Settings2 className="size-3.5" strokeWidth={1.5} />
-                        {t("monitors.action.editSettings")}
-                      </button>
-                    )}
                     <button
                       type="button"
                       className="flex w-full items-center gap-2 rounded-md px-2 py-1.5 text-left text-[14px] transition-colors duration-150 hover:bg-surface-card"
@@ -265,10 +254,10 @@ export function MonitorPage({
             {row.baseline_status !== "ready" && <Badge tone="warning">{t("monitors.badge.baselinePending")}</Badge>}
           </div>
         </PageHeader>
-        {(pause.error || resume.error || run.error || derive.error || rename.error
-          || archive.error || restore.error) && (
+        {(pause.error || resume.error || run.error || rename.error || archive.error
+          || restore.error) && (
           <p role="alert" className="mb-4 text-sm text-error">
-            {errorText(pause.error || resume.error || run.error || derive.error || rename.error
+            {errorText(pause.error || resume.error || run.error || rename.error
               || archive.error || restore.error)}
           </p>
         )}
@@ -615,6 +604,12 @@ export function MonitorPage({
           )}
         </DialogContent>
       </Dialog>
+
+      <DeliverySettingsDialog
+        monitor={row}
+        open={settingsOpen}
+        onOpenChange={setSettingsOpen}
+      />
 
       <MonitorEditor
         monitorId={row.id}

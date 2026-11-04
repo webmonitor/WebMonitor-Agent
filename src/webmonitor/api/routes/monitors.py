@@ -8,6 +8,7 @@ from webmonitor.schemas.api import (
     JobView,
     MonitorDetail,
     MonitorRename,
+    MonitorSettingsUpdate,
     MonitorView,
     Page,
     SnapshotDetail,
@@ -53,6 +54,15 @@ async def rename_monitor(monitor_id: UUID, body: MonitorRename, session: Databas
                          user: AuthenticatedUser):
     monitor = await monitors.rename_monitor(session, user, monitor_id, body.name)
     result = monitors.monitor_view(monitor)
+    await session.commit()
+    return result
+
+
+@router.patch("/monitors/{monitor_id}/settings", response_model=MonitorDetail)
+async def update_monitor_settings(monitor_id: UUID, body: MonitorSettingsUpdate,
+                                  session: DatabaseSession, user: AuthenticatedUser):
+    await monitors.update_delivery_settings(session, user, monitor_id, body.settings)
+    result = await monitors.read_monitor(session, user, monitor_id)
     await session.commit()
     return result
 

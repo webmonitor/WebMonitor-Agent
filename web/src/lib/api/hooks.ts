@@ -407,6 +407,22 @@ export function useDeriveDraft() {
   });
 }
 
+export function useUpdateMonitorSettings() {
+  const cache = useQueryClient();
+  return useMutation({
+    mutationFn: ({ monitorId, settings }: { monitorId: string; settings: DeliverySettings }) =>
+      api<MonitorDetail>(`/monitors/${monitorId}/settings`, {
+        method: "PATCH",
+        body: JSON.stringify({ settings }),
+      }),
+    onSuccess: (_data, { monitorId }) => {
+      void cache.invalidateQueries({ queryKey: ["monitor", monitorId] });
+      void cache.invalidateQueries({ queryKey: ["monitors"] });
+      void cache.invalidateQueries({ queryKey: ["events"] });
+    },
+  });
+}
+
 export function useAckEvent() {
   const cache = useQueryClient();
   return useMutation({

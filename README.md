@@ -133,6 +133,11 @@ OPENAI_API_KEY=replace-with-your-model-api-key
 OPENAI_BASE_URL=https://api.openai.com/v1
 OPENAI_MODEL=replace-with-your-model-name
 
+# What a monitor created in the chat starts with (optional). Recipients, cadence
+# and the mail template are edited on the monitor itself, under "Delivery settings".
+# DEFAULT_INTERVAL_SECONDS=3600
+# DEFAULT_NOTIFICATION_GROUP=
+
 # Email alerts (optional). Rules are under "Email alerts" below.
 # SMTP_HOST=
 # SMTP_PORT=465
@@ -186,29 +191,27 @@ Two things happen next:
 
 ### Check the preview, then create
 
-Before anything is scheduled, a confirmation card appears inline in the conversation. **Settings** on the card opens your delivery settings right there — notification groups, check frequency, timezone and email template — so creating a monitor never needs a second panel.
+Before anything is scheduled, a confirmation card appears inline in the conversation. It holds one real sample, the mail that would be sent, and a single **Create monitor** button. Recipients, check frequency, timezone and the mail template are not asked for in the conversation: a new monitor starts from the deployment defaults (`DEFAULT_INTERVAL_SECONDS`, and `DEFAULT_NOTIFICATION_GROUP` or the first enabled group) and you edit them on the monitor itself under **Delivery settings**.
 
 The card shows:
 
 - monitor name, check frequency, page host and timezone, and how long the preview stays valid
 - **Extracted content** — the fields it read and their actual values on this page
 - **Coverage** — how much of the page this check covers
-- **Notify when** — the rule that will trigger an email, and whether each rule evaluates true now; change rules are compared from the next check onward
-- **Recipients** — the addresses that will be notified
 - **Page screenshot** / **Page archive** when the sample saved them
 - **Preview notification email** — the real body for every event this monitor can produce, rendered with the selected template
 - warnings such as “The check covers only part of the page”, or that the mail needs a field the page does not have
 
-If something is wrong, say so in the chat: the assistant takes a new sample and the card updates. **Preview again** samples the same settings again; **Take a sample** runs the first sample when none exists yet.
+If something is wrong, say so in the chat: the assistant takes a new sample and the card updates. A missing, failed or expired sample offers **Retry** on the line under the button.
 
 The card shows a preview's queued, running or failed status. Failed previews retain their error and can be retried. Creating or saving a monitor confirms the exact preview shown; another preview replacing it requires refreshing and confirming the new result.
 
-**Create monitor** is the click that starts scheduled checking. It needs at least one notification group and a check frequency; until both are saved, the button stays disabled and the card says what is missing. If the card has expired, preview again — a preview stays valid for 60 minutes.
+**Create monitor** is the click that starts scheduled checking. It stays disabled while a sample is missing, still running or expired — a sample stays valid for 60 minutes. If the instance has no enabled notification group, creation stops and asks an administrator to create one; nothing about delivery is asked for in the conversation.
 
 ### After it starts
 
-- The monitor appears under **Monitors** in the left sidebar with its name and interval. Its page shows **Last check**, **Next check**, **Check frequency**, **Collection method**, and **Monitor definition**: the selectors, fields, normalization, change rules and coverage actually in use. Notification groups, check frequency, timezone and the email template are separate delivery settings, edited in the workspace or from **Edit settings**; each monitor also shows the template name and the approved recipients. **Raw definition (JSON)** shows the collection definition exactly as the worker executes it, and **Definition versions** lists every published version that changed it.
-- **Edit definition** edits that collection JSON directly. Saving writes a draft, runs a real preview, and only a confirmed preview updates the monitor; editing from an older version starts a new draft from it. A settings-only save keeps the collected baseline; changing the collection definition starts a new baseline. **Edit settings** opens a conversation carrying the monitor's current definition and settings.
+- The monitor appears under **Monitors** in the left sidebar with its name and interval. Its page shows **Last check**, **Next check**, **Check frequency**, **Collection method**, and **Monitor definition**: the selectors, fields, normalization, change rules and coverage actually in use. Notification groups, check frequency, timezone and the email template are separate delivery settings, edited from **Delivery settings** on the monitor; each monitor also shows the template name and the approved recipients. **Raw definition (JSON)** shows the collection definition exactly as the worker executes it, and **Definition versions** lists every published version that changed it.
+- **Edit definition** edits that collection JSON directly. Saving writes a draft, starts a real preview and opens the conversation where you confirm it; only a confirmed preview updates the monitor, and editing from an older version starts a new draft from it. **Delivery settings** opens the recipients, cadence and template for this monitor; changing them keeps the collected baseline.
 - **Rename** changes the name. **Archive** stops checks and moves the monitor to **Archived**, keeping its definition and history; **Restore** brings it back, paused.
 - **Check history** stores every successful collection. Open one to see the stored values, coverage, screenshot and page archive. Events link to their check record and check details.
 - **Pause** / **Resume** stops and restarts the schedule. Pausing cancels queued or running collection; **Check now** is available while the monitor is active. An active check can be cancelled from its details, and a failed check can be retried there.
@@ -280,13 +283,13 @@ Only public `http://` or `https://` pages on ports 80 or 443 are accepted. Intra
 The assistant reads the HTML first and opens the page in a real browser when the data needs JavaScript. It still cannot read iframe or Shadow DOM content, anything behind a login, or pages that block automation. Coverage warnings on the preview card say when the read was partial; if the values there are empty, the monitor would have nothing to compare — describe the target more precisely, or choose another page or another value on it. A genuinely empty page can be a real state, such as every notice removed: ask the assistant to treat it that way. Otherwise an empty read is a failed check, not a deletion.
 
 **Create monitor is greyed out.**
-There is no valid preview yet: click **Take a sample**, or **Preview again** if it expired. If **Recipients** says “No recipients yet”, add addresses to a notification group first.
+There is no valid sample yet: use **Retry** on the line under the button, or wait for the running sample. If the line says no recipient group is configured, an administrator has to create one under **Notifications** → **Notification groups**.
 
 **No email arrived.**
 Open **Notifications** → **Delivery log** to check recipients, status and errors. For `Sent`, check spam; for `Failed`, review the SMTP settings using the error shown. The first check establishes a baseline; later changes trigger the configured rules. Repeated collection failures send one alert per cause, followed by a recovery alert after success.
 
 **I changed the recipients but nothing happened.**
-Recipients come from notification groups. After editing a group, confirm the monitor again with **Edit settings** → **Save changes**; the next successful check establishes a new baseline.
+Recipients come from notification groups. Editing a group changes who a future mail reaches; open the monitor's **Delivery settings** and save to approve the current set. The collected baseline is kept, so checks continue from the last known values.
 
 **How often can a monitor check?**
 Between 1 minute and 24 hours. Short intervals mean more requests to the target site and more load on this machine.

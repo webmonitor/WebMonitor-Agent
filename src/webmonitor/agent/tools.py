@@ -15,7 +15,6 @@ from webmonitor.collection.probe import probe, replay
 from webmonitor.db import get_session_factory
 from webmonitor.errors import DomainError
 from webmonitor.models import Job, utc_now
-from webmonitor.schemas.delivery import DeliverySettings
 from webmonitor.schemas.monitors import ApiRequest, MonitorSpec
 from webmonitor.services import conversations, drafts, jobs
 
@@ -298,7 +297,7 @@ async def preview_monitor(ctx: ToolContext[RuntimeContext], draft_id: str,
 @function_tool(failure_error_function=safe_tool_error)
 async def request_creation(ctx: ToolContext[RuntimeContext], draft_id: str,
                            spec_revision: int) -> dict:
-    """Ask the user to confirm the current real preview. Recipients, schedule and template must be set in the workspace first. The user creates the monitor from that workspace click; chat consent cannot bypass it."""
+    """Ask the user to confirm the current real preview. The user creates the monitor from that workspace click; chat consent cannot bypass it. Recipients and cadence are not part of this flow."""
     async def operation():
         async with get_session_factory()() as session:
             await _check(session, ctx, lock=True)
@@ -306,13 +305,6 @@ async def request_creation(ctx: ToolContext[RuntimeContext], draft_id: str,
             if draft.spec_revision != spec_revision:
                 raise DomainError("stale_revision", 409)
             extraction = drafts.validate_extraction_preview(draft)
-            settings = DeliverySettings.model_validate(draft.settings or {})
-            missing = [name for name, present in (
-                ("notification_group_ids", bool(settings.notification_group_ids)),
-                ("schedule", settings.schedule is not None)) if not present]
-            if missing:
-                raise DomainError("settings_incomplete", 409,
-                                  details={"missing": missing})
             delivery = await drafts.validate_delivery_preview(session, draft)
             await session.commit()
             return {"status": "awaiting_confirmation", "draft_id": str(draft.id),

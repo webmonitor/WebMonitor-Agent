@@ -186,7 +186,7 @@ export const zh: Record<keyof typeof en, string> = {
 
   "activity.deliveries.title": "投递记录",
   "activity.deliveries.description":
-    "“已发送”表示邮件服务器已接收；邮件何时进入收件箱由收件方决定。",
+    "“已发送”表示邮件服务器已接收；何时进入收件箱由收件方决定。",
   "activity.deliveries.loading": "正在加载…",
   "activity.deliveries.emptyTitle": "还没有投递记录",
   "activity.deliveries.emptyDescription": "监控发现变化后，发往通知组的邮件会记录在这里。",

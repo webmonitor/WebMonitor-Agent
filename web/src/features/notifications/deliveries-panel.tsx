@@ -32,24 +32,26 @@ export function DeliveriesPanel() {
 
   return (
     <section>
-      <header className="mb-3 flex items-start justify-between gap-3">
-        <div className="min-w-0">
+      {/* The filter sits beside the title so the sentence below can use the full column. */}
+      <header className="mb-3 space-y-1">
+        <div className="flex items-start justify-between gap-3">
           <h2 className="section-title">{t("activity.deliveries.title")}</h2>
-          <p className="meta mt-1 leading-5">{t("activity.deliveries.description")}</p>
+          <Select
+            label={t("activity.deliveries.status")}
+            value={status}
+            placeholder={t("activity.deliveries.allStatuses")}
+            onChange={setStatus}
+            className="w-32 shrink-0"
+            menuClassName="left-auto right-0"
+            options={[
+              { value: "", label: t("activity.deliveries.allStatuses") },
+              ...STATUSES.map((value) => ({ value, label: statusLabel(value) })),
+            ]}
+          />
         </div>
-        <Select
-          label={t("activity.deliveries.status")}
-          value={status}
-          placeholder={t("activity.deliveries.allStatuses")}
-          onChange={setStatus}
-          className="w-32 shrink-0"
-          menuClassName="left-auto right-0"
-          options={[
-            { value: "", label: t("activity.deliveries.allStatuses") },
-            ...STATUSES.map((value) => ({ value, label: statusLabel(value) })),
-          ]}
-        />
+        <p className="meta">{t("activity.deliveries.description")}</p>
       </header>
+
       {retry.error && <p role="alert" className="text-[13px] text-error">{errorText(retry.error)}</p>}
 
       {deliveries.isPending && <p className="meta">{t("activity.deliveries.loading")}</p>}

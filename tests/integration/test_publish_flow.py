@@ -14,12 +14,14 @@ from support import (
     publish,
     seed_owner,
 )
+from webmonitor.config import get_settings
 from webmonitor.errors import DomainError
 from webmonitor.models import Draft, Monitor
+from webmonitor.schemas.delivery import DeliverySettings
 from webmonitor.schemas.api import DraftUpdate, EmailTemplateSpec
 from webmonitor.schemas.monitors import MonitorSpec
 from webmonitor.schemas.templates import EmailTemplateConfig
-from webmonitor.services import drafts, templates
+from webmonitor.services import drafts, jobs, templates
 from webmonitor.services.monitors import list_spec_versions
 
 
@@ -52,6 +54,37 @@ async def test_publish_creates_one_monitor_and_repeats_idempotently(session):
     await session.commit()
     assert again.id == monitor.id
     assert await session.scalar(select(func.count()).select_from(Monitor)) == 1
+
+
+@pytest.mark.asyncio
+async def test_preview_seeds_delivery_defaults_and_publishes_without_user_settings(session):
+    """Delivery is the operator's, not the conversation's: a preview seeds it."""
+    user, current, group = await seed_owner(session)
+    conversation = await conversation_for(session, user)
+    spec = build_spec()
+    draft = await drafts.save_spec(session, current, conversation_id=conversation.id, spec=spec)
+    assert draft.settings_revision == 0 and not draft.settings
+
+    queued = await drafts.start_preview(session, current, draft.id)
+    await session.commit()
+
+    seeded = DeliverySettings.model_validate(draft.settings)
+    assert draft.settings_revision == 1
+    assert seeded.schedule is not None
+    assert seeded.schedule.interval_seconds == get_settings().default_interval_seconds
+    assert [str(item) for item in seeded.notification_group_ids] == [str(group.id)]
+
+    # The worker that would have run this job writes the previews instead.
+    await jobs.finish(session, queued, "cancelled")
+    await collect(session, user, draft, collection_result(spec))
+    await session.commit()
+    # The settings the preview rendered are the ones publication applies.
+    await drafts.validate_delivery_preview(session, draft)
+    monitor = await publish(session, conversation, draft, current)
+    await session.commit()
+
+    assert monitor.interval_seconds == get_settings().default_interval_seconds
+    assert monitor.notification_group_ids == [str(group.id)]
 
 
 @pytest.mark.asyncio

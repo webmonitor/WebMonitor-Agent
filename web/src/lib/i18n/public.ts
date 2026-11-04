@@ -3,13 +3,13 @@ export const en = {
   "public.nav.workspace": "Open workspace",
 
   "public.hero.eyebrow": "Web change monitoring",
-  "public.hero.titleLine1": "Describe what to watch.",
-  "public.hero.titleLine2": "Review it before creating.",
+  "public.hero.titleLine1": "Watch one page.",
+  "public.hero.titleLine2": "Mail when it changes.",
   "public.hero.body":
-    "Tell WebMonitor which public page to watch and what counts as a change. It opens the page on schedule and emails you the values before and after.",
+    "Paste a public URL and say which part has to change. It opens the page on the schedule you set and puts the value before and after into the mail. The first check only stores a baseline; nothing is sent.",
   "public.hero.cta": "Get started",
   "public.hero.secondaryCta": "See how it works",
-  "public.hero.note": "New users: contact your administrator for an invitation link.",
+  "public.hero.note": "Accounts are created by an administrator; you need an invitation link.",
 
   "public.sample.title": "Sample notification",
   "public.sample.badge": "List changed",
@@ -23,30 +23,30 @@ export const en = {
   "public.sample.schedule": "Checked every 10 minutes; emailed when a row appears.",
 
 
-  "public.steps.title": "Create monitors by chatting",
-  "public.steps.link.title": "Share the page URL",
+  "public.steps.title": "Monitors are made in a conversation",
+  "public.steps.link.title": "Send the URL and the rule",
   "public.steps.link.body":
-    "Paste the link into the chat and describe what to watch, how often to check, and when to notify you.",
-  "public.steps.preview.title": "Review the preview",
+    "Send the assistant the URL and what counts as a change. Frequency, recipients and the mail template are set in the preview, and can be changed later.",
+  "public.steps.preview.title": "Look at one real sample",
   "public.steps.preview.body":
-    "Check the extracted content and email preview, confirm the recipients, then create the monitor.",
-  "public.steps.notify.title": "Get change notifications",
+    "The assistant opens the page once and shows the values it got, how much of the page that covers, and the mail it would send.",
+  "public.steps.notify.title": "Confirm, then it runs on a schedule",
   "public.steps.notify.body":
-    "The monitor runs on schedule. Changes that match your conditions become records and are emailed to you.",
+    "The first check stores a baseline only. After that, each change that matches is recorded and mailed.",
 
-  "public.features.title": "Manage monitors and notifications in the workspace",
-  "public.features.history.title": "Inspect change details",
+  "public.features.title": "What the workspace shows",
+  "public.features.history.title": "Change details and snapshots",
   "public.features.history.body":
-    "Compare content before and after the update, and view the page snapshot saved for that check.",
-  "public.features.email.title": "Check email delivery",
+    "Every check keeps a snapshot of the page. A change record lines up each field before and after.",
+  "public.features.email.title": "Mail log",
   "public.features.email.body":
-    "See recipients, message body, and delivery results, including why a send failed.",
-  "public.features.recipients.title": "Choose who gets notified",
+    "Who received it, when it went out, and why it did not.",
+  "public.features.recipients.title": "Recipient groups",
   "public.features.recipients.body":
-    "Pick recipients from groups your administrator configured; one monitor can notify several mailboxes.",
-  "public.features.control.title": "Control the monitor",
+    "An administrator keeps the groups; one monitor can mail several. Editing a group means confirming the monitor again.",
+  "public.features.control.title": "Manual runs",
   "public.features.control.body":
-    "Pause or resume a monitor, or run a check right away to capture the current content.",
+    "Pause, resume, or run a check now to see what the page says at this moment.",
 
   "public.footer.tagline": "WebMonitor · Web change monitoring",
 
@@ -81,13 +81,13 @@ export const zh: Record<keyof typeof en, string> = {
   "public.nav.workspace": "进入工作台",
 
   "public.hero.eyebrow": "网页变化监控",
-  "public.hero.titleLine1": "说清要监控什么",
-  "public.hero.titleLine2": "预览确认后开始",
+  "public.hero.titleLine1": "盯住一个网页",
+  "public.hero.titleLine2": "变了就发邮件给你",
   "public.hero.body":
-    "告诉 WebMonitor 要监控哪个公开网页、什么算发生变化。它按时打开页面，把变化前后的取值发到你的邮箱。",
+    "填一个公开网址，再说清哪一处变了才算改动。它按设好的频率打开页面，把改前和改后的值写进那封邮件。第一次采集只存基线，不发信。",
   "public.hero.cta": "开始使用",
-  "public.hero.secondaryCta": "查看使用方式",
-  "public.hero.note": "新用户请联系管理员获取邀请链接。",
+  "public.hero.secondaryCta": "看看怎么用",
+  "public.hero.note": "账号由管理员开通，需要邀请链接。",
 
   "public.sample.title": "通知示例",
   "public.sample.badge": "列表变化",
@@ -101,23 +101,23 @@ export const zh: Record<keyof typeof en, string> = {
   "public.sample.schedule": "每 10 分钟检查一次，列表出现新条目时通知。",
 
 
-  "public.steps.title": "通过对话创建监控",
-  "public.steps.link.title": "提供网页地址",
-  "public.steps.link.body": "在对话中粘贴链接，说明关注的内容、检查频率和通知条件。",
-  "public.steps.preview.title": "检查预览结果",
-  "public.steps.preview.body": "查看提取到的内容和邮件预览，核对收件人后确认创建。",
-  "public.steps.notify.title": "接收变化通知",
-  "public.steps.notify.body": "监控按设置运行。符合条件的变化会生成记录，并通过邮件通知。",
+  "public.steps.title": "监控是一次对话做出来的",
+  "public.steps.link.title": "发网址，说清看哪一处",
+  "public.steps.link.body": "把网址和判断标准发给助手。频率、收件人、邮件模板都在预览里设，之后还能改。",
+  "public.steps.preview.title": "先看一眼真实采集",
+  "public.steps.preview.body": "助手打开页面采一次，显示抽到的值、覆盖到哪一部分，以及那封邮件长什么样。",
+  "public.steps.notify.title": "确认后才开始定时",
+  "public.steps.notify.body": "第一次采集只存基线。之后每次符合条件的变化记一条，并发邮件。",
 
-  "public.features.title": "在工作台管理监控与通知",
-  "public.features.history.title": "查看变化详情",
-  "public.features.history.body": "对比更新前后的内容，查看该次检查保存的页面存档。",
-  "public.features.email.title": "检查邮件发送情况",
-  "public.features.email.body": "查看收件人、邮件正文和发送结果，了解发送失败的原因。",
-  "public.features.recipients.title": "设置通知对象",
-  "public.features.recipients.body": "从管理员配置的通知组中选择收件人，一项监控可通知多个邮箱。",
-  "public.features.control.title": "调整运行状态",
-  "public.features.control.body": "可暂停或恢复监控，也可以立即执行一次检查，获取当前内容。",
+  "public.features.title": "工作台里能看到的东西",
+  "public.features.history.title": "改动详情和页面快照",
+  "public.features.history.body": "每次检查都留一份快照；变化记录逐项对照改前与改后。",
+  "public.features.email.title": "投递记录",
+  "public.features.email.body": "谁收到了、什么时候发的、为什么没发出去。",
+  "public.features.recipients.title": "收件人分组",
+  "public.features.recipients.body": "收件人由管理员按组维护，一个监控可以同时发给几个组；改过组要重新确认。",
+  "public.features.control.title": "随时手动检查",
+  "public.features.control.body": "暂停、恢复，或者立刻跑一次，看看现在的内容。",
 
   "public.footer.tagline": "WebMonitor · 网页变化监控",
 

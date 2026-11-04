@@ -119,6 +119,12 @@ class EmailTemplatePatch(Input):
         return value
 
 
+class MonitorSettingsUpdate(Input):
+    """Who is told and how often, edited on the monitor itself."""
+
+    settings: DeliverySettings
+
+
 class MonitorRename(Input):
     name: str = Field(min_length=1, max_length=200)
 

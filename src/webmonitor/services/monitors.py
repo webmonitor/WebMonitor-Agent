@@ -15,9 +15,10 @@ from webmonitor.schemas.api import (
     SnapshotRecord,
     SpecVersion,
 )
+from webmonitor.schemas.delivery import DeliverySettings
 from webmonitor.schemas.monitors import MonitorSpec, content_hash
 from webmonitor.security.auth import CurrentUser, require_owner
-from webmonitor.services import jobs
+from webmonitor.services import drafts, jobs, notifications
 
 ACTIVE = ("queued", "running")
 
@@ -136,6 +137,29 @@ async def rename_monitor(session: AsyncSession, user: CurrentUser, monitor_id: U
     monitor.name = spec.name
     monitor.spec = spec.model_dump(mode="json")
     monitor.spec_hash = content_hash(spec)
+    await session.flush()
+    return monitor
+
+
+async def update_delivery_settings(session: AsyncSession, user: CurrentUser, monitor_id: UUID,
+                                    settings: DeliverySettings) -> Monitor:
+    """Recipients, cadence and template, edited by hand on the monitor.
+
+    The collection contract and the baseline are untouched: this is the one place
+    delivery is configured, and the conversation never asks for it.
+    """
+    monitor = await read_monitor_row(session, user, monitor_id, lock=True)
+    schedule = settings.schedule
+    missing = [name for name, present in (
+        ("notification_group_ids", bool(settings.notification_group_ids)),
+        ("schedule", schedule is not None)) if not present]
+    if missing or schedule is None:
+        raise DomainError("settings_incomplete", 409, details={"missing": missing})
+    spec = MonitorSpec.model_validate(monitor.spec)
+    recipients = await notifications.load_recipients(
+        session, settings.notification_group_ids, lock=True)
+    template_id, snapshot = await drafts._template_snapshot(session, settings, spec)
+    drafts._apply_settings(monitor, spec, settings, schedule, template_id, snapshot, recipients)
     await session.flush()
     return monitor
 

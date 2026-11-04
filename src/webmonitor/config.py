@@ -30,6 +30,11 @@ class Settings(BaseSettings):
     admin_password: SecretStr = SecretStr("")
     registration_allowed_emails: str = ""
 
+    # Delivery is a manual, operator-owned concern: a monitor created from a
+    # conversation starts with these instead of asking the user in the chat.
+    default_interval_seconds: int = 3600
+    default_notification_group: str = ""
+
     openai_api_key: SecretStr = SecretStr("")
     openai_base_url: str = "https://api.openai.com/v1"
     openai_container_base_url: str | None = None

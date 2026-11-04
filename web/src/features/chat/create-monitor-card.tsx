@@ -1,9 +1,7 @@
 "use client";
 import { useState } from "react";
-import { AlertTriangle, CheckCircle2, ExternalLink, Mail, RefreshCw, Settings2 } from "lucide-react";
-import { Badge } from "@/components/ui/badge";
+import { AlertTriangle, CheckCircle2, ExternalLink, Mail } from "lucide-react";
 import { Button } from "@/components/ui/button";
-import { DraftSettingsPanel } from "@/features/chat/draft-settings-panel";
 import { FieldValues, fieldTypes } from "@/features/monitors/field-values";
 import { ApiError } from "@/lib/api/client";
 import {
@@ -70,16 +68,15 @@ function EvidenceLinks({ draftId, preview }: { draftId: string; preview: Extract
  *
  * It is laid out as a report — a ruled header, then labelled blocks — because
  * what is being read is a record of one collected page plus the mail it produces.
- * Delivery settings live in their own panel; this card never guesses them.
+ * One action, one status line: delivery settings are a single summary row that
+ * expands in place, and a missing or failed preview is repaired from that line.
  */
 export function CreateMonitorCard({
   conversationId,
   draft,
-  onApproved,
 }: {
   conversationId: string;
   draft: DraftView;
-  onApproved?: () => void;
 }) {
   const { t } = useI18n();
   const {
@@ -100,7 +97,6 @@ export function CreateMonitorCard({
   // Errors are kept as codes/kinds so the visible text follows the locale.
   const [error, setError] = useState<CardError | null>(null);
   const [approving, setApproving] = useState(false);
-  const [settingsOpen, setSettingsOpen] = useState(false);
   const [selectedEvent, setSelectedEvent] = useState<string | null>(null);
   const conversation = useConversation(conversationId);
   const [requestedJob, setRequestedJob] = useState<JobView | null>(null);
@@ -123,15 +119,6 @@ export function CreateMonitorCard({
       : snapshotJob;
   const previewBusy =
     repreview.isPending || Boolean(previewJob && ["queued", "running"].includes(previewJob.status));
-  const feedback = previewJob && previewJob.status !== "succeeded" ? (
-    <p
-      role={previewJob.status === "failed" ? "alert" : "status"}
-      className={previewJob.status === "failed" ? "text-[13px] text-error" : "meta"}
-    >
-      {statusLabel(previewJob.status)}
-      {previewJob.error_code ? ` · ${errorText(previewJob.error_code)}` : ""}
-    </p>
-  ) : null;
 
   function describeError(failure: CardError): string {
     switch (failure.kind) {
@@ -171,7 +158,6 @@ export function CreateMonitorCard({
         extractionPreviewHash: draft.extraction_preview_hash,
         deliveryPreviewHash: draft.delivery_preview_hash,
       });
-      onApproved?.();
     } catch (failure) {
       setError(
         failure instanceof ApiError
@@ -221,40 +207,69 @@ export function CreateMonitorCard({
       ? t("chat.approve.saveEdit")
       : t("chat.approve.create");
 
-  const settingsControl = (
-    <Button
-      variant="outline"
-      className="w-full"
-      aria-expanded={settingsOpen}
-      onClick={() => setSettingsOpen((open) => !open)}
-    >
-      <Settings2 strokeWidth={1.5} />
-      {t("settings.open")}
-    </Button>
-  );
+  // One line under the action carries every reason the card cannot proceed:
+  // a failed request, a failed preview, missing settings, a stale preview.
+  const previewFailed = previewJob?.status === "failed";
+  const note = error
+    ? { tone: "error" as const, text: describeError(error) }
+    : previewFailed
+      ? {
+          tone: "error" as const,
+          text: [statusLabel(previewJob.status), previewJob.error_code ? errorText(previewJob.error_code) : ""]
+            .filter(Boolean)
+            .join(" · "),
+        }
+      : previewBusy
+        ? { tone: "muted" as const, text: previewJob ? statusLabel(previewJob.status) : t("common.loading") }
+        : !extraction
+          ? { tone: "muted" as const, text: t("chat.preview.body") }
+          : expired
+            ? { tone: "warning" as const, text: t("chat.approve.expired") }
+            : !settingsComplete
+              ? { tone: "warning" as const, text: t("chat.approve.noRecipients") }
+              : !deliveryCurrent
+                ? { tone: "warning" as const, text: t("chat.approve.noRecipients") }
+                : null;
+  // The only way back from a missing, failed or expired preview.
+  const canRetry =
+    !previewBusy && !approving && (Boolean(error) || expired || previewFailed || !extraction);
 
-  const settingsPanel = <DraftSettingsPanel draft={draft} onSaved={() => setSettingsOpen(false)} />;
+  const statusLine = note ? (
+    <div className="flex items-baseline justify-between gap-3">
+      <p
+        role={note.tone === "error" ? "alert" : "status"}
+        className={`min-w-0 text-[13px] leading-5 ${
+          note.tone === "error"
+            ? "text-error"
+            : note.tone === "warning"
+              ? "text-warning-ink"
+              : "text-muted-soft"
+        }`}
+      >
+        {note.text}
+      </p>
+      {canRetry && (
+        <button
+          type="button"
+          onClick={() => void onRepreview()}
+          className="shrink-0 text-[13px] text-primary-active underline-offset-2 hover:underline"
+        >
+          {t("common.retry")}
+        </button>
+      )}
+    </div>
+  ) : null;
 
   if (!extraction) {
     return (
-      <section className="surface-pad space-y-3">
-        <div className="space-y-1">
+      <section className="surface overflow-hidden">
+        <header className="space-y-0.5 px-5 py-4">
           <h2 className="t-title">
             {editing ? t("chat.preview.editTitle") : t("chat.preview.title")}
           </h2>
-          <p className="t-body-sm text-muted-foreground">{t("chat.preview.body")}</p>
-        </div>
-        <Button variant="outline" className="w-full" onClick={() => void onRepreview()} disabled={previewBusy}>
-          <RefreshCw strokeWidth={1.5} />
-          {previewBusy ? t("chat.preview.opening") : t("chat.preview.run")}
-        </Button>
-        {settingsControl}
-        {settingsOpen && settingsPanel}
-        {feedback}
-        {error && (
-          <p className="text-[13px] text-error" role="alert">
-            {describeError(error)}
-          </p>
+        </header>
+        {statusLine && (
+          <div className="border-t border-hairline px-5 py-3">{statusLine}</div>
         )}
       </section>
     );
@@ -263,14 +278,11 @@ export function CreateMonitorCard({
   return (
     <section className="surface">
       <header className="space-y-2 border-b border-hairline px-5 py-4">
-        <div className="flex items-baseline justify-between gap-2">
-          <span className="label-line">
-            {expiry ? t("chat.preview.expires", { relative: formatRelative(expiry) }) : ""}
+        {expiry && (
+          <span className="label-line block">
+            {t("chat.preview.expires", { relative: formatRelative(expiry) })}
           </span>
-          <Badge tone={expired ? "warning" : "brand"}>
-            {expired ? t("chat.status.expired") : t("chat.status.pending")}
-          </Badge>
-        </div>
+        )}
         <div className="space-y-0.5">
           <h2 className="t-title">
             {editing ? t("chat.approve.editTitle") : t("chat.approve.title")}
@@ -374,41 +386,13 @@ export function CreateMonitorCard({
         )}
       </div>
 
-      <div className="space-y-2.5 border-t border-hairline px-5 py-4">
+      <div className="space-y-2 border-t border-hairline px-5 py-4">
         <Button className="h-10 w-full" onClick={() => void onApprove()} disabled={disabled}>
           <CheckCircle2 strokeWidth={1.5} />
           {approveLabel}
         </Button>
-        {!settingsComplete && (
-          <p className="text-[13px] text-warning-ink">{t("format.error.settings_incomplete")}</p>
-        )}
-        {settingsComplete && !deliveryCurrent && (
-          <p className="text-[13px] text-warning-ink">{t("settings.preview.missing")}</p>
-        )}
-        {settingsControl}
-        <button
-          type="button"
-          className="w-full text-[13px] text-muted-foreground transition-colors hover:text-ink disabled:opacity-45"
-          onClick={() => void onRepreview()}
-          disabled={previewBusy || approving}
-        >
-          {previewBusy ? t("chat.approve.repreviewing") : t("chat.approve.repreview")}
-        </button>
+        {statusLine}
       </div>
-
-      {settingsOpen && <div className="border-t border-hairline bg-surface-soft px-5 py-4">{settingsPanel}</div>}
-
-      {(feedback || expired || error) && (
-        <div className="space-y-1 border-t border-hairline px-5 py-3">
-          {feedback}
-          {expired && <p className="text-[13px] text-warning-ink">{t("chat.approve.expired")}</p>}
-          {error && (
-            <p className="text-[13px] text-error" role="alert">
-              {describeError(error)}
-            </p>
-          )}
-        </div>
-      )}
     </section>
   );
 }

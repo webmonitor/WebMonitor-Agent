@@ -14,7 +14,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from webmonitor.collection.diff import evaluate_rules
 from webmonitor.config import get_settings
 from webmonitor.errors import DomainError
-from webmonitor.models import Conversation, Draft, Job, Monitor, User, utc_now
+from webmonitor.models import Conversation, Draft, Job, Monitor, NotificationGroup, User, utc_now
 from webmonitor.notifications.rendering import render_email, sanitize_preview
 from webmonitor.schemas.api import (
     CreateMonitorResult,
@@ -61,6 +61,35 @@ def _spec(draft: Draft) -> MonitorSpec:
 
 def _settings(draft: Draft) -> DeliverySettings:
     return DeliverySettings.model_validate(draft.settings or {})
+
+
+async def default_delivery_settings(session: AsyncSession) -> DeliverySettings:
+    """What a conversation-created monitor starts with.
+
+    Recipients, cadence and the mail template are the operator's concern, not part
+    of the collection flow: the chat never asks for them, so a draft takes the
+    deployment default interval and its default — or first enabled — group.
+    """
+    configured = get_settings()
+    interval = max(int(configured.default_interval_seconds), 60)
+    target = configured.default_notification_group.strip()
+    group_id = None
+    if target:
+        try:
+            group_id = UUID(target)
+        except ValueError:
+            group_id = await session.scalar(select(NotificationGroup.id).where(
+                NotificationGroup.name == target,
+                NotificationGroup.enabled.is_(True),
+                NotificationGroup.deleted_at.is_(None)).limit(1))
+    if group_id is None:
+        group_id = await session.scalar(select(NotificationGroup.id).where(
+            NotificationGroup.enabled.is_(True),
+            NotificationGroup.deleted_at.is_(None)).order_by(
+                NotificationGroup.created_at).limit(1))
+    return DeliverySettings(
+        notification_group_ids=[group_id] if group_id is not None else [],
+        schedule=Schedule(interval_seconds=interval, timezone="UTC"))
 
 
 def _clear_extraction_preview(draft: Draft) -> None:
@@ -227,6 +256,18 @@ async def start_preview(session: AsyncSession, user: CurrentUser, draft_id: UUID
         raise DomainError("draft_not_editable", 409)
     spec = _spec(draft)
     validate_url(spec.url)
+    # Delivery settings are never collected in the chat: seed the deployment
+    # default before the preview that has to render a real mail.
+    current = _settings(draft)
+    if current.schedule is None or not current.notification_group_ids:
+        seeded = await default_delivery_settings(session)
+        seeded = seeded.model_copy(update={
+            "notification_group_ids": current.notification_group_ids or seeded.notification_group_ids,
+            "schedule": current.schedule or seeded.schedule,
+            "email_template_id": current.email_template_id or seeded.email_template_id})
+        draft.settings = seeded.model_dump(mode="json")
+        draft.settings_hash = content_hash(seeded)
+        draft.settings_revision += 1
     existing = await session.scalar(select(Job).where(Job.draft_id == draft.id,
         Job.kind == "preview", Job.revision == draft.spec_revision,
         Job.status.in_(("queued", "running"))))
