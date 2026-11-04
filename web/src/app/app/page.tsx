@@ -2,39 +2,21 @@
 import { Suspense, useEffect } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
 import { ChatPanel } from "@/features/chat/chat-panel";
-import { CreateMonitorCard } from "@/features/chat/create-monitor-card";
 import { MonitorSummary } from "@/features/monitors/monitor-summary";
 import { RecentEvents } from "@/features/events/recent-events";
 import { useConversation, useConversations } from "@/lib/api/hooks";
 import { ApiError } from "@/lib/api/client";
 import { useI18n } from "@/lib/i18n";
 
-function ContextPanel({
-  conversationId,
-  pendingDraftId,
-  monitorId,
-}: {
-  conversationId: string;
-  pendingDraftId?: string;
-  monitorId?: string;
-}) {
-  const { t } = useI18n();
-  const conversation = useConversation(conversationId);
-  const draft = conversation.data?.drafts.find((item) => item.id === pendingDraftId);
-
+/**
+ * The conversation owns creating a monitor: settings, preview and approval all
+ * happen in the chat stream, so the rail only reports a monitor that exists.
+ */
+function ContextPanel({ monitorId }: { monitorId: string }) {
   return (
     <aside className="hidden h-full min-h-0 flex-col gap-6 overflow-y-auto border-l bg-card px-4 py-5 xl:flex">
-      {draft ? (
-        <CreateMonitorCard conversationId={conversationId} draft={draft} />
-      ) : monitorId ? (
-        <MonitorSummary monitorId={monitorId} />
-      ) : (
-        <section className="surface-pad space-y-1.5">
-          <h2 className="text-[14px] font-medium">{t("chat.context.emptyTitle")}</h2>
-          <p className="meta">{t("chat.context.emptyBody")}</p>
-        </section>
-      )}
-      {monitorId && <RecentEvents monitorId={monitorId} />}
+      <MonitorSummary monitorId={monitorId} />
+      <RecentEvents monitorId={monitorId} />
     </aside>
   );
 }
@@ -76,17 +58,11 @@ function WorkspaceView() {
   return (
     <div
       className={`grid h-full min-h-0 grid-cols-1 grid-rows-[minmax(0,1fr)] ${
-        activeId ? "xl:grid-cols-[minmax(0,1fr)_21rem]" : ""
+        activeId && monitorId ? "xl:grid-cols-[minmax(0,1fr)_21rem]" : ""
       }`}
     >
       <ChatPanel conversationId={activeId} drafting={drafting} pendingDraft={pending} />
-      {activeId && (
-        <ContextPanel
-          conversationId={activeId}
-          pendingDraftId={pending?.id}
-          monitorId={monitorId}
-        />
-      )}
+      {activeId && monitorId && <ContextPanel monitorId={monitorId} />}
     </div>
   );
 }

@@ -1,13 +1,12 @@
 """JSON API collection: ordered steps, assertions, pagination and failures."""
 import json
-from uuid import uuid4
 
 import httpx
 import pytest
 
 from webmonitor.collection.api import collect_api
 from webmonitor.errors import DomainError
-from webmonitor.schemas.monitors import DraftSpec
+from webmonitor.schemas.monitors import MonitorSpec
 
 
 def json_response(payload, status=200, content_type='application/json'):
@@ -32,7 +31,7 @@ def step(url, step_id='list', method='GET', **request):
 
 
 def spec(*, steps, fields=None, assertions=None, pagination=None, coverage='full'):
-    return DraftSpec.model_validate({
+    return MonitorSpec.model_validate({
         'name': 'API monitor', 'url': 'https://page.example.com/list',
         'collection_mode': 'http',
         'source': {'kind': 'json', 'steps': steps,
@@ -40,8 +39,6 @@ def spec(*, steps, fields=None, assertions=None, pagination=None, coverage='full
         'fields': fields or [list_field()],
         'business_key': {'field': 'items', 'item_fields': ['id']},
         'change_rules': {'mode': 'any', 'rules': [{'type': 'list_added', 'field': 'items'}]},
-        'schedule': {'interval_seconds': 3600, 'timezone': 'UTC'},
-        'notification_group_ids': [str(uuid4())],
         'coverage': {'scope': coverage, 'description': 'Rows'},
     })
 

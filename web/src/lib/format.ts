@@ -17,7 +17,6 @@ function sameDay(left: Date, right: Date): boolean {
     && left.getDate() === right.getDate();
 }
 
-const CURRENCY_SYMBOLS: Record<string, string> = { CNY: "¥", USD: "$", EUR: "€", GBP: "£", JPY: "¥" };
 
 const STATUS_KEYS: Partial<Record<string, MessageKey>> = {
   queued: "format.status.queued",
@@ -40,7 +39,6 @@ const STATUS_KEYS: Partial<Record<string, MessageKey>> = {
 };
 
 const EVENT_KEYS: Partial<Record<string, MessageKey>> = {
-  price_changed: "format.event.price_changed",
   list_changed: "format.event.list_changed",
   content_changed: "format.event.content_changed",
   run_failed: "format.event.run_failed",
@@ -52,7 +50,6 @@ const STEP_KEYS: Partial<Record<string, MessageKey>> = {
   probe_target: "format.step.probe_target",
   capture_network: "format.step.capture_network",
   replay_request: "format.step.replay_request",
-  list_notification_groups: "format.step.list_notification_groups",
   save_monitor_draft: "format.step.save_monitor_draft",
   preview_monitor: "format.step.preview_monitor",
   request_creation: "format.step.request_creation",
@@ -64,6 +61,11 @@ const ERROR_KEYS: Partial<Record<string, MessageKey>> = {
   collection_invalid: "format.error.collection_invalid",
   collection_failed: "format.error.collection_failed",
   notification_routes_invalid: "format.error.notification_routes_invalid",
+  template_not_found: "format.error.template_not_found",
+  template_unavailable: "format.error.template_unavailable",
+  template_incompatible: "format.error.template_incompatible",
+  template_name_conflict: "format.error.template_name_conflict",
+  settings_incomplete: "format.error.settings_incomplete",
   url_forbidden: "format.error.url_forbidden",
   target_unavailable: "format.error.target_unavailable",
   target_http_error: "format.error.target_http_error",
@@ -118,30 +120,6 @@ const OPERATOR_KEYS: Partial<Record<string, MessageKey>> = {
   lt: "format.operator.lt",
   lte: "format.operator.lte",
   eq: "format.operator.eq",
-};
-
-const FIELD_KEYS: Partial<Record<string, MessageKey>> = {
-  current_price: "format.field.current_price",
-  previous_price: "format.field.previous_price",
-  price: "format.field.price",
-  current_fee: "format.field.current_fee",
-  effective_date: "format.field.effective_date",
-  title: "format.field.title",
-  name: "format.field.name",
-  stock: "format.field.stock",
-  quantity: "format.field.quantity",
-  status: "format.field.status",
-  summary: "format.field.summary",
-  content: "format.field.content",
-  date: "format.field.date",
-  time: "format.field.time",
-};
-
-const ZONE_KEYS: Partial<Record<string, MessageKey>> = {
-  "Asia/Shanghai": "format.zone.Asia/Shanghai",
-  "Asia/Tokyo": "format.zone.Asia/Tokyo",
-  "Europe/London": "format.zone.Europe/London",
-  "America/New_York": "format.zone.America/New_York",
 };
 
 type Rule = {
@@ -235,10 +213,8 @@ export function useFormat() {
       const amount = value.amount;
       if (typeof amount !== "string" && typeof amount !== "number") return null;
       const currency = typeof value.currency === "string" ? value.currency : "";
-      const symbol = CURRENCY_SYMBOLS[currency];
-      const text = String(amount);
-      if (symbol) return `${symbol}${text}`;
-      return currency ? `${currency} ${text}` : text;
+      // The ISO code is the whole contract; no currency is rendered specially.
+      return currency ? `${currency} ${amount}` : String(amount);
     }
 
     function formatValue(value: unknown): string {
@@ -322,10 +298,12 @@ export function useFormat() {
 
     function formatInterval(seconds?: number | null): string {
       if (!seconds) return "—";
-      if (seconds % 86400 === 0) return t("format.interval", { duration: locale === "zh-CN" ? `${seconds / 86400} 天` : `${seconds / 86400} days` });
-      if (seconds % 3600 === 0) return t("format.interval", { duration: locale === "zh-CN" ? `${seconds / 3600} 小时` : `${seconds / 3600} hours` });
-      if (seconds % 60 === 0) return t("format.interval", { duration: locale === "zh-CN" ? `${seconds / 60} 分钟` : `${seconds / 60} minutes` });
-      return t("format.interval", { duration: locale === "zh-CN" ? `${seconds} 秒` : `${seconds} seconds` });
+      const unit = (count: number, one: string, many: string, zh: string) =>
+        locale === "zh-CN" ? `${count} ${zh}` : `${count} ${count === 1 ? one : many}`;
+      if (seconds % 86400 === 0) return t("format.interval", { duration: unit(seconds / 86400, "day", "days", "天") });
+      if (seconds % 3600 === 0) return t("format.interval", { duration: unit(seconds / 3600, "hour", "hours", "小时") });
+      if (seconds % 60 === 0) return t("format.interval", { duration: unit(seconds / 60, "minute", "minutes", "分钟") });
+      return t("format.interval", { duration: unit(seconds, "second", "seconds", "秒") });
     }
 
     function coverageLabel(scope?: string | null): string {
@@ -335,9 +313,7 @@ export function useFormat() {
     }
 
     function formatTimezone(zone?: string | null): string {
-      if (!zone) return "—";
-      const key = ZONE_KEYS[zone];
-      return key ? t(key) : zone;
+      return zone || "—";
     }
 
     function formatMode(mode?: string | null): string {
@@ -349,8 +325,7 @@ export function useFormat() {
       const head = semantic.split(/[，,。；;（(：:、\n]/)[0]?.trim() ?? "";
       if (head && head.length <= 14) return head;
       if (head) return `${head.slice(0, 12)}…`;
-      const key = FIELD_KEYS[field.name];
-      return key ? t(key) : field.name;
+      return field.name;
     }
 
     function fieldLabels(

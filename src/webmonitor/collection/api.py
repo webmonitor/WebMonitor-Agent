@@ -22,7 +22,7 @@ from webmonitor.schemas.monitors import (
     REQUEST_TEMPLATE,
     ApiRequest,
     ApiSource,
-    DraftSpec,
+    MonitorSpec,
     PagePagination,
     canonical_json,
 )
@@ -123,7 +123,7 @@ def _total(body: Any, pagination: PagePagination) -> int:
 
 
 async def _paginate(request: ApiRequest, step: dict, pagination: PagePagination,
-                    spec: DraftSpec, *, transport: httpx.AsyncBaseTransport | None
+                    spec: MonitorSpec, *, transport: httpx.AsyncBaseTransport | None
                     ) -> tuple[dict, int, bool, FetchResult, FetchResult]:
     list_field = next(field for field in spec.fields if field.type == 'list')
     fields = {}
@@ -177,7 +177,7 @@ async def _paginate(request: ApiRequest, step: dict, pagination: PagePagination,
     return fields, pages, truncated, first, last
 
 
-async def collect_api(url: str, spec: DraftSpec, *,
+async def collect_api(url: str, spec: MonitorSpec, *,
                       transport: httpx.AsyncBaseTransport | None = None) -> CollectionResult:
     source = spec.source
     if source is None:

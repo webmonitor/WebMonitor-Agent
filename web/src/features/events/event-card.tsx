@@ -10,7 +10,6 @@ import { useI18n } from "@/lib/i18n";
 type Tone = "brand" | "success" | "warning" | "error" | "neutral";
 
 const TONES: Record<string, Tone> = {
-  price_changed: "brand",
   list_changed: "brand",
   content_changed: "brand",
   run_failed: "error",

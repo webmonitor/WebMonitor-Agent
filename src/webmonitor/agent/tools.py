@@ -14,8 +14,9 @@ from webmonitor.agent.runtime import RuntimeContext, current_draft
 from webmonitor.collection.probe import probe, replay
 from webmonitor.db import get_session_factory
 from webmonitor.errors import DomainError
-from webmonitor.models import Draft, Job, NotificationGroup, utc_now
-from webmonitor.schemas.monitors import ApiRequest, DraftSpec
+from webmonitor.models import Draft, Job, utc_now
+from webmonitor.schemas.delivery import DeliverySettings
+from webmonitor.schemas.monitors import ApiRequest, MonitorSpec
 from webmonitor.services import conversations, drafts, jobs
 
 WAIT_SECONDS = 70.0
@@ -44,7 +45,9 @@ def safe_tool_error(context, error):
             else "invalid_tool_input" if isinstance(error, (ValidationError, ValueError,
                                                             ModelBehaviorError))
             else "tool_failed")
-    details = []
+    details: list | dict = []
+    if isinstance(error, DomainError):
+        details = error.details or []
     if isinstance(error, ValidationError):
         details = _validation_details(error.errors(include_input=False, include_context=False))
     elif isinstance(error, ValueError) and getattr(context, "tool_name", None) == "save_monitor_draft":
@@ -52,13 +55,13 @@ def safe_tool_error(context, error):
     if not details and getattr(context, "tool_name", None) == "save_monitor_draft":
         try:
             spec_argument = json.loads(context.tool_arguments).get("spec")
-            DraftSpec.model_validate(coerce_spec(spec_argument))
+            MonitorSpec.model_validate(coerce_spec(spec_argument))
         except ValidationError as validation:
             details = _validation_details(validation.errors(
                 include_input=False, include_context=False))
         except (ValueError, TypeError, AttributeError):
             details = [{"field": "spec",
-                        "message": "Send spec as a JSON object with all required DraftSpec keys"}]
+                        "message": "Send spec as a JSON object with all required MonitorSpec keys"}]
     return json.dumps({"error": {"code": code,
         "message": "Tool could not complete; revise input or report this failure.",
         "details": details}})
@@ -112,21 +115,6 @@ async def _observed(ctx, operation):
         raise
     await _step(ctx, name=ctx.tool_name, status="succeeded", duration_ms=elapsed())
     return result
-
-
-@function_tool(failure_error_function=safe_tool_error)
-async def list_notification_groups(ctx: ToolContext[RuntimeContext]) -> dict:
-    """List real enabled notification groups and their recipient addresses. Never invent recipients."""
-    async def operation():
-        async with get_session_factory()() as session:
-            await _check(session, ctx)
-            groups = (await session.scalars(select(NotificationGroup).where(
-                NotificationGroup.enabled.is_(True),
-                NotificationGroup.deleted_at.is_(None)).order_by(NotificationGroup.name))).all()
-            return {"groups": [{"id": str(group.id), "name": group.name,
-                "recipients": [item["email"] for item in group.members or []
-                               if item.get("active", True)]} for group in groups]}
-    return await _observed(ctx, operation)
 
 
 @function_tool(failure_error_function=safe_tool_error)
@@ -217,20 +205,20 @@ async def replay_request(ctx: ToolContext[RuntimeContext], request: dict) -> dic
 
 def coerce_spec(value):
     """Accept the spec object, or the JSON string some providers emit for it."""
-    if isinstance(value, DraftSpec):
+    if isinstance(value, MonitorSpec):
         return value
     if isinstance(value, str):
         try:
             value = json.loads(value)
         except ValueError:
             raise ValueError("spec must be a JSON object") from None
-    return DraftSpec.model_validate(value)
+    return MonitorSpec.model_validate(value)
 
 
 @function_tool(failure_error_function=safe_tool_error, strict_mode=False)
-async def save_monitor_draft(ctx: ToolContext[RuntimeContext], spec: DraftSpec | str,
+async def save_monitor_draft(ctx: ToolContext[RuntimeContext], spec: MonitorSpec | str,
                              draft_id: str | None = None) -> dict:
-    """Save the current draft's full validated spec. Omitted draft_id updates the current draft; create a draft only when the conversation has none. Preserve unchanged settings and use only observed selectors, source.steps, path fields, assertions and pagination that were observed and replayed."""
+    """Save the current draft's validated collection definition. Omitted draft_id updates the current draft; create a draft only when the conversation has none. Recipients, schedule and mail template are the user's settings and are not part of this spec. Use only observed selectors, source.steps, path fields, assertions and pagination that were observed and replayed."""
     async def operation():
         parsed = coerce_spec(spec)
         async with get_session_factory()() as session:
@@ -238,32 +226,32 @@ async def save_monitor_draft(ctx: ToolContext[RuntimeContext], spec: DraftSpec |
             runtime = ctx.context
             current = await current_draft(session, job.conversation_id, lock=True)
             if ((current.id if current is not None else None) != runtime.draft_id
-                    or (current is not None and current.revision != runtime.draft_revision)):
+                    or (current is not None and current.spec_revision != runtime.spec_revision)):
                 raise DomainError("stale_revision", 409)
             if draft_id is not None and UUID(draft_id) != runtime.draft_id:
                 raise DomainError("not_found", 404)
             async with session.begin_nested():
-                draft = await drafts.save_draft(session, runtime.user,
+                draft = await drafts.save_spec(session, runtime.user,
                     conversation_id=job.conversation_id, spec=parsed,
-                    draft_id=runtime.draft_id)
+                    draft_id=runtime.draft_id, expected_revision=runtime.spec_revision)
             await session.commit()
             runtime.update_draft(draft)
-            return {"draft_id": str(draft.id), "revision": draft.revision,
+            return {"draft_id": str(draft.id), "spec_revision": draft.spec_revision,
                     "spec_hash": draft.spec_hash, "spec": draft.spec}
     return await _observed(ctx, operation)
 
 
 @function_tool(failure_error_function=safe_tool_error)
 async def preview_monitor(ctx: ToolContext[RuntimeContext], draft_id: str,
-                          revision: int) -> dict:
-    """Run real extraction, evidence storage, rule simulation and recipient rendering. Required before requesting creation approval."""
+                          spec_revision: int) -> dict:
+    """Run real extraction, evidence storage and rule simulation for the saved definition. Required before requesting creation approval."""
     async def operation():
         # A preview starts a real collection job; refuse before it exists.
         timeout = _wait_timeout(ctx.context.deadline)
         async with get_session_factory()() as session:
             await _check(session, ctx, lock=True)
             draft = await drafts.require_draft(session, ctx.context.user, UUID(draft_id), lock=True)
-            if draft.revision != revision:
+            if draft.spec_revision != spec_revision:
                 raise DomainError("stale_revision", 409)
             preview_job = await drafts.start_preview(session, ctx.context.user, draft.id)
             await session.commit()
@@ -272,24 +260,18 @@ async def preview_monitor(ctx: ToolContext[RuntimeContext], draft_id: str,
             await _check(session, ctx, lock=True)
             draft = await session.scalar(select(Draft).where(Draft.id == UUID(draft_id))
                 .execution_options(populate_existing=True))
-            if draft is None or draft.preview is None:
+            if draft is None or draft.extraction_preview is None:
                 raise DomainError("preview_not_ready", 409)
-            preview = draft.preview
+            preview = draft.extraction_preview
             field_json = json.dumps(preview.get("extracted_data") or {},
                                     ensure_ascii=False).encode("utf-8")
             truncated = len(field_json) > 8192
-            return {"draft_id": draft_id, "revision": draft.revision,
+            return {"draft_id": draft_id, "spec_revision": draft.spec_revision,
                     "extracted_data": None if truncated else preview.get("extracted_data"),
                     "untrusted_field_summary": (field_json[:8192].decode("utf-8", errors="ignore")
                                                 if truncated else None),
                     "fields_truncated": truncated,
                     "coverage": preview.get("coverage"),
-                    "recipients": preview.get("recipients"),
-                    "email_previews": [{"event_type": item["event_type"],
-                                        "subject": item["subject"],
-                                        "text_excerpt": item["text"].encode("utf-8")[:1024]
-                                        .decode("utf-8", errors="ignore")}
-                                       for item in preview.get("rendered_emails") or []],
                     "expires_at": preview.get("expires_at"),
                     "warnings": preview.get("warnings") or []}
     return await _observed(ctx, operation)
@@ -297,22 +279,32 @@ async def preview_monitor(ctx: ToolContext[RuntimeContext], draft_id: str,
 
 @function_tool(failure_error_function=safe_tool_error)
 async def request_creation(ctx: ToolContext[RuntimeContext], draft_id: str,
-                           revision: int) -> dict:
-    """Ask the user to confirm the current real preview. The user creates the monitor from the workspace; chat consent cannot bypass that click."""
+                           spec_revision: int) -> dict:
+    """Ask the user to confirm the current real preview. Recipients, schedule and template must be set in the workspace first. The user creates the monitor from that workspace click; chat consent cannot bypass it."""
     async def operation():
         async with get_session_factory()() as session:
             await _check(session, ctx, lock=True)
             draft = await drafts.require_draft(session, ctx.context.user, UUID(draft_id), lock=True)
-            if draft.revision != revision:
+            if draft.spec_revision != spec_revision:
                 raise DomainError("stale_revision", 409)
-            preview = await drafts.validate_preview(session, draft)
+            extraction = drafts.validate_extraction_preview(draft)
+            settings = DeliverySettings.model_validate(draft.settings or {})
+            missing = [name for name, present in (
+                ("notification_group_ids", bool(settings.notification_group_ids)),
+                ("schedule", settings.schedule is not None)) if not present]
+            if missing:
+                raise DomainError("settings_incomplete", 409,
+                                  details={"missing": missing})
+            delivery = await drafts.validate_delivery_preview(session, draft)
             await session.commit()
             return {"status": "awaiting_confirmation", "draft_id": str(draft.id),
-                    "revision": draft.revision,
-                    "preview_expires_at": preview.get("expires_at")}
+                    "spec_revision": draft.spec_revision,
+                    "settings_revision": draft.settings_revision,
+                    "extraction_preview_expires_at": extraction.get("expires_at"),
+                    "delivery_preview_expires_at": delivery.get("expires_at")}
     return await _observed(ctx, operation)
 
 
 def make_agent_tools() -> list:
-    return [list_notification_groups, probe_target, analyze_target, capture_network,
-            replay_request, save_monitor_draft, preview_monitor, request_creation]
+    return [probe_target, analyze_target, capture_network, replay_request,
+            save_monitor_draft, preview_monitor, request_creation]

@@ -17,6 +17,7 @@ from webmonitor.api.routes import (
     members,
     monitors,
     notifications,
+    templates,
 )
 from webmonitor.config import get_settings
 from webmonitor.db import database_ready, get_engine, initialize_database
@@ -52,7 +53,8 @@ def create_app() -> FastAPI:
                   openapi_url="/api/v1/openapi.json", docs_url=None, redoc_url=None)
     app.add_exception_handler(DomainError, domain_error_handler)
     app.add_middleware(CSRFMiddleware)
-    for module in (auth, members, conversations, monitors, events, notifications, evidence):
+    for module in (auth, members, conversations, monitors, events, notifications, templates,
+                   evidence):
         app.include_router(module.router)
 
     @app.exception_handler(OperationalError)

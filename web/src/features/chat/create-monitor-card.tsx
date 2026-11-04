@@ -1,12 +1,27 @@
 "use client";
 import { useState } from "react";
-import { AlertTriangle, CheckCircle2, ExternalLink, Mail, RefreshCw } from "lucide-react";
+import { AlertTriangle, CheckCircle2, ExternalLink, Mail, RefreshCw, Settings2 } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
+import { DraftSettingsPanel } from "@/features/chat/draft-settings-panel";
 import { FieldValues } from "@/features/monitors/field-values";
 import { ApiError } from "@/lib/api/client";
-import { useApproveDraft, useConversation, useJobDetail, useStartPreview, type DraftView, type JobView } from "@/lib/api/hooks";
-import { parsePreview, parseSpec, type DraftPreview } from "@/lib/api/preview";
+import {
+  useApproveDraft,
+  useConversation,
+  useJobDetail,
+  useStartPreview,
+  type DraftView,
+  type JobView,
+} from "@/lib/api/hooks";
+import {
+  parseDeliveryPreview,
+  parseExtractionPreview,
+  parseSettings,
+  parseSpec,
+  type DeliveryPreview,
+  type ExtractionPreview,
+} from "@/lib/api/preview";
 import { formatBytes, useFormat } from "@/lib/format";
 import { useI18n } from "@/lib/i18n";
 
@@ -25,7 +40,14 @@ function hostOf(url?: string | null): string {
   }
 }
 
-function EvidenceLinks({ draftId, preview }: { draftId: string; preview: DraftPreview }) {
+function expiresAt(previews: (ExtractionPreview | DeliveryPreview | null)[]): string | null {
+  const values = previews.flatMap((preview) => (preview ? [preview.expires_at] : []));
+  if (values.length === 0) return null;
+  return values.reduce((earliest, value) =>
+    new Date(value).getTime() < new Date(earliest).getTime() ? value : earliest);
+}
+
+function EvidenceLinks({ draftId, preview }: { draftId: string; preview: ExtractionPreview }) {
   const { t } = useI18n();
   if (preview.evidence_refs.length === 0) return null;
   return (
@@ -56,7 +78,8 @@ function EvidenceLinks({ draftId, preview }: { draftId: string; preview: DraftPr
  * turn into a scheduled monitor is shown here before the button is pressed.
  *
  * It is laid out as a report — a ruled header, then labelled blocks — because
- * what is being read is a record of one collected page, not a settings form.
+ * what is being read is a record of one collected page plus the mail it produces.
+ * Delivery settings live in their own panel; this card never guesses them.
  */
 export function CreateMonitorCard({
   conversationId,
@@ -71,6 +94,7 @@ export function CreateMonitorCard({
   const {
     coverageLabel,
     errorText,
+    eventLabel,
     fieldLabels,
     formatInterval,
     formatRelative,
@@ -78,27 +102,43 @@ export function CreateMonitorCard({
     warningText,
     statusLabel,
   } = useFormat();
-  const preview = parsePreview(draft.preview);
+  const extraction = parseExtractionPreview(draft.extraction_preview);
+  const delivery = parseDeliveryPreview(draft.delivery_preview);
   const spec = parseSpec(draft.spec);
+  const settings = parseSettings(draft.settings);
   const approve = useApproveDraft(conversationId);
   const repreview = useStartPreview(conversationId);
   // Errors are kept as codes/kinds so the visible text follows the locale.
   const [error, setError] = useState<CardError | null>(null);
   const [approving, setApproving] = useState(false);
+  const [settingsOpen, setSettingsOpen] = useState(false);
+  const [selectedEvent, setSelectedEvent] = useState<string | null>(null);
   const conversation = useConversation(conversationId);
   const [requestedJob, setRequestedJob] = useState<JobView | null>(null);
   const jobDetail = useJobDetail(requestedJob?.id ?? null);
+  // A preview job belongs to the collection contract revision it was collected for.
   const snapshotJob = conversation.data?.jobs.filter(
-    (job) => job.kind === "preview" && job.draft_id === draft.id && job.revision === draft.revision,
+    (job) =>
+      job.kind === "preview" &&
+      job.draft_id === draft.id &&
+      job.revision === draft.spec_revision,
   ).at(-1);
   const requested = jobDetail.data ?? requestedJob;
-  const trackedJob = requested?.draft_id === draft.id && requested.revision === draft.revision ? requested : null;
-  const previewJob = trackedJob && (!snapshotJob || trackedJob.created_at >= snapshotJob.created_at)
-    ? trackedJob : snapshotJob;
-  const previewBusy = repreview.isPending || Boolean(previewJob && ["queued", "running"].includes(previewJob.status));
+  const trackedJob =
+    requested?.draft_id === draft.id && requested.revision === draft.spec_revision
+      ? requested
+      : null;
+  const previewJob =
+    trackedJob && (!snapshotJob || trackedJob.created_at >= snapshotJob.created_at)
+      ? trackedJob
+      : snapshotJob;
+  const previewBusy =
+    repreview.isPending || Boolean(previewJob && ["queued", "running"].includes(previewJob.status));
   const feedback = previewJob && previewJob.status !== "succeeded" ? (
-    <p role={previewJob.status === "failed" ? "alert" : "status"}
-      className={previewJob.status === "failed" ? "text-xs text-error" : "meta"}>
+    <p
+      role={previewJob.status === "failed" ? "alert" : "status"}
+      className={previewJob.status === "failed" ? "text-xs text-error" : "meta"}
+    >
       {statusLabel(previewJob.status)}
       {previewJob.error_code ? ` · ${errorText(previewJob.error_code)}` : ""}
     </p>
@@ -134,13 +174,21 @@ export function CreateMonitorCard({
     setError(null);
     setApproving(true);
     try {
-      if (!draft.preview_hash) return;
-      await approve.mutateAsync({ draftId: draft.id, revision: draft.revision, previewHash: draft.preview_hash });
+      if (!draft.extraction_preview_hash || !draft.delivery_preview_hash) return;
+      await approve.mutateAsync({
+        draftId: draft.id,
+        specRevision: draft.spec_revision,
+        settingsRevision: draft.settings_revision,
+        extractionPreviewHash: draft.extraction_preview_hash,
+        deliveryPreviewHash: draft.delivery_preview_hash,
+      });
       onApproved?.();
     } catch (failure) {
       setError(
         failure instanceof ApiError
-          ? failure.code === "preview_expired" || failure.code === "preview_stale"
+          ? failure.code === "preview_expired" ||
+            failure.code === "preview_stale" ||
+            failure.code === "stale_revision"
             ? { kind: "previewStale" }
             : { kind: "code", code: failure.code }
           : { kind: "create" },
@@ -152,8 +200,30 @@ export function CreateMonitorCard({
 
   const labels = fieldLabels(spec?.fields ?? []);
   const editing = Boolean(draft.monitor_id);
-  const expired = preview ? new Date(preview.expires_at).getTime() <= Date.now() : false;
-  const disabled = approving || approve.isPending || previewBusy || expired || !preview || !draft.preview_hash;
+  const settingsComplete = Boolean(
+    settings && settings.notification_group_ids.length > 0 && settings.schedule,
+  );
+  const extractionCurrent = Boolean(
+    extraction && extraction.spec_revision === draft.spec_revision && draft.extraction_preview_hash,
+  );
+  const deliveryCurrent = Boolean(
+    delivery && delivery.settings_revision === draft.settings_revision && draft.delivery_preview_hash,
+  );
+  const expiry = expiresAt([extraction, delivery]);
+  const expired = expiry ? new Date(expiry).getTime() <= Date.now() : false;
+  const mails = delivery?.rendered_emails ?? [];
+  const activeEmail = mails.find((email) => email.event_type === selectedEvent) ?? mails[0];
+  const warnings = [...(extraction?.warnings ?? []), ...(delivery?.warnings ?? [])].filter(
+    (warning, index, all) => all.indexOf(warning) === index,
+  );
+  const disabled =
+    approving ||
+    approve.isPending ||
+    previewBusy ||
+    expired ||
+    !extractionCurrent ||
+    !deliveryCurrent ||
+    !settingsComplete;
   const approveLabel = approving
     ? editing
       ? t("chat.approve.savingEdit")
@@ -162,7 +232,21 @@ export function CreateMonitorCard({
       ? t("chat.approve.saveEdit")
       : t("chat.approve.create");
 
-  if (!preview) {
+  const settingsControl = (
+    <Button
+      variant="outline"
+      className="w-full"
+      aria-expanded={settingsOpen}
+      onClick={() => setSettingsOpen((open) => !open)}
+    >
+      <Settings2 strokeWidth={1.5} />
+      {t("settings.open")}
+    </Button>
+  );
+
+  const settingsPanel = <DraftSettingsPanel draft={draft} onSaved={() => setSettingsOpen(false)} />;
+
+  if (!extraction) {
     return (
       <section className="surface-pad space-y-3">
         <div className="space-y-1">
@@ -175,6 +259,8 @@ export function CreateMonitorCard({
           <RefreshCw strokeWidth={1.5} />
           {previewBusy ? t("chat.preview.opening") : t("chat.preview.run")}
         </Button>
+        {settingsControl}
+        {settingsOpen && settingsPanel}
         {feedback}
         {error && (
           <p className="text-xs text-error" role="alert">
@@ -190,7 +276,7 @@ export function CreateMonitorCard({
       <header className="space-y-2 border-b px-4 py-3">
         <div className="flex items-baseline justify-between gap-2">
           <span className="label-line">
-            {t("chat.preview.expires", { relative: formatRelative(preview.expires_at) })}
+            {expiry ? t("chat.preview.expires", { relative: formatRelative(expiry) }) : ""}
           </span>
           <Badge tone={expired ? "warning" : "brand"}>
             {expired ? t("chat.status.expired") : t("chat.status.pending")}
@@ -213,42 +299,44 @@ export function CreateMonitorCard({
         </p>
         <a
           className="block truncate text-xs text-primary underline-offset-2 hover:underline"
-          href={preview.final_url ?? spec?.url}
+          href={extraction.final_url ?? spec?.url}
           target="_blank"
           rel="noreferrer"
         >
-          {hostOf(preview.final_url ?? spec?.url)}
+          {hostOf(extraction.final_url ?? spec?.url)}
         </a>
         <p className="num text-[11px] text-muted-foreground">
-          {formatInterval(spec?.schedule?.interval_seconds)}
-          {" · "}
-          {t("chat.approve.timezone", { zone: formatTimezone(spec?.schedule?.timezone) })}
+          {settings?.schedule
+            ? `${formatInterval(settings.schedule.interval_seconds)} · ${t("chat.approve.timezone", {
+                zone: formatTimezone(settings.schedule.timezone),
+              })}`
+            : t("settings.schedule.required")}
         </p>
       </div>
 
       <div className="space-y-4 px-4 py-3">
-        {preview.source && (
+        {extraction.source && (
           <div>
             <h3 className="label-line">{t("chat.section.source")}</h3>
             <p className="num mt-1 text-[12px] text-muted-foreground">
               JSON
               {" · "}
-              {t("chat.source.steps", { count: preview.source.steps.length })}
+              {t("chat.source.steps", { count: extraction.source.steps.length })}
               {" · "}
-              {t("chat.source.pages", { count: preview.source.pages })}
+              {t("chat.source.pages", { count: extraction.source.pages })}
               {" · "}
-              {t("chat.source.assertions", { count: preview.source.assertions.length })}
+              {t("chat.source.assertions", { count: extraction.source.assertions.length })}
             </p>
             <ul className="mt-1.5 divide-y border-t">
-              {preview.source.steps.map((step) => (
+              {extraction.source.steps.map((step) => (
                 <li key={step.id} className="num break-all py-1.5 text-[12px]">
                   {step.method} {step.url} → {step.status}
                 </li>
               ))}
             </ul>
-            {preview.source.assertions.length > 0 && (
+            {extraction.source.assertions.length > 0 && (
               <p className="num mt-1.5 break-all text-[11px] text-muted-foreground">
-                {preview.source.assertions
+                {extraction.source.assertions
                   .map((assertion) => `${assertion.path ?? ""} ✓`)
                   .join(" · ")}
               </p>
@@ -259,8 +347,9 @@ export function CreateMonitorCard({
           <h3 className="label-line">{t("chat.section.extracted")}</h3>
           <div className="mt-1.5">
             <FieldValues
-              values={preview.extracted_data}
+              values={extraction.extracted_data}
               labels={labels}
+              businessKey={spec?.business_key?.item_fields ?? []}
               mode="compact"
               maxItems={3}
             />
@@ -270,18 +359,18 @@ export function CreateMonitorCard({
         <div>
           <h3 className="label-line">{t("chat.section.coverage")}</h3>
           <p className="mt-1 text-[13px] leading-6">
-            {coverageLabel(preview.coverage.scope)}
-            {preview.coverage.description ? ` · ${preview.coverage.description}` : ""}
+            {coverageLabel(extraction.coverage.scope)}
+            {extraction.coverage.description ? ` · ${extraction.coverage.description}` : ""}
           </p>
         </div>
 
         <div>
           <h3 className="label-line">{t("chat.section.recipients")}</h3>
-          {preview.recipients.length === 0 ? (
+          {!delivery || delivery.recipients.length === 0 ? (
             <p className="mt-1 text-[13px] text-warning">{t("chat.recipients.empty")}</p>
           ) : (
             <ul className="mt-1 flex flex-wrap gap-x-3 gap-y-1">
-              {preview.recipients.map((recipient) => (
+              {delivery.recipients.map((recipient) => (
                 <li key={recipient} className="num truncate text-[12px] text-muted-foreground">
                   {recipient}
                 </li>
@@ -290,11 +379,11 @@ export function CreateMonitorCard({
           )}
         </div>
 
-        <EvidenceLinks draftId={draft.id} preview={preview} />
+        <EvidenceLinks draftId={draft.id} preview={extraction} />
 
-        {preview.warnings.length > 0 && (
+        {warnings.length > 0 && (
           <ul className="space-y-1 border-l-2 border-warning/40 pl-2.5 text-xs leading-5 text-warning">
-            {preview.warnings.map((warning) => (
+            {warnings.map((warning) => (
               <li key={warning} className="flex items-start gap-1.5">
                 <AlertTriangle className="mt-0.5 size-3.5 shrink-0" strokeWidth={1.5} />
                 {warningText(warning)}
@@ -303,24 +392,35 @@ export function CreateMonitorCard({
           </ul>
         )}
 
-        {preview.rendered_emails.length > 0 && (
-          <details className="group border-t pt-3">
+        {activeEmail && mails.length > 0 && (
+          <details className="group border-t pt-3" open>
             <summary className="flex cursor-pointer list-none flex-wrap items-center gap-1.5 text-xs text-muted-foreground transition-colors duration-150 hover:text-foreground [&::-webkit-details-marker]:hidden">
               <Mail className="size-3.5 shrink-0" strokeWidth={1.5} />
               <span className="shrink-0">{t("chat.mail.preview")}</span>
               <span className="min-w-0 flex-1 truncate text-right text-[11px]">
-                {preview.rendered_emails[0]?.subject}
+                {activeEmail.subject}
               </span>
             </summary>
-            {preview.rendered_emails.slice(0, 1).map((email) => (
-              <iframe
-                key={email.event_type}
-                title={t("chat.mail.title")}
-                sandbox=""
-                className="mt-2 h-64 w-full rounded-lg border bg-white"
-                srcDoc={email.preview_html ?? email.html}
-              />
-            ))}
+            <div className="mt-2 flex flex-wrap gap-1.5">
+              {mails.map((email) => (
+                <Button
+                  key={email.event_type}
+                  type="button"
+                  size="sm"
+                  variant={email.event_type === activeEmail.event_type ? "default" : "outline"}
+                  onClick={() => setSelectedEvent(email.event_type)}
+                >
+                  {eventLabel(email.event_type)}
+                </Button>
+              ))}
+            </div>
+            <iframe
+              key={activeEmail.event_type}
+              title={t("chat.mail.title")}
+              sandbox=""
+              className="mt-2 h-64 w-full rounded-lg border bg-white"
+              srcDoc={activeEmail.preview_html ?? activeEmail.html}
+            />
           </details>
         )}
       </div>
@@ -330,6 +430,13 @@ export function CreateMonitorCard({
           <CheckCircle2 strokeWidth={1.5} />
           {approveLabel}
         </Button>
+        {!settingsComplete && (
+          <p className="text-xs text-warning">{t("format.error.settings_incomplete")}</p>
+        )}
+        {settingsComplete && !deliveryCurrent && (
+          <p className="text-xs text-warning">{t("settings.preview.missing")}</p>
+        )}
+        {settingsControl}
         <button
           type="button"
           className="w-full text-[12px] text-muted-foreground transition-colors duration-150 hover:text-foreground disabled:opacity-45"
@@ -339,6 +446,8 @@ export function CreateMonitorCard({
           {previewBusy ? t("chat.approve.repreviewing") : t("chat.approve.repreview")}
         </button>
       </div>
+
+      {settingsOpen && <div className="border-t px-4 py-3">{settingsPanel}</div>}
 
       {(feedback || expired || error) && (
         <div className="space-y-1 border-t px-4 py-2.5">

@@ -639,6 +639,82 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v1/email-templates": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** List Templates */
+        get: operations["list_templates_api_v1_email_templates_get"];
+        put?: never;
+        /** Create Template */
+        post: operations["create_template_api_v1_email_templates_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/email-templates/{template_id}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post?: never;
+        /** Delete Template */
+        delete: operations["delete_template_api_v1_email_templates__template_id__delete"];
+        options?: never;
+        head?: never;
+        /** Patch Template */
+        patch: operations["patch_template_api_v1_email_templates__template_id__patch"];
+        trace?: never;
+    };
+    "/api/v1/email-templates/generate": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Generate Template
+         * @description One sentence in, one design out. Nothing is saved until the user saves it.
+         */
+        post: operations["generate_template_api_v1_email_templates_generate_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/email-templates/preview": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Preview Template
+         * @description Render a candidate design without persisting it; a name is not required.
+         */
+        post: operations["preview_template_api_v1_email_templates_preview_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/v1/snapshots/{snapshot_id}/evidence/{index}": {
         parameters: {
             query?: never;
@@ -711,6 +787,16 @@ export interface paths {
 export type webhooks = Record<string, never>;
 export interface components {
     schemas: {
+        /** AllFieldsBlock */
+        AllFieldsBlock: {
+            /**
+             * @description discriminator enum property added by openapi-typescript
+             * @enum {string}
+             */
+            type: "all_fields";
+            /** Fields */
+            fields?: string[] | null;
+        };
         /** ApiRequest */
         ApiRequest: {
             /**
@@ -749,10 +835,14 @@ export interface components {
              * Format: uuid
              */
             draft_id: string;
-            /** Revision */
-            revision: number;
-            /** Preview Hash */
-            preview_hash: string;
+            /** Spec Revision */
+            spec_revision: number;
+            /** Settings Revision */
+            settings_revision: number;
+            /** Extraction Preview Hash */
+            extraction_preview_hash: string;
+            /** Delivery Preview Hash */
+            delivery_preview_hash: string;
         };
         /** Availability */
         Availability: {
@@ -904,34 +994,39 @@ export interface components {
             /** Failed At */
             failed_at: string | null;
         };
-        /** DraftSpec */
-        DraftSpec: {
-            /** Name */
-            name: string;
-            /** Url */
-            url: string;
+        /**
+         * DeliverySettings
+         * @description Who is told, how often, and in which mail design.
+         *
+         *     A draft may carry empty settings; publication requires at least one group and a
+         *     schedule. `email_template_id=None` means the packaged default template.
+         */
+        DeliverySettings: {
+            /** Notification Group Ids */
+            notification_group_ids?: string[];
+            schedule?: components["schemas"]["Schedule"] | null;
+            /** Email Template Id */
+            email_template_id?: string | null;
+        };
+        /** DividerBlock */
+        DividerBlock: {
             /**
-             * Collection Mode
+             * @description discriminator enum property added by openapi-typescript
              * @enum {string}
              */
-            collection_mode: "http" | "browser";
-            /** Fields */
-            fields: components["schemas"]["FieldSpec"][];
-            business_key?: components["schemas"]["BusinessKey"] | null;
-            change_rules: components["schemas"]["ChangeRules"];
-            schedule: components["schemas"]["Schedule"];
-            /** Notification Group Ids */
-            notification_group_ids: string[];
-            coverage: components["schemas"]["Coverage"];
-            /** Browser Steps */
-            browser_steps?: (components["schemas"]["WaitForSelector"] | components["schemas"]["Scroll"] | components["schemas"]["ClickNext"])[];
-            source?: components["schemas"]["ApiSource"] | null;
+            type: "divider";
         };
-        /** DraftSpecUpdate */
-        DraftSpecUpdate: {
-            /** Revision */
-            revision: number;
-            spec: components["schemas"]["DraftSpec"];
+        /**
+         * DraftUpdate
+         * @description Each section carries its own revision, so an edit cannot overwrite the other.
+         */
+        DraftUpdate: {
+            /** Spec Revision */
+            spec_revision?: number | null;
+            /** Settings Revision */
+            settings_revision?: number | null;
+            spec?: components["schemas"]["MonitorSpec"] | null;
+            settings?: components["schemas"]["DeliverySettings"] | null;
         };
         /** DraftView */
         DraftView: {
@@ -945,8 +1040,6 @@ export interface components {
              * Format: uuid
              */
             conversation_id: string;
-            /** Revision */
-            revision: number;
             /** Status */
             status: string;
             /** Spec */
@@ -955,14 +1048,32 @@ export interface components {
             } | null;
             /** Spec Hash */
             spec_hash: string | null;
-            /** Preview */
-            preview: {
+            /** Spec Revision */
+            spec_revision: number;
+            /** Settings */
+            settings: {
+                [key: string]: unknown;
+            };
+            /** Settings Hash */
+            settings_hash: string | null;
+            /** Settings Revision */
+            settings_revision: number;
+            /** Extraction Preview */
+            extraction_preview: {
                 [key: string]: unknown;
             } | null;
-            /** Preview Hash */
-            preview_hash: string | null;
-            /** Preview Expires At */
-            preview_expires_at: string | null;
+            /** Extraction Preview Hash */
+            extraction_preview_hash: string | null;
+            /** Extraction Preview Expires At */
+            extraction_preview_expires_at: string | null;
+            /** Delivery Preview */
+            delivery_preview: {
+                [key: string]: unknown;
+            } | null;
+            /** Delivery Preview Hash */
+            delivery_preview_hash: string | null;
+            /** Delivery Preview Expires At */
+            delivery_preview_expires_at: string | null;
             /** Monitor Id */
             monitor_id: string | null;
             /**
@@ -975,6 +1086,107 @@ export interface components {
              * Format: date-time
              */
             updated_at: string;
+        };
+        /**
+         * EmailTemplateConfig
+         * @description A stored template design; the renderer owns layout and escaping.
+         */
+        EmailTemplateConfig: {
+            /**
+             * Version
+             * @default 1
+             * @constant
+             */
+            version: 1;
+            style?: components["schemas"]["TemplateStyle"];
+            /** Subject */
+            subject: string;
+            /** Intros */
+            intros?: {
+                [key: string]: string;
+            };
+            /** Blocks */
+            blocks?: (components["schemas"]["TextBlock"] | components["schemas"]["SummaryBlock"] | components["schemas"]["FieldBlock"] | components["schemas"]["ListChangesBlock"] | components["schemas"]["AllFieldsBlock"] | components["schemas"]["EventTimeBlock"] | components["schemas"]["MonitorLinkBlock"] | components["schemas"]["EvidenceLinkBlock"] | components["schemas"]["DividerBlock"])[];
+        };
+        /** EmailTemplatePatch */
+        EmailTemplatePatch: {
+            /** Name */
+            name?: string | null;
+            /** Description */
+            description?: string | null;
+            config?: components["schemas"]["EmailTemplateConfig"] | null;
+        };
+        /** EmailTemplatePreview */
+        EmailTemplatePreview: {
+            /** Rendered Emails */
+            rendered_emails: components["schemas"]["RenderedEmail"][];
+        };
+        /**
+         * EmailTemplatePrompt
+         * @description One sentence is the whole input; the model returns the design.
+         */
+        EmailTemplatePrompt: {
+            /** Description */
+            description: string;
+        };
+        /**
+         * EmailTemplateProposal
+         * @description A generated design; the user still has to save it.
+         */
+        EmailTemplateProposal: {
+            /** Name */
+            name: string;
+            config: components["schemas"]["EmailTemplateConfig"];
+        };
+        /** EmailTemplateSpec */
+        EmailTemplateSpec: {
+            /** Name */
+            name: string;
+            /**
+             * Description
+             * @default
+             */
+            description: string;
+            config: components["schemas"]["EmailTemplateConfig"];
+        };
+        /** EmailTemplateView */
+        EmailTemplateView: {
+            /**
+             * Id
+             * Format: uuid
+             */
+            id: string;
+            /** Name */
+            name: string;
+            /** Description */
+            description: string;
+            /** Config */
+            config: {
+                [key: string]: unknown;
+            };
+            /**
+             * Created By User Id
+             * Format: uuid
+             */
+            created_by_user_id: string;
+            /**
+             * Created At
+             * Format: date-time
+             */
+            created_at: string;
+            /**
+             * Updated At
+             * Format: date-time
+             */
+            updated_at: string;
+        };
+        /** EventTimeBlock */
+        EventTimeBlock: {
+            /**
+             * @description discriminator enum property added by openapi-typescript
+             * @enum {string}
+             */
+            type: "event_time";
         };
         /** EventView */
         EventView: {
@@ -1011,6 +1223,14 @@ export interface components {
             /** Acknowledged At */
             acknowledged_at: string | null;
         };
+        /** EvidenceLinkBlock */
+        EvidenceLinkBlock: {
+            /**
+             * @description discriminator enum property added by openapi-typescript
+             * @enum {string}
+             */
+            type: "evidence_link";
+        };
         /** EvidenceRef */
         EvidenceRef: {
             /** Kind */
@@ -1025,6 +1245,29 @@ export interface components {
             size_bytes: number;
             /** Sha256 */
             sha256: string;
+        };
+        /** FieldBlock */
+        FieldBlock: {
+            /**
+             * @description discriminator enum property added by openapi-typescript
+             * @enum {string}
+             */
+            type: "field";
+            /** Field */
+            field: string;
+            /**
+             * Show
+             * @default current
+             * @enum {string}
+             */
+            show: "current" | "before" | "both";
+            /**
+             * Emphasis
+             * @default false
+             */
+            emphasis: boolean;
+            /** Label */
+            label?: string | null;
         };
         /** FieldSpec */
         FieldSpec: {
@@ -1340,6 +1583,21 @@ export interface components {
              */
             type: "list_added";
         };
+        /** ListChangesBlock */
+        ListChangesBlock: {
+            /**
+             * @description discriminator enum property added by openapi-typescript
+             * @enum {string}
+             */
+            type: "list_changes";
+            /** Field */
+            field: string;
+            /**
+             * Limit
+             * @default 8
+             */
+            limit: number;
+        };
         /** ListRemoved */
         ListRemoved: {
             /** Field */
@@ -1451,6 +1709,10 @@ export interface components {
             health_status: string;
             /** Notification Group Ids */
             notification_group_ids: string[];
+            /** Email Template Id */
+            email_template_id?: string | null;
+            /** Email Template Name */
+            email_template_name?: string | null;
             /**
              * Next Run At
              * Format: date-time
@@ -1474,11 +1736,46 @@ export interface components {
             baseline: components["schemas"]["SnapshotRecord"] | null;
             /** Approved Recipients */
             approved_recipients?: string[];
+            /** Email Template */
+            email_template?: {
+                [key: string]: unknown;
+            } | null;
+        };
+        /** MonitorLinkBlock */
+        MonitorLinkBlock: {
+            /**
+             * @description discriminator enum property added by openapi-typescript
+             * @enum {string}
+             */
+            type: "monitor_link";
         };
         /** MonitorRename */
         MonitorRename: {
             /** Name */
             name: string;
+        };
+        /**
+         * MonitorSpec
+         * @description The collection contract only; recipients, cadence and mail are user settings.
+         */
+        MonitorSpec: {
+            /** Name */
+            name: string;
+            /** Url */
+            url: string;
+            /**
+             * Collection Mode
+             * @enum {string}
+             */
+            collection_mode: "http" | "browser";
+            /** Fields */
+            fields: components["schemas"]["FieldSpec"][];
+            business_key?: components["schemas"]["BusinessKey"] | null;
+            change_rules: components["schemas"]["ChangeRules"];
+            coverage: components["schemas"]["Coverage"];
+            /** Browser Steps */
+            browser_steps?: (components["schemas"]["WaitForSelector"] | components["schemas"]["Scroll"] | components["schemas"]["ClickNext"])[];
+            source?: components["schemas"]["ApiSource"] | null;
         };
         /** MonitorView */
         MonitorView: {
@@ -1507,6 +1804,10 @@ export interface components {
             health_status: string;
             /** Notification Group Ids */
             notification_group_ids: string[];
+            /** Email Template Id */
+            email_template_id?: string | null;
+            /** Email Template Name */
+            email_template_name?: string | null;
             /**
              * Next Run At
              * Format: date-time
@@ -1640,6 +1941,13 @@ export interface components {
             /** Total */
             total: number;
         };
+        /** Page[EmailTemplateView] */
+        Page_EmailTemplateView_: {
+            /** Items */
+            items: components["schemas"]["EmailTemplateView"][];
+            /** Total */
+            total: number;
+        };
         /** Page[EventView] */
         Page_EventView_: {
             /** Items */
@@ -1713,6 +2021,19 @@ export interface components {
             password: string;
             /** Invitation Token */
             invitation_token: string;
+        };
+        /** RenderedEmail */
+        RenderedEmail: {
+            /** Event Type */
+            event_type: string;
+            /** Subject */
+            subject: string;
+            /** Html */
+            html: string;
+            /** Text */
+            text: string;
+            /** Preview Html */
+            preview_html: string;
         };
         /** Schedule */
         Schedule: {
@@ -1835,6 +2156,88 @@ export interface components {
             published_at: string;
             /** Current */
             current: boolean;
+        };
+        /** SummaryBlock */
+        SummaryBlock: {
+            /**
+             * @description discriminator enum property added by openapi-typescript
+             * @enum {string}
+             */
+            type: "summary";
+        };
+        /**
+         * TemplateStyle
+         * @description The look of one design; the server owns which CSS property uses which value.
+         */
+        TemplateStyle: {
+            /**
+             * Page Background
+             * @default #f5f2ea
+             */
+            page_background: string;
+            /**
+             * Surface
+             * @default #fffdf8
+             */
+            surface: string;
+            /**
+             * Text
+             * @default #1e1b16
+             */
+            text: string;
+            /**
+             * Muted
+             * @default #6f6759
+             */
+            muted: string;
+            /**
+             * Accent
+             * @default #22584a
+             */
+            accent: string;
+            /**
+             * Font
+             * @default sans
+             * @enum {string}
+             */
+            font: "sans" | "serif" | "mono";
+            /**
+             * Heading Scale
+             * @default regular
+             * @enum {string}
+             */
+            heading_scale: "compact" | "regular" | "large";
+            /**
+             * Density
+             * @default regular
+             * @enum {string}
+             */
+            density: "tight" | "regular" | "roomy";
+            /**
+             * Radius
+             * @default 14
+             */
+            radius: number;
+            /**
+             * Border
+             * @default true
+             */
+            border: boolean;
+            /**
+             * Uppercase Labels
+             * @default false
+             */
+            uppercase_labels: boolean;
+        };
+        /** TextBlock */
+        TextBlock: {
+            /**
+             * @description discriminator enum property added by openapi-typescript
+             * @enum {string}
+             */
+            type: "text";
+            /** Text */
+            text: string;
         };
         /** TextChanged */
         TextChanged: {
@@ -2458,7 +2861,7 @@ export interface operations {
         };
         requestBody: {
             content: {
-                "application/json": components["schemas"]["DraftSpecUpdate"];
+                "application/json": components["schemas"]["DraftUpdate"];
             };
         };
         responses: {
@@ -2999,7 +3402,7 @@ export interface operations {
                 limit?: number;
                 offset?: number;
                 monitor_id?: string | null;
-                event_type?: ("price_changed" | "list_changed" | "content_changed" | "run_failed" | "recovered") | null;
+                event_type?: ("content_changed" | "list_changed" | "run_failed" | "recovered") | null;
             };
             header?: never;
             path?: never;
@@ -3239,6 +3642,203 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["Delivery"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    list_templates_api_v1_email_templates_get: {
+        parameters: {
+            query?: {
+                limit?: number;
+                offset?: number;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Page_EmailTemplateView_"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    create_template_api_v1_email_templates_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["EmailTemplateSpec"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["EmailTemplateView"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    delete_template_api_v1_email_templates__template_id__delete: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                template_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["EmailTemplateView"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    patch_template_api_v1_email_templates__template_id__patch: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                template_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["EmailTemplatePatch"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["EmailTemplateView"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    generate_template_api_v1_email_templates_generate_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["EmailTemplatePrompt"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["EmailTemplateProposal"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    preview_template_api_v1_email_templates_preview_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["EmailTemplateConfig"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["EmailTemplatePreview"];
                 };
             };
             /** @description Validation Error */

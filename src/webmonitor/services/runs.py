@@ -15,7 +15,7 @@ from webmonitor.collection.validation import validate_collection
 from webmonitor.config import get_settings
 from webmonitor.errors import DomainError
 from webmonitor.models import Event, Job, Monitor, Snapshot, utc_now
-from webmonitor.schemas.monitors import DraftSpec
+from webmonitor.schemas.monitors import MonitorSpec
 from webmonitor.services import jobs, notifications
 
 ACTIVE = ("queued", "running")
@@ -60,7 +60,7 @@ def _stale(monitor: Monitor | None, job: Job) -> bool:
 def _field_labels(monitor: Monitor) -> dict[str, str]:
     """The readable name of each field travels with the event it explains."""
     try:
-        spec = DraftSpec.model_validate(monitor.spec or {})
+        spec = MonitorSpec.model_validate(monitor.spec or {})
     except ValueError:
         return {}
     labels = {field.name: field.semantic for field in spec.fields}
@@ -102,13 +102,11 @@ async def _event(session: AsyncSession, monitor: Monitor, job: Job, event_type: 
     return event
 
 
-def _event_type(spec: DraftSpec, diff: dict) -> str:
+def _event_type(spec: MonitorSpec, diff: dict) -> str:
     fields = {field.name: field for field in spec.fields}
     for rule in spec.change_rules.rules:
         if any(item["field"] == rule.field for item in diff["differences"]):
-            kind = fields[rule.field].type
-            return ("price_changed" if kind == "money"
-                    else "list_changed" if kind == "list" else "content_changed")
+            return "list_changed" if fields[rule.field].type == "list" else "content_changed"
     return "content_changed"
 
 
@@ -119,7 +117,7 @@ async def commit_success(session: AsyncSession, job: Job, result: dict) -> bool:
     if job.status != "running" or job.cancel_requested_at is not None or _stale(monitor, job):
         await jobs.discard(session, job)
         return False
-    spec = DraftSpec.model_validate(monitor.spec)
+    spec = MonitorSpec.model_validate(monitor.spec)
     baseline = await session.get(Snapshot, monitor.baseline_snapshot_id) \
         if monitor.baseline_snapshot_id else None
     previous = baseline.extracted_data if baseline else None

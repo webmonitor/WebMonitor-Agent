@@ -5,8 +5,8 @@ from uuid import UUID
 
 from pydantic import BaseModel, ConfigDict, Field
 
-EventType = Literal['price_changed', 'list_changed', 'content_changed', 'run_failed', 'recovered']
-EVENT_TYPES = frozenset(('price_changed', 'list_changed', 'content_changed', 'run_failed', 'recovered'))
+EventType = Literal['content_changed', 'list_changed', 'run_failed', 'recovered']
+EVENT_TYPES = frozenset(('content_changed', 'list_changed', 'run_failed', 'recovered'))
 
 
 class Contract(BaseModel):

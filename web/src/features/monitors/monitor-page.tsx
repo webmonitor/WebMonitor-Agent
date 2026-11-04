@@ -467,7 +467,12 @@ export function MonitorPage({
               </span>
             </div>
             {row.baseline ? (
-              <FieldValues values={values} labels={labels} maxItems={3} />
+              <FieldValues
+                values={values}
+                labels={labels}
+                businessKey={spec?.business_key?.item_fields ?? []}
+                maxItems={3}
+              />
             ) : (
               <p className="meta">{t("monitors.content.empty")}</p>
             )}
@@ -528,7 +533,11 @@ export function MonitorPage({
               {detail.data.snapshot && (
                 <div>
                   <h3 className="label-line mb-1.5">{t("monitors.dialog.captured")}</h3>
-                  <FieldValues values={detail.data.snapshot.extracted_data} labels={labels} />
+                  <FieldValues
+                    values={detail.data.snapshot.extracted_data}
+                    labels={labels}
+                    businessKey={spec?.business_key?.item_fields ?? []}
+                  />
                   <p className="meta mt-2">
                     {t("monitors.dialog.coverage", {
                       coverage: coverageLabel(

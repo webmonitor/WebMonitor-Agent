@@ -95,7 +95,9 @@ function stepText(
 
 /**
  * The monitor's actual definition, not a summary of it: selectors, per-field
- * normalization, rules, schedule and the raw spec the worker executes.
+ * normalization, rules, browser steps and the raw collection spec the worker
+ * executes. Delivery settings (groups, cadence, template) are read from the
+ * monitor's own columns, never from the collection spec.
  */
 export function MonitorConfig({
   monitor,
@@ -112,7 +114,9 @@ export function MonitorConfig({
     describeRule,
     fieldLabels,
     formatDateTime,
+    formatInterval,
     formatMode,
+    formatTimezone,
   } = useFormat();
   const groups = useGroups();
   const versions = useSpecVersions(monitor.id);
@@ -134,7 +138,7 @@ export function MonitorConfig({
   const labels = spec ? fieldLabels(spec.fields) : {};
   const editable = !monitor.archived_at;
   const groupNames = new Map((groups.data?.items ?? []).map((group) => [group.id, group.name]));
-  const groupLabels = (spec?.notification_group_ids ?? []).map(
+  const groupLabels = (monitor.notification_group_ids ?? []).map(
     (id) => groupNames.get(id) ?? (groups.isPending ? "…" : id),
   );
   const coverage = spec?.coverage;
@@ -297,6 +301,22 @@ export function MonitorConfig({
                 {t("monitors.config.recipients")} · {(monitor.approved_recipients ?? []).join(" · ")}
               </p>
             )}
+          </div>
+
+          <div>
+            <h3 className="label-line">{t("monitors.config.schedule")}</h3>
+            <p className="num mt-1 text-[13px]">
+              {formatInterval(monitor.interval_seconds)}
+              {" · "}
+              {formatTimezone(monitor.timezone)}
+            </p>
+          </div>
+
+          <div>
+            <h3 className="label-line">{t("monitors.config.template")}</h3>
+            <p className="mt-1 text-[13px]">
+              {monitor.email_template_name || t("templates.systemDefault")}
+            </p>
           </div>
 
           {(spec?.browser_steps ?? []).length > 0 && (

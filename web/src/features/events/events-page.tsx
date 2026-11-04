@@ -13,9 +13,7 @@ type Filter = "all" | "unread";
 
 const FILTERS: Filter[] = ["all", "unread"];
 
-const EVENT_TYPES = [
-  "price_changed", "list_changed", "content_changed", "run_failed", "recovered",
-] as const;
+const EVENT_TYPES = ["content_changed", "list_changed", "run_failed", "recovered"] as const;
 
 /**
  * A filter is one quiet control: hairline, 32px, the same chevron and focus ring

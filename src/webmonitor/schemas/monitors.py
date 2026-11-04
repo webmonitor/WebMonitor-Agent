@@ -460,15 +460,15 @@ class ApiSource(Contract):
         return self
 
 
-class DraftSpec(Contract):
+class MonitorSpec(Contract):
+    """The collection contract only; recipients, cadence and mail are user settings."""
+
     name: str = Field(min_length=1, max_length=200)
     url: str = Field(min_length=1, max_length=4096)
     collection_mode: Literal['http', 'browser']
     fields: list[FieldSpec] = Field(min_length=1)
     business_key: BusinessKey | None = None
     change_rules: ChangeRules
-    schedule: Schedule
-    notification_group_ids: list[UUID] = Field(min_length=1)
     coverage: Coverage
     browser_steps: list[BrowserStep] = Field(default_factory=list)
     source: ApiSource | None = None
@@ -479,12 +479,10 @@ class DraftSpec(Contract):
         return validate_http_url(value)
 
     @model_validator(mode='after')
-    def references(self) -> 'DraftSpec':
+    def references(self) -> 'MonitorSpec':
         fields = {field.name: field for field in self.fields}
         if len(fields) != len(self.fields):
             raise ValueError('duplicate field name')
-        if len(set(self.notification_group_ids)) != len(self.notification_group_ids):
-            raise ValueError('duplicate notification group')
         if self.collection_mode == 'http' and self.browser_steps:
             raise ValueError('browser_steps require browser collection mode')
         self._channel_fields()

@@ -4,7 +4,7 @@ from datetime import datetime
 from decimal import Decimal, InvalidOperation
 
 from webmonitor.collection.extraction import invalid
-from webmonitor.schemas.monitors import Coverage, DraftSpec, FieldSpec, canonical_json
+from webmonitor.schemas.monitors import Coverage, FieldSpec, MonitorSpec, canonical_json
 from webmonitor.security.egress import validate_url
 
 _MISSING = object()
@@ -82,7 +82,7 @@ def _validate(field: FieldSpec, value, previous, path: str) -> None:
             invalid(path, 'invalid_url')
 
 
-def validate_collection(spec: DraftSpec, fields: dict, previous: dict | None = None,
+def validate_collection(spec: MonitorSpec, fields: dict, previous: dict | None = None,
                         coverage: dict | Coverage | None = None) -> None:
     """Reject untrusted, incomplete or baseline-destructive normalized results.
 

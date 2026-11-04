@@ -79,9 +79,16 @@ def job_view(job: Job) -> JobView:
 
 def draft_view(draft: Draft) -> DraftView:
     return DraftView(id=draft.id, conversation_id=draft.conversation_id,
-        revision=draft.revision, status=draft.status, spec=draft.spec,
-        spec_hash=draft.spec_hash, preview=draft.preview, preview_hash=draft.preview_hash,
-        preview_expires_at=draft.preview_expires_at, monitor_id=draft.monitor_id,
+        status=draft.status, spec=draft.spec, spec_hash=draft.spec_hash,
+        spec_revision=draft.spec_revision, settings=draft.settings or {},
+        settings_hash=draft.settings_hash, settings_revision=draft.settings_revision,
+        extraction_preview=draft.extraction_preview,
+        extraction_preview_hash=draft.extraction_preview_hash,
+        extraction_preview_expires_at=draft.extraction_preview_expires_at,
+        delivery_preview=draft.delivery_preview,
+        delivery_preview_hash=draft.delivery_preview_hash,
+        delivery_preview_expires_at=draft.delivery_preview_expires_at,
+        monitor_id=draft.monitor_id,
         created_at=draft.created_at, updated_at=draft.updated_at)
 
 
@@ -196,9 +203,12 @@ async def cancel(session: AsyncSession, user: CurrentUser, conversation_id: UUID
 
 
 async def approve(session: AsyncSession, user: CurrentUser, conversation_id: UUID, *,
-                  draft_id: UUID, revision: int, preview_hash: str) -> Monitor:
+                  draft_id: UUID, spec_revision: int, settings_revision: int,
+                  extraction_preview_hash: str, delivery_preview_hash: str) -> Monitor:
     from webmonitor.services import drafts
     await require_conversation(session, user, conversation_id)
     return await drafts.publish_draft(session, user, conversation_id=conversation_id,
-                                      draft_id=draft_id, revision=revision,
-                                      preview_hash=preview_hash)
+                                      draft_id=draft_id, spec_revision=spec_revision,
+                                      settings_revision=settings_revision,
+                                      extraction_preview_hash=extraction_preview_hash,
+                                      delivery_preview_hash=delivery_preview_hash)

@@ -78,7 +78,7 @@ async def test_requeue_keeps_the_attempt_and_schedules_the_next_try(session):
     conversation = Conversation(user_id=user.id, title="Preview retry")
     session.add(conversation)
     await session.flush()
-    draft = Draft(user_id=user.id, conversation_id=conversation.id, revision=1)
+    draft = Draft(user_id=user.id, conversation_id=conversation.id, spec_revision=1)
     session.add(draft)
     await session.flush()
     await jobs.enqueue(session, user_id=user.id, kind="preview", draft_id=draft.id,

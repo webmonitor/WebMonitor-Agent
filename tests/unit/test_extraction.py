@@ -1,22 +1,19 @@
 """Extraction boundaries that protect trustworthy baselines and list identity."""
-from uuid import uuid4
 
 import pytest
 
 from webmonitor.collection.extraction import extract_fields
 from webmonitor.collection.validation import validate_collection
 from webmonitor.errors import DomainError
-from webmonitor.schemas.monitors import DraftSpec
+from webmonitor.schemas.monitors import MonitorSpec
 
 
 def spec_for(field, *, rules=None, key=None, coverage='full'):
-    return DraftSpec.model_validate({
+    return MonitorSpec.model_validate({
         'name': 'Extraction boundary', 'url': 'https://example.com/products',
         'collection_mode': 'http', 'fields': [field], 'business_key': key,
         'change_rules': {'mode': 'any', 'rules': rules or [
             {'type': 'text_changed', 'field': field['name']}]},
-        'schedule': {'interval_seconds': 60, 'timezone': 'UTC'},
-        'notification_group_ids': [str(uuid4())],
         'coverage': {'scope': coverage, 'description': 'Visible product rows'},
     })
 
@@ -25,11 +22,11 @@ def scalar(kind='text', **options):
     field = {'name': 'value', 'type': kind, 'semantic': 'Value', 'selector': '.value', **options}
     rule = {'type': 'text_changed', 'field': 'value'} if kind == 'text' else {
         'type': 'threshold', 'field': 'value', 'operator': 'gt', 'value': '0'}
-    # Non-rule scalar types coexist with a text field to maintain a valid DraftSpec.
+    # Non-rule scalar types coexist with a text field to maintain a valid MonitorSpec.
     if kind not in ('text', 'number', 'money'):
         data = spec_for({'name': 'label', 'type': 'text', 'semantic': 'Label', 'selector': '.label'}).model_dump(mode='json')
         data['fields'].append(field)
-        return DraftSpec.model_validate(data)
+        return MonitorSpec.model_validate(data)
     return spec_for(field, rules=[rule])
 
 
@@ -142,7 +139,7 @@ def test_initial_empty_list_and_historical_empty_are_distinct():
 def test_current_coverage_downgrade_cannot_authorize_deletion():
     data = list_spec().model_dump(mode='json')
     data['change_rules']['rules'] = [{'type': 'list_removed', 'field': 'products'}]
-    spec = DraftSpec.model_validate(data)
+    spec = MonitorSpec.model_validate(data)
     rejected(lambda: validate_collection(spec, {'products': [{'id': 'A'}]},
                                         coverage={'scope': 'bounded', 'description': 'One page only'}),
              'deletion_requires_full_coverage')
@@ -152,7 +149,7 @@ def test_same_business_key_cannot_change_currency_inside_list():
     data = list_spec().model_dump(mode='json')
     data['fields'][0]['item_fields'].append({'name': 'price', 'type': 'money', 'semantic': 'Price', 'selector': '.price',
                                            'normalize': {'decimal_separator': '.', 'currency': 'USD'}})
-    spec = DraftSpec.model_validate(data)
+    spec = MonitorSpec.model_validate(data)
     rejected(lambda: validate_collection(spec, {'products': [{'id': 'A', 'price': {'amount': '9', 'currency': 'USD'}}]},
                                         {'products': [{'id': 'A', 'price': {'amount': '10', 'currency': 'EUR'}}]}),
              'currency_changed')
@@ -161,7 +158,7 @@ def test_same_business_key_cannot_change_currency_inside_list():
 def test_row_own_attribute_and_whitespace_identity():
     data = list_spec().model_dump(mode='json')
     data['fields'][0]['item_fields'][0].update(selector=':scope', attribute='data-id', normalize={'trim': False})
-    spec = DraftSpec.model_validate(data)
+    spec = MonitorSpec.model_validate(data)
     assert extract(spec, '<div class="row" data-id="A"><span class="title">Alpha</span></div>') == {
         'products': [{'id': 'A', 'title': 'Alpha'}]}
     rejected(lambda: validate_collection(spec, {'products': [{'id': '   '}]}), 'empty_business_key')

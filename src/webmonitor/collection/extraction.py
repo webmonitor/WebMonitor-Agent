@@ -9,7 +9,7 @@ from zoneinfo import ZoneInfo
 from bs4 import BeautifulSoup, Tag
 
 from webmonitor.errors import DomainError
-from webmonitor.schemas.monitors import DraftSpec, FieldSpec, Normalization
+from webmonitor.schemas.monitors import FieldSpec, MonitorSpec, Normalization
 from webmonitor.security.egress import validate_url
 
 # Shared symbols are interpreted only through the explicit currency contract.
@@ -203,7 +203,7 @@ def _extract(root: BeautifulSoup | Tag, field: FieldSpec, final_url: str, path: 
     return _scalar(value, field, final_url, path)
 
 
-def extract_fields(html: str, spec: DraftSpec, final_url: str) -> dict:
+def extract_fields(html: str, spec: MonitorSpec, final_url: str) -> dict:
     """Extract JSON-safe values; validate merged rows separately before commit."""
 
     root = BeautifulSoup(html, 'lxml')

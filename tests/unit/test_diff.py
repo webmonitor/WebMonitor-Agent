@@ -1,17 +1,14 @@
 """Consumer-visible baseline and event transition boundaries."""
-from uuid import uuid4
 
 from webmonitor.collection.diff import evaluate_rules
-from webmonitor.schemas.monitors import DraftSpec
+from webmonitor.schemas.monitors import MonitorSpec
 
 
 def make_spec(fields, rules, *, business_key=None, mode='any'):
-    return DraftSpec.model_validate({
+    return MonitorSpec.model_validate({
         'name': 'Regression monitor', 'url': 'https://example.com/product',
         'collection_mode': 'http', 'fields': fields, 'business_key': business_key,
         'change_rules': {'mode': mode, 'rules': rules},
-        'schedule': {'interval_seconds': 60, 'timezone': 'UTC'},
-        'notification_group_ids': [str(uuid4())],
         'coverage': {'scope': 'full', 'description': 'Complete product list'},
     })
 
@@ -115,11 +112,11 @@ def test_bounded_coverage_rejects_deletion_and_foreign_list_rules():
     bounded = spec.model_dump(mode='json')
     bounded['coverage']['scope'] = 'bounded'
     with pytest.raises(ValidationError):
-        DraftSpec.model_validate(bounded)
+        MonitorSpec.model_validate(bounded)
     foreign = spec.model_dump(mode='json')
     foreign['change_rules']['rules'][0]['field'] = 'related'
     with pytest.raises(ValidationError):
-        DraftSpec.model_validate(foreign)
+        MonitorSpec.model_validate(foreign)
 
 
 

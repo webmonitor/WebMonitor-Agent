@@ -13,7 +13,7 @@ from webmonitor.schemas.api import (
     ConversationSnapshot,
     ConversationView,
     CreateMonitorResult,
-    DraftSpecUpdate,
+    DraftUpdate,
     DraftView,
     JobDetail,
     JobView,
@@ -92,7 +92,10 @@ async def cancel(conversation_id: UUID, session: DatabaseSession, user: Authenti
 async def approve(conversation_id: UUID, payload: ApproveRequest, session: DatabaseSession,
                   user: AuthenticatedUser):
     monitor = await conversations.approve(session, user, conversation_id,
-        draft_id=payload.draft_id, revision=payload.revision, preview_hash=payload.preview_hash)
+        draft_id=payload.draft_id, spec_revision=payload.spec_revision,
+        settings_revision=payload.settings_revision,
+        extraction_preview_hash=payload.extraction_preview_hash,
+        delivery_preview_hash=payload.delivery_preview_hash)
     result = drafts.monitor_result(monitor)
     await session.commit()
     return result
@@ -104,10 +107,9 @@ async def read_draft(draft_id: UUID, session: DatabaseSession, user: Authenticat
 
 
 @router.put("/drafts/{draft_id}", response_model=DraftView)
-async def update_draft(draft_id: UUID, payload: DraftSpecUpdate, session: DatabaseSession,
+async def update_draft(draft_id: UUID, payload: DraftUpdate, session: DatabaseSession,
                        user: AuthenticatedUser):
-    draft = await drafts.update_draft(session, user, draft_id=draft_id,
-        revision=payload.revision, spec=payload.spec)
+    draft = await drafts.apply_update(session, user, draft_id, payload)
     result = conversations.draft_view(draft)
     await session.commit()
     return result
@@ -150,6 +152,7 @@ async def cancel_job(job_id: UUID, session: DatabaseSession, user: Authenticated
 async def derive_draft(monitor_id: UUID, session: DatabaseSession, user: AuthenticatedUser):
     conversation, draft = await drafts.draft_from_monitor(session, user, monitor_id)
     result = {"conversation_id": str(conversation.id), "draft_id": str(draft.id),
-              "revision": draft.revision}
+              "spec_revision": draft.spec_revision,
+              "settings_revision": draft.settings_revision}
     await session.commit()
     return result

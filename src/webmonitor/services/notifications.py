@@ -18,7 +18,7 @@ from webmonitor.models import (
 )
 from webmonitor.notifications.rendering import render_email
 from webmonitor.schemas.api import Group, MemberSpec, Page
-from webmonitor.schemas.monitors import DraftSpec
+from webmonitor.schemas.templates import EmailTemplateConfig
 from webmonitor.security.auth import CurrentUser, require_admin
 from webmonitor.services.jobs import LEASE_SECONDS
 
@@ -135,10 +135,7 @@ def recipients_emails(recipients: list[dict]) -> list[str]:
 
 def _timezone(monitor: Monitor) -> str:
     """Dates are normalized to the monitor's zone; the mail shows them there."""
-    try:
-        return DraftSpec.model_validate(monitor.spec or {}).schedule.timezone or "UTC"
-    except ValueError:
-        return "UTC"
+    return monitor.timezone or "UTC"
 
 
 def _payload(monitor: Monitor, event: Event, fields: dict) -> dict:
@@ -165,7 +162,14 @@ async def enqueue_event_deliveries(session: AsyncSession, monitor: Monitor, even
         raise DomainError("notification_recipients_empty", 409)
     payload = _payload(monitor, event, fields)
     event.payload = payload
-    rendered = render_email(event.type, payload)
+    try:
+        template = (EmailTemplateConfig.model_validate(monitor.email_template)
+                    if monitor.email_template else None)
+    except ValueError:
+        # A frozen snapshot that no longer parses stays inert; the snapshot itself
+        # is still the valid record of what the monitor was approved with.
+        raise DomainError("template_unavailable", 409) from None
+    rendered = render_email(event.type, payload, template)
     for recipient in recipients:
         delivery_id = uuid4()
         session.add(EmailDelivery(id=delivery_id, user_id=monitor.user_id,

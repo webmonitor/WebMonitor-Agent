@@ -19,7 +19,7 @@
   <a href="./README.zh-CN.md">简体中文</a>
 </p>
 
-![Conversation on the left, live sample and confirmation card on the right](./docs/screenshot.png)
+![The confirmation card in the conversation, with delivery settings opened inside it](./docs/screenshot.png)
 
 ## What it is
 
@@ -29,12 +29,7 @@ Everything runs from one Docker Compose stack — a Next.js interface, a FastAPI
 
 ### What you can watch
 
-| Situation | Say something like |
-| --- | --- |
-| Price drop | “Watch this page's price and email me when it drops 10%” |
-| New announcement | “Tell me when a new notice appears on the announcement board” |
-| Stock change | “Check the stock count daily and let me know when it changes” |
-| Deadline | “Track the registration deadline on this page and tell me if it moves” |
+Any public page. You say which values matter and what counts as a change; the product has no built-in notion of a page type, a product, a price or a notice board.
 
 A rule can watch text, a keyword appearing or disappearing, a number against a threshold, a percentage or absolute change, or new, updated and removed items in a list.
 
@@ -184,12 +179,14 @@ Click **New conversation** and type what you need, for example one of the senten
 
 Two things happen next:
 
-- The assistant opens the page and shows a work log — **View N steps** — listing what it did: read the page, checked your notification groups, prepared the settings.
-- The assistant asks for any missing details, such as check frequency, alert conditions and recipients. Reply in the same conversation.
+- The assistant opens the page and shows a work log — **View N steps** — listing what it did: read the page and saved the collection definition.
+- The assistant asks for any missing details about what to extract and when a change counts. Recipients, check frequency and the email template are yours: you set them in the workspace beside the conversation.
 
 ### Check the preview, then create
 
-Before anything is scheduled, a confirmation card appears — in the right-hand column on a wide screen, inline in the chat on a narrow one. It shows:
+Before anything is scheduled, a confirmation card appears inline in the conversation. **Settings** on the card opens your delivery settings right there — notification groups, check frequency, timezone and email template — so creating a monitor never needs a second panel.
+
+The card shows:
 
 - monitor name, check frequency, page host and timezone, and how long the preview stays valid
 - **Extracted content** — the fields it read and their actual values on this page
@@ -197,22 +194,23 @@ Before anything is scheduled, a confirmation card appears — in the right-hand 
 - **Notify when** — the rule that will trigger an email, and whether each rule evaluates true now; change rules are compared from the next check onward
 - **Recipients** — the addresses that will be notified
 - **Page screenshot** / **Page archive** when the sample saved them
-- **Preview notification email** — the real email body
-- warnings such as “The check covers only part of the page”
+- **Preview notification email** — the real body for every event this monitor can produce, rendered with the selected template
+- warnings such as “The check covers only part of the page”, or that the mail needs a field the page does not have
 
 If something is wrong, say so in the chat: the assistant takes a new sample and the card updates. **Preview again** samples the same settings again; **Take a sample** runs the first sample when none exists yet.
 
 The card shows a preview's queued, running or failed status. Failed previews retain their error and can be retried. Creating or saving a monitor confirms the exact preview shown; another preview replacing it requires refreshing and confirming the new result.
 
-**Create monitor** is the click that starts scheduled checking. If the card has expired, preview again — a preview stays valid for 60 minutes.
+**Create monitor** is the click that starts scheduled checking. It needs at least one notification group and a check frequency; until both are saved, the button stays disabled and the card says what is missing. If the card has expired, preview again — a preview stays valid for 60 minutes.
 
 ### After it starts
 
-- The monitor appears under **Monitors** in the left sidebar with its name and interval. Its page shows **Last check**, **Next check**, **Check frequency**, **Collection method**, and **Monitor definition**: the selectors, fields, normalization, change rules, schedule, coverage, notification groups and approved recipients actually in use. **Raw definition (JSON)** shows the exact spec, and **Definition versions** lists every published version.
-- **Edit definition** edits that JSON directly. Saving writes a draft, runs a real preview, and only a confirmed preview updates the monitor; editing from an older version starts a new draft from it. **Edit settings** still opens a conversation with the same settings.
+- The monitor appears under **Monitors** in the left sidebar with its name and interval. Its page shows **Last check**, **Next check**, **Check frequency**, **Collection method**, and **Monitor definition**: the selectors, fields, normalization, change rules and coverage actually in use. Notification groups, check frequency, timezone and the email template are separate delivery settings, edited in the workspace or from **Edit settings**; each monitor also shows the template name and the approved recipients. **Raw definition (JSON)** shows the collection definition exactly as the worker executes it, and **Definition versions** lists every published version that changed it.
+- **Edit definition** edits that collection JSON directly. Saving writes a draft, runs a real preview, and only a confirmed preview updates the monitor; editing from an older version starts a new draft from it. A settings-only save keeps the collected baseline; changing the collection definition starts a new baseline. **Edit settings** opens a conversation carrying the monitor's current definition and settings.
 - **Rename** changes the name. **Archive** stops checks and moves the monitor to **Archived**, keeping its definition and history; **Restore** brings it back, paused.
 - **Check history** stores every successful collection. Open one to see the stored values, coverage, screenshot and page archive. Events link to their check record and check details.
 - **Pause** / **Resume** stops and restarts the schedule. Pausing cancels queued or running collection; **Check now** is available while the monitor is active. An active check can be cancelled from its details, and a failed check can be retried there.
+- **Email templates** in the left sidebar stores reusable mail designs. You describe the email in one sentence — colours, type, density, what to show, where the record link goes — and the model writes both the look and the layout: a subject with `{monitor_name}`, `{event_label}` and `{event_date}` tokens, a style (five colours, font family, heading scale, density, corner radius, border, label case), an optional intro per event type, and ordered blocks (summary, all collected fields, detection time, links, dividers). The style is a set of validated tokens the server turns into CSS, so a design never carries markup of its own. The result is rendered as a real mail before you save it, and a design never names a specific field, so it fits any monitor. Editing an existing template is the same one-sentence prompt. Any member can create one; only its creator or an administrator can change or disable it. A monitor keeps the design it was approved with, so editing or disabling a template never rewrites an existing monitor.
 - **Events** lists everything detected, with **All** / **Unread** filters, monitor and event-type filters, and **Mark as read**.
 - **Notifications** → **Delivery log** lists each email with its monitor, recipient, status, attempts, body, and the error if it failed.
 - **Members** (administrators) enables or disables accounts and creates single-use invitation links to copy.

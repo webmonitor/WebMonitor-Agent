@@ -7,6 +7,7 @@ import {
   Archive,
   Bell,
   LogOut,
+  Mail,
   Menu,
   Plus,
   Radar,
@@ -206,6 +207,7 @@ export function WorkspaceShell({ children }: { children: ReactNode }) {
   const links = [
     { href: "/app/events", label: t("common.events"), icon: Activity },
     { href: "/app/notifications", label: t("common.notifications"), icon: Bell },
+    { href: "/app/templates", label: t("common.templates"), icon: Mail },
     ...(user?.role === "admin"
       ? [{ href: "/app/members", label: t("common.members"), icon: Users }]
       : []),
@@ -261,6 +263,8 @@ export function WorkspaceShell({ children }: { children: ReactNode }) {
       ? t("common.events")
       : pathname.startsWith("/app/notifications")
         ? t("common.notifications")
+        : pathname.startsWith("/app/templates")
+          ? t("common.title.templates")
         : pathname.startsWith("/app/members")
           ? t("common.members")
           : pathname.startsWith("/app/archived-conversations")

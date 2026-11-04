@@ -96,7 +96,11 @@ export function SnapshotPage({
             </a>
           </header>
           <div className="px-4 py-2">
-            <FieldValues values={row.extracted_data} labels={labels} />
+            <FieldValues
+              values={row.extracted_data}
+              labels={labels}
+              businessKey={spec?.business_key?.item_fields ?? []}
+            />
           </div>
           {row.evidence_refs.length > 0 && (
             <div className="flex flex-wrap gap-3 border-t px-4 py-2.5">

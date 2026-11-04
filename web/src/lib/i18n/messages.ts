@@ -3,6 +3,7 @@ import { en as chatEn, zh as chatZh } from "./chat";
 import { en as commonEn, zh as commonZh } from "./common";
 import { en as monitorEn, zh as monitorZh } from "./monitors";
 import { en as publicEn, zh as publicZh } from "./public";
+import { en as templateEn, zh as templateZh } from "./templates";
 
 export type Locale = "en" | "zh-CN";
 
@@ -14,6 +15,7 @@ export const en = {
   ...chatEn,
   ...monitorEn,
   ...activityEn,
+  ...templateEn,
 };
 
 export const zh = {
@@ -22,6 +24,7 @@ export const zh = {
   ...chatZh,
   ...monitorZh,
   ...activityZh,
+  ...templateZh,
 } as Record<keyof typeof en, string>;
 
 export type MessageKey = keyof typeof en;

@@ -12,25 +12,21 @@ from webmonitor.agent.tools import analyze_target, save_monitor_draft
 from webmonitor.config import get_settings
 from webmonitor.errors import DomainError
 from webmonitor.models import Conversation, Draft, Job, User, utc_now
-from webmonitor.schemas.monitors import DraftSpec
+from webmonitor.schemas.monitors import MonitorSpec
 from webmonitor.security.auth import CurrentUser
 from webmonitor.services import conversations, jobs
 
 
-def build_spec(group_id) -> DraftSpec:
-    return DraftSpec.model_validate({
-        "name": "Price watch",
-        "url": "https://8.8.8.8/product",
+def build_spec() -> MonitorSpec:
+    return MonitorSpec.model_validate({
+        "name": "Notice watch",
+        "url": "https://8.8.8.8/notice",
         "collection_mode": "http",
-        "fields": [{"name": "current_price", "type": "money", "semantic": "Price",
-                    "selector": ".price",
-                    "normalize": {"decimal_separator": ".", "currency": "USD"}}],
+        "fields": [{"name": "page_title", "type": "text", "semantic": "Page title",
+                    "selector": "h1"}],
         "change_rules": {"mode": "any", "rules": [
-            {"type": "number_percent_change", "field": "current_price",
-             "operator": "decrease_gte", "value": 10}]},
-        "schedule": {"interval_seconds": 60, "timezone": "UTC"},
-        "notification_group_ids": [str(group_id)],
-        "coverage": {"scope": "full", "description": "Single price element"},
+            {"type": "text_changed", "field": "page_title"}]},
+        "coverage": {"scope": "full", "description": "Page title"},
     })
 
 
@@ -101,14 +97,35 @@ async def test_stale_draft_revision_is_rejected(session):
     await session.commit()
     runtime = _runtime(user, job)
     runtime.draft_id = uuid4()
-    runtime.draft_revision = 1
-    arguments = json.dumps({"spec": build_spec(uuid4()).model_dump(mode="json")})
+    runtime.spec_revision = 1
+    arguments = json.dumps({"spec": build_spec().model_dump(mode="json")})
     context = ToolContext(context=runtime, tool_name="save_monitor_draft",
                           tool_call_id="call-1", tool_arguments=arguments)
     response = await save_monitor_draft.on_invoke_tool(context, arguments)
     if isinstance(response, str):
         response = json.loads(response)
     assert response["error"]["code"] == "stale_revision"
+    assert (await session.scalars(select(Draft))).all() == []
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("forbidden", [
+    {"schedule": {"interval_seconds": 60, "timezone": "UTC"}},
+    {"notification_group_ids": ["00000000-0000-4000-8000-000000000001"]},
+    {"email_template_id": "00000000-0000-4000-8000-000000000002"},
+])
+async def test_agent_spec_cannot_write_delivery_settings(session, forbidden):
+    """The agent owns the collection definition only; settings are user-owned."""
+    user, job = await running_agent_job(session)
+    await session.commit()
+    runtime = _runtime(user, job)
+    arguments = json.dumps({"spec": {**build_spec().model_dump(mode="json"), **forbidden}})
+    context = ToolContext(context=runtime, tool_name="save_monitor_draft",
+                          tool_call_id="call-1", tool_arguments=arguments)
+    response = await save_monitor_draft.on_invoke_tool(context, arguments)
+    if isinstance(response, str):
+        response = json.loads(response)
+    assert response["error"]["code"] == "invalid_tool_input"
     assert (await session.scalars(select(Draft))).all() == []
 
 

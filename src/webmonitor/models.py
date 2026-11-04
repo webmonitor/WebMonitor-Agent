@@ -162,22 +162,40 @@ class Job(UUIDPrimaryKey, Created, Base):
 
 
 class Draft(UUIDPrimaryKey, Created, Updated, Base):
+    """A conversation's monitor proposal: collection contract and delivery settings.
+
+    Each section carries its own revision, hash and preview, so editing a schedule
+    never invalidates a collected preview of the page, and the agent can only write
+    the collection contract.
+    """
+
     __tablename__ = "drafts"
     __table_args__ = (
         CheckConstraint("status IN ('draft', 'published', 'discarded')", name="status"),
-        CheckConstraint("revision >= 0", name="revision"),
+        CheckConstraint("spec_revision >= 0", name="spec_revision"),
+        CheckConstraint("settings_revision >= 0", name="settings_revision"),
         Index("ix_drafts_conversation", "conversation_id", "created_at"),
     )
     user_id: Mapped[UUID] = mapped_column(ForeignKey("users.id"))
     conversation_id: Mapped[UUID] = mapped_column(
         ForeignKey("conversations.id", ondelete="CASCADE"))
     monitor_id: Mapped[UUID | None] = mapped_column(index=True)
-    revision: Mapped[int] = mapped_column(Integer, default=0, server_default="0")
+    spec_revision: Mapped[int] = mapped_column(Integer, default=0, server_default="0")
+    settings_revision: Mapped[int] = mapped_column(Integer, default=0, server_default="0")
     spec: Mapped[dict[str, Any] | None] = mapped_column(JSONB)
     spec_hash: Mapped[str | None] = mapped_column(String(64))
-    preview: Mapped[dict[str, Any] | None] = mapped_column(JSONB)
-    preview_hash: Mapped[str | None] = mapped_column(String(64))
-    preview_expires_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    settings: Mapped[dict[str, Any]] = mapped_column(JSONB, default=dict, server_default="{}")
+    settings_hash: Mapped[str | None] = mapped_column(String(64))
+    extraction_preview: Mapped[dict[str, Any] | None] = mapped_column(JSONB)
+    extraction_preview_hash: Mapped[str | None] = mapped_column(String(64))
+    extraction_preview_expires_at: Mapped[datetime | None] = mapped_column(
+        DateTime(timezone=True))
+    delivery_preview: Mapped[dict[str, Any] | None] = mapped_column(JSONB)
+    delivery_preview_hash: Mapped[str | None] = mapped_column(String(64))
+    delivery_preview_expires_at: Mapped[datetime | None] = mapped_column(
+        DateTime(timezone=True))
+    # The monitor version this publication produced; NULL for a settings-only approval.
+    published_spec_version: Mapped[int | None] = mapped_column(Integer, index=True)
     status: Mapped[str] = mapped_column(String(16), default="draft", server_default="draft")
 
 
@@ -203,6 +221,11 @@ class Monitor(UUIDPrimaryKey, Created, Updated, Base):
     interval_seconds: Mapped[int] = mapped_column(Integer)
     timezone: Mapped[str] = mapped_column(String(100))
     notification_group_ids: Mapped[list[str]] = mapped_column(JSONB, default=list, server_default="[]")
+    email_template_id: Mapped[UUID | None] = mapped_column(
+        ForeignKey("email_templates.id", ondelete="SET NULL"), index=True)
+    email_template_name: Mapped[str | None] = mapped_column(String(200))
+    # Frozen EmailTemplateConfig at approval; NULL means the packaged default template.
+    email_template: Mapped[dict[str, Any] | None] = mapped_column(JSONB)
     approved_recipients: Mapped[list[dict[str, Any]]] = mapped_column(JSONB)
     baseline_snapshot_id: Mapped[UUID | None] = mapped_column(index=True)
     baseline_status: Mapped[str] = mapped_column(String(32), default="pending_first_success",
@@ -238,7 +261,7 @@ class Event(UUIDPrimaryKey, Created, Base):
     __tablename__ = "events"
     __table_args__ = (
         UniqueConstraint("job_id", "type"),
-        CheckConstraint("type IN ('price_changed', 'list_changed', 'content_changed', 'run_failed', 'recovered')", name="type"),
+        CheckConstraint("type IN ('content_changed', 'list_changed', 'run_failed', 'recovered')", name="type"),
         Index("ix_events_monitor_created", "monitor_id", "created_at"),
     )
     monitor_id: Mapped[UUID] = mapped_column(ForeignKey("monitors.id", ondelete="CASCADE"))
@@ -262,6 +285,21 @@ class NotificationGroup(UUIDPrimaryKey, Created, Updated, Base):
     name: Mapped[str] = mapped_column(String(200))
     enabled: Mapped[bool] = mapped_column(default=True, server_default="true")
     members: Mapped[list[dict[str, Any]]] = mapped_column(JSONB, default=list, server_default="[]")
+    created_by_user_id: Mapped[UUID] = mapped_column(ForeignKey("users.id"))
+    deleted_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+
+
+class EmailTemplate(UUIDPrimaryKey, Created, Updated, Base):
+    """A reusable, structured mail design; deletion is a soft delete."""
+
+    __tablename__ = "email_templates"
+    __table_args__ = (
+        Index("uq_email_templates_name", "name", unique=True,
+              postgresql_where=text("deleted_at IS NULL")),
+    )
+    name: Mapped[str] = mapped_column(String(200))
+    description: Mapped[str] = mapped_column(Text, default="", server_default="")
+    config: Mapped[dict[str, Any]] = mapped_column(JSONB)
     created_by_user_id: Mapped[UUID] = mapped_column(ForeignKey("users.id"))
     deleted_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
 

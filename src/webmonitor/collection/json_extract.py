@@ -7,7 +7,7 @@ import re
 from typing import Any
 
 from webmonitor.collection.extraction import MISSING, invalid, normalize_json_scalar
-from webmonitor.schemas.monitors import DraftSpec, FieldSpec
+from webmonitor.schemas.monitors import FieldSpec, MonitorSpec
 
 _SEGMENT = re.compile(r'[A-Za-z0-9_$-]+|\[(\d+)\]')
 MAX_KEYS = 20
@@ -64,7 +64,7 @@ def extract_json_field(body: Any, field: FieldSpec, final_url: str, path: str):
     return rows
 
 
-def extract_json_fields(body: Any, spec: DraftSpec, final_url: str | None = None) -> dict:
+def extract_json_fields(body: Any, spec: MonitorSpec, final_url: str | None = None) -> dict:
     base = final_url or spec.url
     fields = {}
     for field in spec.fields:

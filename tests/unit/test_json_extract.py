@@ -1,5 +1,4 @@
 """JSON values follow the same normalization contract as extracted HTML text."""
-from uuid import uuid4
 
 import pytest
 
@@ -7,7 +6,7 @@ from webmonitor.collection.extraction import MISSING, normalize_json_scalar
 from webmonitor.collection.json_extract import extract_json_field, resolve_path
 from webmonitor.collection.validation import validate_collection
 from webmonitor.errors import DomainError
-from webmonitor.schemas.monitors import DraftSpec, FieldSpec
+from webmonitor.schemas.monitors import MonitorSpec, FieldSpec
 
 
 def field(kind, name='value', path='value', **options):
@@ -23,7 +22,7 @@ def rejected(call, reason):
 
 
 def json_spec(*fields, coverage='full'):
-    return DraftSpec.model_validate({
+    return MonitorSpec.model_validate({
         'name': 'JSON monitor', 'url': 'https://page.example.com/list',
         'collection_mode': 'http',
         'source': {'kind': 'json',
@@ -32,8 +31,6 @@ def json_spec(*fields, coverage='full'):
         'fields': list(fields),
         'business_key': {'field': 'items', 'item_fields': ['id']},
         'change_rules': {'mode': 'any', 'rules': [{'type': 'list_added', 'field': 'items'}]},
-        'schedule': {'interval_seconds': 60, 'timezone': 'UTC'},
-        'notification_group_ids': [str(uuid4())],
         'coverage': {'scope': coverage, 'description': 'Rows'},
     })
 

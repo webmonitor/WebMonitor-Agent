@@ -22,6 +22,14 @@ export type Delivery = components["schemas"]["Delivery"];
 export type InvitationView = components["schemas"]["InvitationView"];
 export type InvitationCreated = components["schemas"]["InvitationCreated"];
 export type CreateMonitorResult = components["schemas"]["CreateMonitorResult"];
+export type EmailTemplateView = components["schemas"]["EmailTemplateView"];
+export type EmailTemplatePreview = components["schemas"]["EmailTemplatePreview"];
+export type EmailTemplateProposal = components["schemas"]["EmailTemplateProposal"];
+export type EmailTemplateSpec = components["schemas"]["EmailTemplateSpec"];
+export type EmailTemplatePatch = components["schemas"]["EmailTemplatePatch"];
+export type EmailTemplateConfig = components["schemas"]["EmailTemplateConfig"];
+export type DeliverySettings = components["schemas"]["DeliverySettings"];
+export type MonitorSpec = components["schemas"]["MonitorSpec"];
 
 export type Page<T> = { items: T[]; total: number };
 
@@ -194,10 +202,23 @@ export function useCancelRun(conversationId: string) {
 export function useApproveDraft(conversationId: string) {
   const cache = useQueryClient();
   return useMutation({
-    mutationFn: ({ draftId, revision, previewHash }: { draftId: string; revision: number; previewHash: string }) =>
+    mutationFn: ({ draftId, specRevision, settingsRevision, extractionPreviewHash,
+                   deliveryPreviewHash }: {
+      draftId: string;
+      specRevision: number;
+      settingsRevision: number;
+      extractionPreviewHash: string;
+      deliveryPreviewHash: string;
+    }) =>
       api<CreateMonitorResult>(`/conversations/${conversationId}/approve`, {
         method: "POST",
-        body: JSON.stringify({ draft_id: draftId, revision, preview_hash: previewHash }),
+        body: JSON.stringify({
+          draft_id: draftId,
+          spec_revision: specRevision,
+          settings_revision: settingsRevision,
+          extraction_preview_hash: extractionPreviewHash,
+          delivery_preview_hash: deliveryPreviewHash,
+        }),
       }),
     onSuccess: (result) => {
       void cache.invalidateQueries({ queryKey: ["conversation", conversationId] });
@@ -221,14 +242,21 @@ export function useStartPreview(conversationId: string) {
 export function useUpdateDraft() {
   const cache = useQueryClient();
   return useMutation({
-    mutationFn: ({ draftId, revision, spec }: {
+    mutationFn: ({ draftId, specRevision, settingsRevision, spec, settings }: {
       draftId: string;
-      revision: number;
-      spec: Record<string, unknown>;
+      specRevision?: number;
+      settingsRevision?: number;
+      spec?: MonitorSpec;
+      settings?: DeliverySettings;
     }) =>
       api<DraftView>(`/drafts/${draftId}`, {
         method: "PUT",
-        body: JSON.stringify({ revision, spec }),
+        body: JSON.stringify({
+          spec_revision: specRevision ?? null,
+          settings_revision: settingsRevision ?? null,
+          spec: spec ?? null,
+          settings: settings ?? null,
+        }),
       }),
     onSuccess: (draft) =>
       void cache.invalidateQueries({ queryKey: ["conversation", draft.conversation_id] }),
@@ -327,10 +355,12 @@ export function useDeriveDraft() {
   const cache = useQueryClient();
   return useMutation({
     mutationFn: (monitorId: string) =>
-      api<{ conversation_id: string; draft_id: string; revision: number }>(
-        `/monitors/${monitorId}/drafts`,
-        { method: "POST" },
-      ),
+      api<{
+        conversation_id: string;
+        draft_id: string;
+        spec_revision: number;
+        settings_revision: number;
+      }>(`/monitors/${monitorId}/drafts`, { method: "POST" }),
     onSuccess: () => void cache.invalidateQueries({ queryKey: ["conversations"] }),
   });
 }
@@ -396,5 +426,64 @@ export function useDeleteGroup() {
     mutationFn: (id: string) =>
       api<Group>(`/notification-groups/${id}`, { method: "DELETE" }),
     onSuccess: () => void cache.invalidateQueries({ queryKey: ["groups"] }),
+  });
+}
+
+export function useEmailTemplates() {
+  return usePagedQuery<EmailTemplateView>(["email-templates"], "/email-templates", 30000);
+}
+
+export type EmailTemplateInput = {
+  name: string;
+  description: string;
+  config: EmailTemplateConfig;
+};
+
+export function useWriteEmailTemplate() {
+  const cache = useQueryClient();
+  return useMutation({
+    mutationFn: ({ id, body }: { id?: string; body: EmailTemplateInput }) =>
+      api<EmailTemplateView>(id ? `/email-templates/${id}` : "/email-templates", {
+        method: id ? "PATCH" : "POST",
+        body: JSON.stringify(body),
+      }),
+    onSuccess: () => {
+      void cache.invalidateQueries({ queryKey: ["email-templates"] });
+      void cache.invalidateQueries({ queryKey: ["conversation"] });
+    },
+  });
+}
+
+export function useDisableEmailTemplate() {
+  const cache = useQueryClient();
+  return useMutation({
+    mutationFn: (id: string) =>
+      api<EmailTemplateView>(`/email-templates/${id}`, { method: "DELETE" }),
+    onSuccess: () => {
+      void cache.invalidateQueries({ queryKey: ["email-templates"] });
+      void cache.invalidateQueries({ queryKey: ["conversation"] });
+    },
+  });
+}
+
+export function useGenerateEmailTemplate() {
+  const cache = useQueryClient();
+  return useMutation({
+    mutationFn: (description: string) =>
+      api<EmailTemplateProposal>("/email-templates/generate", {
+        method: "POST",
+        body: JSON.stringify({ description }),
+      }),
+    onSuccess: () => void cache.invalidateQueries({ queryKey: ["email-templates"] }),
+  });
+}
+
+export function usePreviewEmailTemplate() {
+  return useMutation({
+    mutationFn: (config: EmailTemplateConfig) =>
+      api<EmailTemplatePreview>("/email-templates/preview", {
+        method: "POST",
+        body: JSON.stringify(config),
+      }),
   });
 }

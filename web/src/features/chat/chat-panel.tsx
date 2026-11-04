@@ -7,7 +7,6 @@ import remarkGfm from "remark-gfm";
 import {
   ArrowDown,
   ArrowUp,
-  ArrowUpRight,
   ChevronRight,
   Loader2,
   Square,
@@ -31,8 +30,6 @@ import { useFormat } from "@/lib/format";
 import { useI18n } from "@/lib/i18n";
 
 const ACTIVE = ["queued", "running"];
-
-const EXAMPLE_KEYS = ["chat.examples.price", "chat.examples.notice", "chat.examples.stock"] as const;
 
 /**
  * The job appends a `started` entry and later a terminal entry per tool call, and
@@ -360,28 +357,6 @@ export function ChatPanel({
                   <h2 className="text-[1.25rem] leading-8 font-medium">{t("chat.hero.title")}</h2>
                   <p className="text-[13px] leading-6 text-muted-foreground">{t("chat.hero.body")}</p>
                 </div>
-                <ul className="max-w-[34rem] divide-y border-y">
-                  {EXAMPLE_KEYS.map((exampleKey) => {
-                    const example = t(exampleKey);
-                    return (
-                      <li key={exampleKey}>
-                        <button
-                          className="group flex w-full items-start gap-3 py-2.5 text-left text-[13px] leading-6 text-muted-foreground transition-colors duration-150 hover:text-foreground"
-                          onClick={() => {
-                            setDraft(example);
-                            composer.current?.focus();
-                          }}
-                        >
-                          <span className="min-w-0 flex-1">{example}</span>
-                          <ArrowUpRight
-                            className="mt-1 size-3.5 shrink-0 text-muted-foreground/50 transition-colors duration-150 group-hover:text-foreground"
-                            strokeWidth={1.5}
-                          />
-                        </button>
-                      </li>
-                    );
-                  })}
-                </ul>
               </div>
             )}
 
@@ -439,7 +414,8 @@ export function ChatPanel({
                 </li>
               )}
               {pendingDraft && conversationId && (
-                <li className="xl:hidden">
+                // The approval surface lives in the stream at every width.
+                <li>
                   <CreateMonitorCard conversationId={conversationId} draft={pendingDraft} />
                 </li>
               )}

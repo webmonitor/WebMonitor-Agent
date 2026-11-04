@@ -6,7 +6,7 @@ per-snapshot evidence and must never be suppressed by a previous true state.
 from decimal import Decimal
 from typing import Any
 
-from webmonitor.schemas.monitors import DraftSpec, canonical_json
+from webmonitor.schemas.monitors import MonitorSpec, canonical_json
 
 PERSISTENT = frozenset(('threshold', 'keyword_present', 'keyword_absent'))
 _MISSING = object()
@@ -46,7 +46,7 @@ def _rows(rows: Any, keys: list[str]) -> dict[str, dict]:
     return result
 
 
-def evaluate_rules(spec: DraftSpec, previous: dict | None, current: dict, previous_state: dict) -> dict:
+def evaluate_rules(spec: MonitorSpec, previous: dict | None, current: dict, previous_state: dict) -> dict:
     """Return JSON-safe event evidence and next persistent state.
 
     ``rule_state`` is {predicates: {rule-index: bool}, aggregate: bool}.
@@ -136,7 +136,7 @@ def evaluate_rules(spec: DraftSpec, previous: dict | None, current: dict, previo
     event_type = None
     if triggered:
         matched_fields = [fields[item['field']].type for item in matches]
-        event_type = 'price_changed' if 'money' in matched_fields else 'list_changed' if 'list' in matched_fields else 'content_changed'
+        event_type = 'list_changed' if 'list' in matched_fields else 'content_changed'
     # Round-trip through canonical serialization avoids Decimal/UUID leaking to JSONB.
     import json
     return json.loads(canonical_json({

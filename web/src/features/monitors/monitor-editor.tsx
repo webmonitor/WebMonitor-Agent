@@ -11,11 +11,27 @@ import {
   useDeriveDraft,
   useStartPreview,
   useUpdateDraft,
+  type MonitorSpec,
 } from "@/lib/api/hooks";
+import { monitorSpecSchema } from "@/lib/api/preview";
 import { useFormat } from "@/lib/format";
 import { useI18n } from "@/lib/i18n";
 
-type Session = { conversationId: string; draftId: string; revision: number };
+type Session = { conversationId: string; draftId: string; specRevision: number };
+
+/** Field paths the server's collection contract rejects, if any. */
+function specIssues(value: unknown): string[] | null {
+  const parsed = monitorSpecSchema.safeParse(value);
+  if (parsed.success) return null;
+  const paths = parsed.error.issues.map((issue) => issue.path.join(".") || "spec");
+  return Array.from(new Set(paths));
+}
+
+/** The collection contract the API accepts; recipients, cadence and the mail
+ *  template are user settings and never part of this document. */
+function isMonitorSpec(value: unknown): value is MonitorSpec {
+  return monitorSpecSchema.safeParse(value).success;
+}
 
 type EditorError =
   | { kind: "parse"; message: string }
@@ -23,9 +39,11 @@ type EditorError =
   | { kind: "code"; code: string | null };
 
 /**
- * A direct editor for the monitor's stored spec. It never writes the monitor:
- * saving replaces an editable draft, a real preview must run, and only the
- * approve endpoint publishes it — the same path the conversation uses.
+ * A direct editor for the monitor's collection definition. It never writes the
+ * monitor: saving replaces an editable draft, a real preview must run, and only
+ * the approve endpoint publishes it — the same path the conversation uses.
+ * Delivery settings (notification groups, cadence, template) belong to the
+ * monitor's settings panel, not to this document.
  */
 export function MonitorEditor({
   monitorId,
@@ -72,7 +90,7 @@ export function MonitorEditor({
       setSession({
         conversationId: result.conversation_id,
         draftId: result.draft_id,
-        revision: result.revision,
+        specRevision: result.spec_revision,
       });
       setJson(JSON.stringify(seed, null, 2));
       setBaseline(JSON.stringify(seed));
@@ -121,11 +139,18 @@ export function MonitorEditor({
     try {
       value = JSON.parse(json);
     } catch (failure) {
-      setError({ kind: "parse", message: (failure as Error).message });
+      setError({
+        kind: "parse",
+        message: failure instanceof Error ? failure.message : t("monitors.editor.jsonObject"),
+      });
       return;
     }
     if (typeof value !== "object" || value === null || Array.isArray(value)) {
       setError({ kind: "parse", message: t("monitors.editor.jsonObject") });
+      return;
+    }
+    if (!isMonitorSpec(value)) {
+      setError({ kind: "invalid", fields: specIssues(value) ?? ["spec"] });
       return;
     }
     setSaving(true);
@@ -133,20 +158,20 @@ export function MonitorEditor({
     try {
       const updated = await update.mutateAsync({
         draftId: session.draftId,
-        revision: session.revision,
-        spec: value as Record<string, unknown>,
+        specRevision: session.specRevision,
+        spec: value,
       });
-      setSession({ ...session, revision: updated.revision });
-      setJson(JSON.stringify(updated.spec, null, 2));
-      setBaseline(JSON.stringify(updated.spec));
+      const saved = updated.spec ?? value;
+      setSession({ ...session, specRevision: updated.spec_revision });
+      setJson(JSON.stringify(saved, null, 2));
+      setBaseline(JSON.stringify(saved));
       await preview.mutateAsync(session.draftId);
       setStage("review");
     } catch (failure) {
       if (failure instanceof ApiError) {
-        const fields = Array.isArray(failure.details?.fields)
-          ? (failure.details.fields as unknown[]).map(
-              (item) => String(item).replace(/^body\.spec\.?/, "") || "spec",
-            )
+        const raw = failure.details.fields;
+        const fields = Array.isArray(raw)
+          ? raw.map((item: unknown) => String(item).replace(/^body\.spec\.?/, "") || "spec")
           : [];
         setError(failure.code === "validation_failed" && fields.length > 0
           ? { kind: "invalid", fields }
@@ -179,6 +204,7 @@ export function MonitorEditor({
         {stage === "edit" ? (
           <div className="space-y-3">
             <p className="meta leading-5">{t("monitors.editor.description")}</p>
+            <p className="meta leading-5">{t("monitors.editor.specOnly")}</p>
 
             {preparing && <p className="meta">{t("monitors.editor.preparing")}</p>}
 

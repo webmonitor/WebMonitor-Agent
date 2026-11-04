@@ -1,7 +1,4 @@
 export const en = {
-  "chat.examples.price": "Watch this page's price and email me when it drops 10%",
-  "chat.examples.notice": "Tell me when a new notice appears on the announcement board",
-  "chat.examples.stock": "Check the stock count daily and let me know when it changes",
   "chat.worklog.view": "{total} steps",
   "chat.worklog.incomplete": "{failed} of {total} steps didn't finish",
   "chat.cost.usage": "{model} · {tokens} tokens",
@@ -30,7 +27,7 @@ export const en = {
   "chat.failed.body": "{reason}. Send it again, or rephrase your request.",
   "chat.scrollToLatest": "Jump to the latest message",
   "chat.composer.label": "Describe what you want to monitor",
-  "chat.composer.placeholder": "Describe what to monitor, e.g. price, stock, announcements",
+  "chat.composer.placeholder": "Describe the page and what counts as a change",
   "chat.composer.placeholderBusy": "The assistant is working — you can type ahead…",
   "chat.composer.send": "Send",
   "chat.composer.stop": "Stop this check",
@@ -52,7 +49,8 @@ export const en = {
   "chat.preview.expires": "Expires {relative}",
   "chat.approve.editTitle": "Save monitor changes",
   "chat.approve.title": "Create monitor",
-  "chat.approve.editBody": "Saving updates the existing monitor and rebuilds its baseline.",
+  "chat.approve.editBody":
+    "Saving updates the existing monitor. Changing the collection definition starts a new baseline; delivery settings alone keep the collected one.",
   "chat.approve.body":
     "Below is the result of one real sample. Confirm to start scheduled checks.",
   "chat.approve.untitled": "Untitled monitor",
@@ -77,16 +75,10 @@ export const en = {
   "chat.error.previewStale":
     "The preview has expired or the recipients changed. Preview again, then confirm.",
   "chat.error.create": "Creating the monitor didn't work. Please try again.",
-  "chat.context.emptyTitle": "No monitors yet",
-  "chat.context.emptyBody":
-    "Describe what you want to keep an eye on. The assistant samples the page once, then you confirm whether to start scheduled monitoring.",
   "chat.workspace.loading": "Opening the workspace…",
 } as const;
 
 export const zh: Record<keyof typeof en, string> = {
-  "chat.examples.price": "监控这个页面的价格，降价 10% 时邮件提醒我",
-  "chat.examples.notice": "关注公告栏有没有出现新的通知",
-  "chat.examples.stock": "每天检查一次库存数量，有变化就告诉我",
   "chat.worklog.view": "{total} 步操作",
   "chat.worklog.incomplete": "{total} 步，{failed} 步未完成",
   "chat.cost.usage": "{model} · {tokens} token",
@@ -113,7 +105,7 @@ export const zh: Record<keyof typeof en, string> = {
   "chat.failed.body": "{reason}。你可以再发一次，或者换一种说法描述需求。",
   "chat.scrollToLatest": "回到最新消息",
   "chat.composer.label": "描述你想监控的内容",
-  "chat.composer.placeholder": "描述你想监控的内容，例如价格、库存、公告",
+  "chat.composer.placeholder": "描述要监控的页面，以及什么算发生变化",
   "chat.composer.placeholderBusy": "助手正在处理，可以先继续输入…",
   "chat.composer.send": "发送",
   "chat.composer.stop": "停止这次检查",
@@ -135,7 +127,7 @@ export const zh: Record<keyof typeof en, string> = {
   "chat.preview.expires": "{relative}过期",
   "chat.approve.editTitle": "保存监控修改",
   "chat.approve.title": "创建监控",
-  "chat.approve.editBody": "保存后会更新现有监控，并重新建立基线。",
+  "chat.approve.editBody": "保存会更新这项监控。改动采集定义会重新建立基线；只改投递设置则沿用已有的基线。",
   "chat.approve.body": "下面是一次真实采集的结果，确认后开始定时检查。",
   "chat.approve.untitled": "未命名监控",
   "chat.approve.timezone": "时区 {zone}",
@@ -158,8 +150,5 @@ export const zh: Record<keyof typeof en, string> = {
   "chat.approve.expired": "预览已过期，重新预览后即可创建。",
   "chat.error.previewStale": "预览已过期或收件人已变化，请重新预览后再确认。",
   "chat.error.create": "创建没有成功，请重试。",
-  "chat.context.emptyTitle": "还没有监控",
-  "chat.context.emptyBody":
-    "描述你想盯住的内容。助手会先打开页面试采集一次，再由你确认是否开始定时监控。",
   "chat.workspace.loading": "正在打开工作台…",
 };

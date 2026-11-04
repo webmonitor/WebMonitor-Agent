@@ -15,7 +15,7 @@ from webmonitor.schemas.api import (
     SnapshotRecord,
     SpecVersion,
 )
-from webmonitor.schemas.monitors import DraftSpec, content_hash
+from webmonitor.schemas.monitors import MonitorSpec, content_hash
 from webmonitor.security.auth import CurrentUser, require_owner
 from webmonitor.services import jobs
 
@@ -29,6 +29,8 @@ def monitor_view(monitor: Monitor) -> MonitorView:
         timezone=monitor.timezone, baseline_status=monitor.baseline_status,
         health_status=monitor.health_status,
         notification_group_ids=list(monitor.notification_group_ids or []),
+        email_template_id=monitor.email_template_id,
+        email_template_name=monitor.email_template_name,
         next_run_at=monitor.next_run_at, last_success_at=monitor.last_success_at,
         last_failure_at=monitor.last_failure_at, created_at=monitor.created_at,
         archived_at=monitor.archived_at)
@@ -70,7 +72,7 @@ async def read_monitor(session: AsyncSession, user: CurrentUser, monitor_id: UUI
         snapshot = await session.get(Snapshot, monitor.baseline_snapshot_id)
         baseline = snapshot_record(snapshot) if snapshot is not None else None
     return MonitorDetail(**monitor_view(monitor).model_dump(), spec=monitor.spec,
-        baseline=baseline,
+        baseline=baseline, email_template=monitor.email_template,
         approved_recipients=[item["email"] for item in monitor.approved_recipients or []
                              if isinstance(item, dict) and "email" in item])
 
@@ -126,7 +128,7 @@ async def rename_monitor(session: AsyncSession, user: CurrentUser, monitor_id: U
                          name: str) -> Monitor:
     """A name change is not a new collection contract, so the version is kept."""
     monitor = await read_monitor_row(session, user, monitor_id, lock=True)
-    spec = DraftSpec.model_validate(monitor.spec).model_copy(update={"name": name.strip()})
+    spec = MonitorSpec.model_validate(monitor.spec).model_copy(update={"name": name.strip()})
     monitor.name = spec.name
     monitor.spec = spec.model_dump(mode="json")
     monitor.spec_hash = content_hash(spec)
@@ -175,15 +177,17 @@ async def read_snapshot(session: AsyncSession, user: CurrentUser,
 
 async def list_spec_versions(session: AsyncSession, user: CurrentUser, monitor_id: UUID,
                              limit: int, offset: int) -> Page[SpecVersion]:
+    """One row per publication that changed the collection contract."""
     monitor = await read_monitor_row(session, user, monitor_id)
-    query = select(Draft).where(Draft.monitor_id == monitor.id, Draft.status == "published")
+    query = select(Draft).where(Draft.monitor_id == monitor.id,
+                                Draft.published_spec_version.is_not(None))
     total = await session.scalar(select(func.count()).select_from(query.subquery())) or 0
-    rows = (await session.scalars(query.order_by(Draft.created_at.desc(), Draft.id.desc())
+    rows = (await session.scalars(query.order_by(Draft.published_spec_version.desc())
         .limit(limit).offset(offset))).all()
     return Page[SpecVersion](items=[
-        SpecVersion(id=row.id, version=total - offset - index,
+        SpecVersion(id=row.id, version=row.published_spec_version or 0,
             draft_id=row.id, spec=row.spec or {}, spec_hash=row.spec_hash or "",
             published_at=row.updated_at,
-            current=total - offset - index == monitor.spec_version)
-        for index, row in enumerate(rows)
+            current=row.published_spec_version == monitor.spec_version)
+        for row in rows
     ], total=total)

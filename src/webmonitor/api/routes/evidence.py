@@ -69,5 +69,5 @@ async def snapshot_evidence(snapshot_id: UUID, index: int, session: DatabaseSess
 async def draft_evidence(draft_id: UUID, index: int, session: DatabaseSession,
                          user: AuthenticatedUser):
     draft = await drafts.require_draft(session, user, draft_id)
-    references = list((draft.preview or {}).get("evidence_refs") or [])
+    references = list((draft.extraction_preview or {}).get("evidence_refs") or [])
     return await _response(_pick(references, index))

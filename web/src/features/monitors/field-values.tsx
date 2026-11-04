@@ -21,17 +21,15 @@ function hostOf(url: string): string {
 }
 
 /**
- * A record's own name, not its bookkeeping: prefer a title-like key, then the
- * first value that is plainly text rather than a date or a URL.
+ * A record's own name, not its bookkeeping. The monitor's business key says
+ * which item fields identify a row; without one, the first plain text value does.
  */
 function primaryIndex(
   entries: [string, unknown][],
-  labels: Record<string, string>,
+  businessKey: readonly string[],
 ): number {
-  const byName = entries.findIndex(
-    ([key]) => /^(title|name|label|headline|subject)$/i.test(key) || /标题|名称/.test(labels[key] ?? ""),
-  );
-  if (byName >= 0) return byName;
+  const byKey = entries.findIndex(([key]) => businessKey.includes(key));
+  if (byKey >= 0) return byKey;
   return entries.findIndex(
     ([, value]) => typeof value === "string" && !isHttpUrl(value) && !isIsoDate(value),
   );
@@ -45,16 +43,18 @@ function primaryIndex(
 function RecordRow({
   item,
   labels,
+  businessKey,
 }: {
   item: unknown;
   labels: Record<string, string>;
+  businessKey: readonly string[];
 }) {
   const { formatValue } = useFormat();
   if (item === null || typeof item !== "object" || Array.isArray(item)) {
     return <span className="num text-[13px] break-words">{formatValue(item)}</span>;
   }
   const entries = Object.entries(item as Record<string, unknown>);
-  const primary = primaryIndex(entries, labels);
+  const primary = primaryIndex(entries, businessKey);
   const title = primary >= 0 ? entries[primary] : undefined;
   const rest = entries.filter((_, index) => index !== primary);
   return (
@@ -100,12 +100,15 @@ function RecordRow({
 export function FieldValues({
   values,
   labels,
+  businessKey = [],
   mode = "full",
   emptyLabel,
   maxItems,
 }: {
   values: Record<string, unknown>;
   labels: Record<string, string>;
+  /** Item fields that name a row; the monitor's business key. */
+  businessKey?: readonly string[];
   mode?: "compact" | "full";
   emptyLabel?: string;
   maxItems?: number;
@@ -144,7 +147,7 @@ export function FieldValues({
                   <ul className={mode === "full" ? "divide-y border-t" : "space-y-1.5"}>
                     {shown.map((item, index) => (
                       <li key={index} className={mode === "full" ? "py-1.5 text-[12px]" : "text-[12px]"}>
-                        <RecordRow item={item} labels={labels} />
+                        <RecordRow item={item} labels={labels} businessKey={businessKey} />
                       </li>
                     ))}
                   </ul>

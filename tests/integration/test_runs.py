@@ -16,20 +16,18 @@ from webmonitor.models import (
     User,
     utc_now,
 )
-from webmonitor.schemas.monitors import DraftSpec, content_hash
+from webmonitor.schemas.monitors import MonitorSpec, content_hash
 from webmonitor.services import runs
 
 
-def spec_for(group_id) -> DraftSpec:
-    return DraftSpec.model_validate({
+def spec_for() -> MonitorSpec:
+    return MonitorSpec.model_validate({
         "name": "Heading watch",
         "url": "https://8.8.8.8/",
         "collection_mode": "http",
         "fields": [{"name": "title", "type": "text", "semantic": "Heading", "selector": "h1"}],
         "change_rules": {"mode": "any", "rules": [
             {"type": "text_changed", "field": "title"}]},
-        "schedule": {"interval_seconds": 60, "timezone": "UTC"},
-        "notification_group_ids": [str(group_id)],
         "coverage": {"scope": "full", "description": "Single heading"},
     })
 
@@ -51,10 +49,11 @@ async def make_monitor(session, user, group) -> Monitor:
     conversation = Conversation(user_id=user.id, title="runs")
     session.add(conversation)
     await session.flush()
-    draft = Draft(user_id=user.id, conversation_id=conversation.id, revision=1, status="published")
+    draft = Draft(user_id=user.id, conversation_id=conversation.id, status="published",
+                  spec_revision=1, settings_revision=1)
     session.add(draft)
     await session.flush()
-    spec = spec_for(group.id)
+    spec = spec_for()
     monitor = Monitor(user_id=user.id, draft_id=draft.id, name=spec.name, url=spec.url,
         status="active", spec=spec.model_dump(mode="json"), spec_version=1,
         spec_hash=content_hash(spec), collection_mode="http", interval_seconds=60,

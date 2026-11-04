@@ -5,21 +5,6 @@ import { ArrowRight, History, MailCheck, Radar, Settings2, Users } from "lucide-
 import { LanguageSwitcher } from "@/components/language-switcher";
 import { useI18n } from "@/lib/i18n";
 
-const exampleItems = [
-  { id: "price", title: "public.examples.price.title", detail: "public.examples.price.detail" },
-  { id: "restock", title: "public.examples.restock.title", detail: "public.examples.restock.detail" },
-  {
-    id: "announcement",
-    title: "public.examples.announcement.title",
-    detail: "public.examples.announcement.detail",
-  },
-  {
-    id: "deadline",
-    title: "public.examples.deadline.title",
-    detail: "public.examples.deadline.detail",
-  },
-] as const;
-
 const stepItems = [
   { id: "link", title: "public.steps.link.title", body: "public.steps.link.body" },
   { id: "preview", title: "public.steps.preview.title", body: "public.steps.preview.body" },
@@ -35,7 +20,7 @@ const featureItems = [
 
 /**
  * The hero shows the one artifact this product produces: a change record.
- * Old value struck, new value in the ink the product uses for "this changed".
+ * The watched value is whatever the page holds; only "before" and "after" are fixed.
  */
 function ChangeRecord() {
   const { t } = useI18n();
@@ -48,20 +33,22 @@ function ChangeRecord() {
 
       <div className="mt-3 space-y-0.5">
         <p className="text-[15px] font-medium">{t("public.sample.product")}</p>
-        <p className="num text-[11px] text-muted-foreground">shop.example.com/product</p>
+        <p className="num text-[11px] text-muted-foreground">{t("public.sample.url")}</p>
       </div>
 
       <div className="mt-5 grid grid-cols-[1fr_auto_1fr] items-end gap-3 border-t pt-4">
         <div>
           <p className="label-line">{t("public.sample.previous")}</p>
-          <p className="num mt-1 text-[1.375rem] text-muted-foreground line-through decoration-muted-foreground/40">
-            ¥128.50
+          <p className="num mt-1 text-[1.125rem] text-muted-foreground line-through decoration-muted-foreground/40">
+            {t("public.sample.previousValue")}
           </p>
         </div>
         <ArrowRight className="mb-1.5 size-4 text-muted-foreground/60" strokeWidth={1.5} />
         <div className="text-right">
           <p className="label-line">{t("public.sample.current")}</p>
-          <p className="num mt-1 text-[2rem] leading-none font-medium text-primary">¥99.00</p>
+          <p className="num mt-1 text-[1.375rem] leading-tight font-medium text-primary">
+            {t("public.sample.currentValue")}
+          </p>
         </div>
       </div>
 
@@ -125,20 +112,6 @@ export default function LandingPage() {
           </div>
 
           <ChangeRecord />
-        </section>
-
-        <section className="border-t py-16 sm:py-20">
-          <h2 className="text-[1.0625rem] font-medium">{t("public.examples.title")}</h2>
-          <ul className="mt-6 divide-y">
-            {exampleItems.map((example) => (
-              <li key={example.id} className="grid gap-1 py-4 sm:grid-cols-[10rem_minmax(0,34rem)] sm:gap-6">
-                <h3 className="text-[14px] font-medium">{t(example.title)}</h3>
-                <p className="max-w-[38rem] text-[13px] leading-6 text-muted-foreground">
-                  {t(example.detail)}
-                </p>
-              </li>
-            ))}
-          </ul>
         </section>
 
         <section id="how-it-works" className="scroll-mt-6 border-t py-16 sm:py-20">

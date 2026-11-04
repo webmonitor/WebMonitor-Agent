@@ -163,18 +163,21 @@ async def test_draft_view_and_missing_evidence_index(client, session):
     conversation = Conversation(user_id=user.id, title="drafts")
     session.add(conversation)
     await session.flush()
-    draft = Draft(user_id=user.id, conversation_id=conversation.id, revision=1,
-        spec={"url": "https://example.com/"},
-        preview={"revision": 1, "spec_hash": "a" * 64, "extracted_data": {},
-                 "coverage": {}, "evidence_refs": [], "rendered_emails": [],
-                 "recipients": [], "warnings": [], "rule_simulation": {},
-                 "created_at": "2026-01-01T00:00:00+00:00",
-                 "expires_at": "2036-01-01T00:00:00+00:00"})
+    draft = Draft(user_id=user.id, conversation_id=conversation.id,
+        spec=_editable_spec(), spec_revision=1, settings_revision=1,
+        extraction_preview={"preview_id": "p-1", "spec_revision": 1,
+                            "spec_hash": "a" * 64, "extracted_data": {},
+                            "coverage": {}, "evidence_refs": [], "warnings": [],
+                            "rule_simulation": {},
+                            "created_at": "2026-01-01T00:00:00+00:00",
+                            "expires_at": "2036-01-01T00:00:00+00:00"})
     session.add(draft)
     await session.commit()
 
     view = (await client.get(f"/api/v1/drafts/{draft.id}")).json()
-    assert view["revision"] == 1 and view["preview"]["revision"] == 1
+    assert view["spec_revision"] == 1 and view["settings_revision"] == 1
+    assert view["extraction_preview"]["spec_revision"] == 1
+    assert view["delivery_preview"] is None
 
     missing = await client.get(f"/api/v1/drafts/{draft.id}/evidence/0")
     assert missing.status_code == 404
@@ -202,20 +205,122 @@ async def test_group_writes_require_admin(client, session):
         NotificationGroup.name.startswith("Other "))) is None
 
 
-def _editable_spec(group_id) -> dict:
+@pytest.mark.asyncio
+async def test_template_generation_returns_a_proposal_without_saving(client, session, monkeypatch):
+    from webmonitor.agent.template_draft import Proposal
+    from webmonitor.errors import DomainError
+    from webmonitor.schemas.templates import EmailTemplateConfig
+    from webmonitor.services import templates as templates_service
+
+    await ensure_admin(session)
+    # Signed out: a valid CSRF token alone does not authorize generation.
+    signed_out = {"X-CSRF-Token": (await client.get("/api/v1/auth/csrf")).json()["csrf_token"],
+                  "Origin": get_settings().app_origin}
+    anonymous = await client.post("/api/v1/email-templates/generate",
+        headers=signed_out, json={"description": "一句话"})
+    assert anonymous.status_code == 401
+    assert anonymous.json()["error"]["code"] == "unauthenticated"
+
+    headers = await sign_in(client)
+    proposal = Proposal(
+        name="Plain alert",
+        config=EmailTemplateConfig.model_validate({
+            "subject": "{monitor_name} · {event_label}",
+            "blocks": [{"type": "summary"}, {"type": "all_fields"}],
+        }))
+    calls: list[str] = []
+
+    async def fake_draft(description: str):
+        calls.append(description)
+        return proposal
+
+    monkeypatch.setattr(templates_service, "draft", fake_draft)
+
+    response = await client.post("/api/v1/email-templates/generate", headers=headers,
+                                 json={"description": "  语气平实，列出全部内容  "})
+    assert response.status_code == 200, response.text
+    body = response.json()
+    assert body["name"] == "Plain alert"
+    assert body["config"]["subject"] == "{monitor_name} · {event_label}"
+    assert calls == ["语气平实，列出全部内容"]
+    # A proposal is not a stored template.
+    assert (await client.get("/api/v1/email-templates")).json()["total"] == 0
+
+    blank = await client.post("/api/v1/email-templates/generate", headers=headers,
+                              json={"description": "   "})
+    assert blank.status_code == 422
+    assert blank.json()["error"]["code"] == "validation_failed"
+
+    async def unavailable(description: str):
+        raise DomainError("model_unavailable", 503)
+
+    monkeypatch.setattr(templates_service, "draft", unavailable)
+    failed = await client.post("/api/v1/email-templates/generate", headers=headers,
+                               json={"description": "一句话"})
+    assert failed.status_code == 503
+    assert failed.json()["error"]["code"] == "model_unavailable"
+
+
+
+
+@pytest.mark.asyncio
+async def test_email_templates_are_reusable_and_validated(client, session):
+    await ensure_admin(session)
+    headers = await sign_in(client)
+    config = {"subject": "{monitor_name} · {event_label}",
+              "blocks": [{"type": "field", "field": "page_title", "emphasis": True},
+                         {"type": "evidence_link"}]}
+
+    created = await client.post("/api/v1/email-templates", headers=headers,
+        json={"name": f"Design {uuid4().hex[:8]}", "description": "Price mail",
+              "config": config})
+    assert created.status_code == 201, created.text
+    template = created.json()
+    assert template["config"]["blocks"][0]["type"] == "field"
+
+    duplicate = await client.post("/api/v1/email-templates", headers=headers,
+        json={"name": template["name"], "description": "", "config": config})
+    assert duplicate.status_code == 409
+    assert duplicate.json()["error"]["code"] == "template_name_conflict"
+
+    invalid = await client.post("/api/v1/email-templates", headers=headers,
+        json={"name": f"Bad {uuid4().hex[:8]}", "config": {
+            "subject": "{unknown_token}", "blocks": []}})
+    assert invalid.status_code == 422
+
+    listed = await client.get("/api/v1/email-templates")
+    assert [row["id"] for row in listed.json()["items"]] == [template["id"]]
+
+    preview = await client.post("/api/v1/email-templates/preview", headers=headers,
+                                json=config)
+    assert preview.status_code == 200, preview.text
+    emails = preview.json()["rendered_emails"]
+    assert [item["event_type"] for item in emails] == [
+        "content_changed", "list_changed", "recovered", "run_failed"]
+    assert all(item["preview_html"].startswith("<!doctype html>") for item in emails)
+
+    patched = await client.patch(f"/api/v1/email-templates/{template['id']}",
+        headers=headers, json={"description": "Updated"})
+    assert patched.status_code == 200 and patched.json()["description"] == "Updated"
+
+    removed = await client.delete(f"/api/v1/email-templates/{template['id']}", headers=headers)
+    assert removed.status_code == 200
+    assert (await client.get("/api/v1/email-templates")).json()["total"] == 0
+    missing = await client.delete(f"/api/v1/email-templates/{template['id']}", headers=headers)
+    assert missing.status_code == 404
+    assert missing.json()["error"]["code"] == "template_not_found"
+
+
+def _editable_spec() -> dict:
     return {
-        "name": "Price watch",
-        "url": "https://8.8.8.8/product",
+        "name": "Notice watch",
+        "url": "https://8.8.8.8/notice",
         "collection_mode": "http",
-        "fields": [{"name": "current_price", "type": "money", "semantic": "Price",
-                    "selector": ".price",
-                    "normalize": {"decimal_separator": ".", "currency": "USD"}}],
+        "fields": [{"name": "page_title", "type": "text", "semantic": "Page title",
+                    "selector": "h1"}],
         "change_rules": {"mode": "any", "rules": [
-            {"type": "number_percent_change", "field": "current_price",
-             "operator": "decrease_gte", "value": 10}]},
-        "schedule": {"interval_seconds": 60, "timezone": "UTC"},
-        "notification_group_ids": [str(group_id)],
-        "coverage": {"scope": "full", "description": "Single price element"},
+            {"type": "text_changed", "field": "page_title"}]},
+        "coverage": {"scope": "full", "description": "Page title"},
     }
 
 
@@ -229,45 +334,51 @@ async def test_direct_draft_edit_over_http(client, session):
     conversation = Conversation(user_id=user.id, title="Direct edit")
     session.add_all([group, conversation])
     await session.flush()
-    draft = Draft(user_id=user.id, conversation_id=conversation.id, revision=1,
-                  spec=_editable_spec(group.id), spec_hash="a" * 64)
+    draft = Draft(user_id=user.id, conversation_id=conversation.id, spec_revision=1,
+                  settings_revision=1, spec=_editable_spec(), spec_hash="a" * 64)
     session.add(draft)
     await session.commit()
 
-    edited = {**_editable_spec(group.id), "name": "Price watch edited"}
+    edited = {**_editable_spec(), "name": "Notice watch edited"}
     stale = await client.put(f"/api/v1/drafts/{draft.id}", headers=headers,
-                             json={"revision": 2, "spec": edited})
+                             json={"spec_revision": 2, "spec": edited})
     assert stale.status_code == 409
     assert stale.json()["error"]["code"] == "stale_revision"
 
     invalid = await client.put(f"/api/v1/drafts/{draft.id}", headers=headers,
-        json={"revision": 1, "spec": {**_editable_spec(group.id), "fields": []}})
+        json={"spec_revision": 1, "spec": {**_editable_spec(), "fields": []}})
     assert invalid.status_code == 422
     assert invalid.json()["error"]["code"] == "validation_failed"
 
+    missing_revision = await client.put(f"/api/v1/drafts/{draft.id}", headers=headers,
+                                        json={"spec": edited})
+    assert missing_revision.status_code == 422
+
+    agent_fields = await client.put(f"/api/v1/drafts/{draft.id}", headers=headers,
+        json={"spec_revision": 1, "spec": {**edited,
+              "notification_group_ids": [str(group.id)]}})
+    assert agent_fields.status_code == 422
+
     response = await client.put(f"/api/v1/drafts/{draft.id}", headers=headers,
-                                json={"revision": 1, "spec": edited})
+                                json={"spec_revision": 1, "spec": edited})
     assert response.status_code == 200, response.text
     body = response.json()
-    assert body["revision"] == 2
-    assert body["spec"]["name"] == "Price watch edited"
-    assert body["preview"] is None and body["preview_hash"] is None
+    assert body["spec_revision"] == 2
+    assert body["settings_revision"] == 1
+    assert body["spec"]["name"] == "Notice watch edited"
+    assert body["extraction_preview"] is None and body["delivery_preview"] is None
 
 
-def _monitor_spec(group_id) -> dict:
+def _monitor_spec() -> dict:
     return {
         "name": "History watch",
-        "url": "https://8.8.8.8/product",
+        "url": "https://8.8.8.8/notice",
         "collection_mode": "http",
-        "fields": [{"name": "current_price", "type": "money", "semantic": "Price",
-                    "selector": ".price",
-                    "normalize": {"decimal_separator": ".", "currency": "USD"}}],
+        "fields": [{"name": "page_title", "type": "text", "semantic": "Page title",
+                    "selector": "h1"}],
         "change_rules": {"mode": "any", "rules": [
-            {"type": "number_percent_change", "field": "current_price",
-             "operator": "decrease_gte", "value": 10}]},
-        "schedule": {"interval_seconds": 60, "timezone": "UTC"},
-        "notification_group_ids": [str(group_id)],
-        "coverage": {"scope": "full", "description": "Single price element"},
+            {"type": "text_changed", "field": "page_title"}]},
+        "coverage": {"scope": "full", "description": "Page title"},
     }
 
 
@@ -281,9 +392,10 @@ async def _seed_monitor(session, user):
     conversation = Conversation(user_id=user.id, title="History")
     session.add_all([group, conversation])
     await session.flush()
-    spec = _monitor_spec(group.id)
-    draft = Draft(user_id=user.id, conversation_id=conversation.id, revision=1,
-                  status="published", spec=spec, spec_hash=content_hash(spec),
+    spec = _monitor_spec()
+    draft = Draft(user_id=user.id, conversation_id=conversation.id, spec_revision=1,
+                  settings_revision=1, status="published", spec=spec,
+                  spec_hash=content_hash(spec), published_spec_version=1,
                   monitor_id=None)
     session.add(draft)
     await session.flush()
@@ -301,8 +413,8 @@ async def _seed_monitor(session, user):
     session.add(job)
     await session.flush()
     snapshot = Snapshot(monitor_id=monitor.id, job_id=job.id, spec_version=1,
-        final_url=spec["url"], extracted_data={"current_price": 100},
-        coverage={"scope": "full", "description": "Single price element"},
+        final_url=spec["url"], extracted_data={"page_title": "Semester notices"},
+        coverage={"scope": "full", "description": "Page title"},
         rule_state={}, evidence_refs=[], collected_at=utc_now())
     session.add(snapshot)
     await session.flush()
@@ -323,7 +435,7 @@ async def test_monitor_history_lifecycle_over_http(client, session):
     detail = await client.get(f"/api/v1/snapshots/{snapshot.id}")
     assert detail.status_code == 200
     assert detail.json()["monitor_name"] == monitor.name
-    assert detail.json()["extracted_data"]["current_price"] == 100
+    assert detail.json()["extracted_data"]["page_title"] == "Semester notices"
 
     versions = await client.get(f"/api/v1/monitors/{monitor.id}/specs")
     assert versions.status_code == 200
@@ -358,7 +470,7 @@ async def test_events_filter_and_delivery_monitor_name(client, session):
     headers = await sign_in(client)
     monitor, _, snapshot, job = await _seed_monitor(session, user)
     session.add(Event(monitor_id=monitor.id, job_id=job.id, snapshot_id=snapshot.id,
-                      type="price_changed", change={}))
+                      type="content_changed", change={}))
     failed = Event(monitor_id=monitor.id, job_id=job.id, type="run_failed", change={})
     session.add(failed)
     await session.flush()
@@ -410,15 +522,16 @@ async def test_html_evidence_downloads_with_an_html_filename(client, session, mo
     conversation = Conversation(user_id=user.id, title="archive")
     session.add(conversation)
     await session.flush()
-    draft = Draft(user_id=user.id, conversation_id=conversation.id, revision=1,
-        spec={"url": "https://example.com/"},
-        preview={"revision": 1, "spec_hash": "a" * 64, "extracted_data": {},
+    draft = Draft(user_id=user.id, conversation_id=conversation.id,
+        spec=_editable_spec(), spec_revision=1, settings_revision=1,
+        extraction_preview={"preview_id": "p-1", "spec_revision": 1,
+                 "spec_hash": "a" * 64, "extracted_data": {},
                  "coverage": {},
                  "evidence_refs": [{"kind": "html", "bucket": "evidence",
                                     "object_key": "page", "size_bytes": 24,
                                     "content_type": "text/html; charset=utf-8",
                                     "sha256": "c" * 64}],
-                 "rendered_emails": [], "recipients": [], "warnings": [],
+                 "warnings": [],
                  "rule_simulation": {}, "created_at": "2026-01-01T00:00:00+00:00",
                  "expires_at": "2036-01-01T00:00:00+00:00"})
     session.add(draft)

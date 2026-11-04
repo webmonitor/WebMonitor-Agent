@@ -22,7 +22,7 @@ from webmonitor.db import get_session_factory
 from webmonitor.errors import DomainError
 from webmonitor.models import Draft, EmailDelivery, Job
 from webmonitor.notifications.delivery import SendFailure, send_email
-from webmonitor.schemas.monitors import DraftSpec
+from webmonitor.schemas.monitors import MonitorSpec
 from webmonitor.services import drafts, jobs, notifications, runs
 from webmonitor.storage.evidence import upload_evidence
 
@@ -87,7 +87,7 @@ async def _collect(job_id: UUID, worker_id: str) -> None:
             await jobs.finish(session, job, "cancelled", error_code="collection_cancelled")
             return
         kind, url, stored = job.kind, job.url, job.spec
-    spec = (DraftSpec.model_validate(stored)
+    spec = (MonitorSpec.model_validate(stored)
             if kind in ("preview", "production") and stored else None)
     mode = (stored or {}).get("collection_mode", "http")
     op = (stored or {}).get("op")

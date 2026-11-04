@@ -1,82 +1,37 @@
-"""One draft publishes exactly one monitor, and a repeated approval is idempotent."""
-from datetime import timedelta
+"""One draft publishes exactly one monitor; settings and contract publish separately."""
 from uuid import uuid4
 
 import pytest
 from sqlalchemy import func, select
 
+from support import (
+    build_settings,
+    build_spec,
+    collect,
+    collection_result,
+    conversation_for,
+    prepare_draft,
+    publish,
+    seed_owner,
+)
 from webmonitor.errors import DomainError
-from webmonitor.models import Draft, Job, Monitor, NotificationGroup, User, utc_now
-from webmonitor.schemas.monitors import DraftSpec, content_hash
-from webmonitor.security.auth import CurrentUser
-from webmonitor.services import drafts
-from webmonitor.services.notifications import load_recipients, recipients_emails
-
-
-def build_spec(group_id) -> DraftSpec:
-    return DraftSpec.model_validate({
-        "name": "Price watch",
-        "url": "https://8.8.8.8/product",
-        "collection_mode": "http",
-        "fields": [{"name": "current_price", "type": "money", "semantic": "Price",
-                    "selector": ".price",
-                    "normalize": {"decimal_separator": ".", "currency": "USD"}}],
-        "change_rules": {"mode": "any", "rules": [
-            {"type": "number_percent_change", "field": "current_price",
-             "operator": "decrease_gte", "value": 10}]},
-        "schedule": {"interval_seconds": 60, "timezone": "UTC"},
-        "notification_group_ids": [str(group_id)],
-        "coverage": {"scope": "full", "description": "Single price element"},
-    })
-
-
-async def seed(session):
-    user = User(email=f"{uuid4().hex}@example.com", display_name="Owner",
-                password_hash="not-a-login-hash", role="admin")
-    session.add(user)
-    await session.flush()
-    group = NotificationGroup(name=f"Ops {uuid4().hex}", members=[
-        {"email": "ops@example.com", "active": True}], created_by_user_id=user.id)
-    session.add(group)
-    await session.flush()
-    return user, group
-
-
-def preview_payload(spec: DraftSpec, draft: Draft, recipients: list[str], price: str) -> dict:
-    return {
-        "revision": draft.revision,
-        "spec_hash": content_hash(spec),
-        "extracted_data": {"current_price": {"amount": price, "currency": "USD"}},
-        "coverage": {"scope": "full", "description": "Single price element"},
-        "final_url": spec.url,
-        "evidence_refs": [],
-        "rule_simulation": {"triggered": False},
-        "rendered_emails": [],
-        "recipients": recipients,
-        "recipient_sources": [{"email": email, "group_ids": sorted(str(group_id)
-                               for group_id in spec.notification_group_ids)} for email in recipients],
-        "warnings": [],
-    }
+from webmonitor.models import Draft, Monitor
+from webmonitor.schemas.api import DraftUpdate, EmailTemplateSpec
+from webmonitor.schemas.monitors import MonitorSpec
+from webmonitor.schemas.templates import EmailTemplateConfig
+from webmonitor.services import drafts, templates
+from webmonitor.services.monitors import list_spec_versions
 
 
 @pytest.mark.asyncio
 async def test_publish_creates_one_monitor_and_repeats_idempotently(session):
-    user, group = await seed(session)
-    current = CurrentUser(user_id=user.id, role="admin")
-    conversation = await _conversation(session, user)
-    draft = await drafts.save_draft(session, current, conversation_id=conversation.id,
-                                    spec=build_spec(group.id))
-    assert draft.revision == 1
-
-    spec = DraftSpec.model_validate(draft.spec)
-    recipients = recipients_emails(await load_recipients(session, spec.notification_group_ids))
-    assert recipients == ["ops@example.com"]
-    await drafts.save_preview(session, draft,
-        preview_payload(spec, draft, recipients, "100"), ttl_minutes=60)
+    user, current, group = await seed_owner(session)
+    conversation, draft, _ = await prepare_draft(session, user, group)
+    assert draft.spec_revision == 1 and draft.settings_revision == 1
+    assert draft.extraction_preview is not None and draft.delivery_preview is not None
     await session.commit()
 
-    monitor = await drafts.publish_draft(session, current,
-        conversation_id=conversation.id, draft_id=draft.id, revision=draft.revision, preview_hash=draft.preview_hash or '0' * 64)
+    monitor = await publish(session, conversation, draft, current)
     await session.commit()
 
     assert await session.scalar(select(func.count()).select_from(Monitor)) == 1
@@ -86,205 +41,311 @@ async def test_publish_creates_one_monitor_and_repeats_idempotently(session):
     assert monitor.collection_mode == "http"
     assert monitor.interval_seconds == 60
     assert monitor.notification_group_ids == [str(group.id)]
+    assert monitor.email_template_id is None and monitor.email_template is None
+    assert "schedule" not in monitor.spec and "notification_group_ids" not in monitor.spec
     stored = await session.get(Draft, draft.id)
     assert stored.status == "published"
     assert stored.monitor_id == monitor.id
+    assert stored.published_spec_version == 1
 
-    again = await drafts.publish_draft(session, current,
-        conversation_id=conversation.id, draft_id=draft.id, revision=draft.revision, preview_hash=draft.preview_hash or '0' * 64)
+    again = await publish(session, conversation, draft, current)
     await session.commit()
     assert again.id == monitor.id
     assert await session.scalar(select(func.count()).select_from(Monitor)) == 1
 
 
 @pytest.mark.asyncio
-async def test_editing_the_spec_invalidates_the_previous_preview(session):
-    user, group = await seed(session)
-    current = CurrentUser(user_id=user.id, role="admin")
-    conversation = await _conversation(session, user)
-    draft = await drafts.save_draft(session, current, conversation_id=conversation.id,
-                                    spec=build_spec(group.id))
-    spec = DraftSpec.model_validate(draft.spec)
-    recipients = recipients_emails(await load_recipients(session, spec.notification_group_ids))
-    await drafts.save_preview(session, draft, preview_payload(spec, draft, recipients, "100"),
-                              ttl_minutes=60)
+async def test_changing_only_the_schedule_keeps_the_extraction_preview(session):
+    user, current, group = await seed_owner(session)
+    _, draft, _ = await prepare_draft(session, user, group)
+    await session.commit()
+    extraction_hash = draft.extraction_preview_hash
+    delivery_hash = draft.delivery_preview_hash
+
+    await drafts.save_settings(session, current, draft_id=draft.id,
+        revision=draft.settings_revision,
+        settings=build_settings(group.id, interval=600))
     await session.commit()
 
-    edited = await drafts.save_draft(session, current, conversation_id=conversation.id,
-                                     spec=build_spec(group.id), draft_id=draft.id)
-    await session.commit()
-    assert edited.revision == 2
-    assert edited.preview is None
-
-    with pytest.raises(DomainError) as raised:
-        await drafts.publish_draft(session, current, conversation_id=conversation.id, draft_id=draft.id, revision=2, preview_hash=draft.preview_hash or '0' * 64)
-    assert raised.value.code == "preview_missing"
-
-    with pytest.raises(DomainError) as stale:
-        await drafts.publish_draft(session, current, conversation_id=conversation.id, draft_id=draft.id, revision=1, preview_hash=draft.preview_hash or '0' * 64)
-    assert stale.value.code == "stale_revision"
+    assert draft.settings_revision == 2 and draft.spec_revision == 1
+    assert draft.extraction_preview_hash == extraction_hash
+    assert draft.delivery_preview_hash is not None
+    assert draft.delivery_preview_hash != delivery_hash
+    # The rebuilt mail still matches the current settings revision.
+    delivery = await drafts.validate_delivery_preview(session, draft)
+    assert delivery["settings_revision"] == 2
 
 
 @pytest.mark.asyncio
-async def test_recipient_change_after_preview_blocks_publication(session):
-    user, group = await seed(session)
-    current = CurrentUser(user_id=user.id, role="admin")
-    conversation = await _conversation(session, user)
-    draft = await drafts.save_draft(session, current, conversation_id=conversation.id,
-                                    spec=build_spec(group.id))
-    spec = DraftSpec.model_validate(draft.spec)
-    recipients = recipients_emails(await load_recipients(session, spec.notification_group_ids))
-    await drafts.save_preview(session, draft, preview_payload(spec, draft, recipients, "100"),
-                              ttl_minutes=60)
+async def test_changing_the_spec_clears_both_previews(session):
+    user, current, group = await seed_owner(session)
+    conversation, draft, _ = await prepare_draft(session, user, group)
     await session.commit()
 
-    group.members = [{"email": "other@example.com", "active": True}]
-    await session.flush()
+    await drafts.save_spec(session, current, conversation_id=conversation.id,
+                           spec=build_spec(name="Price watch v2"), draft_id=draft.id)
+    await session.commit()
 
-    with pytest.raises(DomainError) as raised:
-        await drafts.publish_draft(session, current, conversation_id=conversation.id, draft_id=draft.id, revision=draft.revision, preview_hash=draft.preview_hash or '0' * 64)
-    assert raised.value.code == "preview_stale"
+    assert draft.spec_revision == 2
+    assert draft.extraction_preview is None and draft.delivery_preview is None
+    assert draft.extraction_preview_hash is None and draft.delivery_preview_hash is None
+    with pytest.raises(DomainError) as missing:
+        drafts.validate_extraction_preview(draft)
+    assert missing.value.code == "preview_missing"
 
 
 @pytest.mark.asyncio
-async def test_editing_a_published_draft_starts_a_new_baseline(session):
-    user, group = await seed(session)
-    current = CurrentUser(user_id=user.id, role="admin")
-    conversation = await _conversation(session, user)
-    draft = await drafts.save_draft(session, current, conversation_id=conversation.id,
-                                    spec=build_spec(group.id))
-    spec = DraftSpec.model_validate(draft.spec)
-    recipients = recipients_emails(await load_recipients(session, spec.notification_group_ids))
-    await drafts.save_preview(session, draft, preview_payload(spec, draft, recipients, "100"),
-                              ttl_minutes=60)
+async def test_settings_only_publish_of_a_derived_draft_keeps_the_baseline(session):
+    user, current, group = await seed_owner(session)
+    conversation, draft, _ = await prepare_draft(session, user, group)
     await session.commit()
-    monitor = await drafts.publish_draft(session, current, conversation_id=conversation.id, draft_id=draft.id, revision=draft.revision, preview_hash=draft.preview_hash or '0' * 64)
+    monitor = await publish(session, conversation, draft, current)
+    monitor.baseline_snapshot_id = uuid4()
     monitor.baseline_status = "ready"
     monitor.rule_state = {"predicates": {"0": True}, "aggregate": True}
-    monitor.baseline_snapshot_id = uuid4()
     monitor.health_status = "failed"
+    monitor.failure_fingerprint = "f" * 64
+    baseline_id, rule_state = monitor.baseline_snapshot_id, dict(monitor.rule_state)
     await session.commit()
 
-    # Editing the notification group derives a fresh draft bound to the same monitor.
-    group.members = [{"email": "other@example.com", "active": True}]
-    await session.flush()
-    derived_conversation, derived = await drafts.draft_from_monitor(session, current, monitor.id)
-    await session.commit()
-    assert derived.monitor_id == monitor.id
-    edited_spec = DraftSpec.model_validate(derived.spec)
-    edited_recipients = recipients_emails(
-        await load_recipients(session, edited_spec.notification_group_ids))
-    await drafts.save_preview(session, derived,
-        preview_payload(edited_spec, derived, edited_recipients, "100"), ttl_minutes=60)
+    edit_conversation, edit = await drafts.draft_from_monitor(session, current, monitor.id)
+    edit = await drafts.save_settings(session, current, draft_id=edit.id,
+        revision=edit.settings_revision,
+        settings=build_settings(group.id, interval=900, timezone="Asia/Shanghai"))
+    await collect_after_settings(session, user, edit)
     await session.commit()
 
-    published = await drafts.publish_draft(session, current,
-        conversation_id=derived_conversation.id, draft_id=derived.id, revision=derived.revision, preview_hash=derived.preview_hash or '0' * 64)
+    published = await publish(session, edit_conversation, edit, current)
+    await session.commit()
+
+    assert published.id == monitor.id
+    assert published.spec_version == 1
+    assert published.baseline_snapshot_id == baseline_id
+    assert published.baseline_status == "ready"
+    assert published.rule_state == rule_state
+    assert published.health_status == "failed"
+    assert published.failure_fingerprint == "f" * 64
+    assert published.interval_seconds == 900
+    assert published.timezone == "Asia/Shanghai"
+    stored = await session.get(Draft, edit.id)
+    assert stored.published_spec_version is None
+    versions = await list_spec_versions(session, current, monitor.id, 10, 0)
+    assert [item.version for item in versions.items] == [1]
+    assert all(item.current for item in versions.items)
+
+
+@pytest.mark.asyncio
+async def test_contract_change_publish_increments_version_and_resets_the_baseline(session):
+    user, current, group = await seed_owner(session)
+    conversation, draft, _ = await prepare_draft(session, user, group)
+    await session.commit()
+    monitor = await publish(session, conversation, draft, current)
+    monitor.baseline_snapshot_id = uuid4()
+    monitor.baseline_status = "ready"
+    monitor.rule_state = {"predicates": {"0": True}, "aggregate": True}
+    monitor.health_status = "failed"
+    monitor.failure_fingerprint = "f" * 64
+    await session.commit()
+
+    edit_conversation, edit = await drafts.draft_from_monitor(session, current, monitor.id)
+    edit = await drafts.save_spec(session, current, conversation_id=edit.conversation_id,
+        spec=build_spec(url="https://8.8.8.8/product?page=2"), draft_id=edit.id)
+    await collect_after_settings(session, user, edit)
+    await session.commit()
+
+    published = await publish(session, edit_conversation, edit, current)
     await session.commit()
 
     assert published.id == monitor.id
     assert published.spec_version == 2
-    # The previous contract's snapshot, rule indexes and health do not carry over.
     assert published.baseline_status == "pending_first_success"
     assert published.baseline_snapshot_id is None
     assert published.rule_state == {}
     assert published.health_status == "healthy"
     assert published.failure_fingerprint is None
     assert await session.scalar(select(func.count()).select_from(Monitor)) == 1
+    versions = await list_spec_versions(session, current, monitor.id, 10, 0)
+    assert [(item.version, item.current) for item in versions.items] == [(2, True), (1, False)]
 
 
 @pytest.mark.asyncio
-async def test_preview_reports_a_template_that_cannot_render(session):
-    """A money field not named current_price cannot fill the price template."""
-    user, group = await seed(session)
-    current = CurrentUser(user_id=user.id, role="admin")
-    conversation = await _conversation(session, user)
-    spec = DraftSpec.model_validate({
-        "name": "Fee watch", "url": "https://8.8.8.8/notice", "collection_mode": "http",
-        "fields": [{"name": "current_fee", "type": "money", "semantic": "Fee",
-                    "selector": "#fee",
-                    "normalize": {"decimal_separator": ".", "currency": "CNY"}}],
-        "change_rules": {"mode": "any", "rules": [
-            {"type": "number_percent_change", "field": "current_fee",
-             "operator": "decrease_gte", "value": 10}]},
-        "schedule": {"interval_seconds": 60, "timezone": "UTC"},
-        "notification_group_ids": [str(group.id)],
-        "coverage": {"scope": "bounded", "description": "fee node"},
-    })
-    draft = await drafts.save_draft(session, current, conversation_id=conversation.id, spec=spec)
-    job = Job(user_id=user.id, kind="preview", status="running", draft_id=draft.id,
-              revision=draft.revision, url=spec.url, lease_owner="w",
-              spec=spec.model_dump(mode="json"),
-              lease_expires_at=utc_now() + timedelta(seconds=90), attempt_count=1,
-              result={"fields": {"current_fee": {"amount": "100.00", "currency": "CNY"}},
-                      "coverage": {"scope": "bounded", "description": "fee node"},
-                      "final_url": spec.url, "evidence_refs": [], "warnings": []})
-    session.add(job)
-    await session.flush()
-
-    preview = await drafts.build_preview(session, draft, job)
+async def test_renaming_only_does_not_reset_the_baseline(session):
+    user, current, group = await seed_owner(session)
+    conversation, draft, _ = await prepare_draft(session, user, group)
+    await session.commit()
+    monitor = await publish(session, conversation, draft, current)
+    monitor.baseline_status = "ready"
+    monitor.baseline_snapshot_id = uuid4()
     await session.commit()
 
-    rendered = {item["event_type"] for item in preview["rendered_emails"]}
-    assert "price_changed" not in rendered
-    assert "recovered" in rendered and "run_failed" in rendered
-    assert "template_contract_failed:price_changed" in preview["warnings"]
+    edit_conversation, edit = await drafts.draft_from_monitor(session, current, monitor.id)
+    edit = await drafts.save_spec(session, current, conversation_id=edit.conversation_id,
+                                  spec=build_spec(name="Renamed watch"), draft_id=edit.id)
+    await collect_after_settings(session, user, edit)
+    await session.commit()
+
+    published = await publish(session, edit_conversation, edit, current)
+    await session.commit()
+    assert published.name == "Renamed watch"
+    assert published.spec["name"] == "Renamed watch"
+    assert published.spec_version == 1
+    assert published.baseline_status == "ready"
 
 
-async def _conversation(session, user):
-    from webmonitor.models import Conversation
-    conversation = Conversation(user_id=user.id, title="Approval flow")
-    session.add(conversation)
+@pytest.mark.asyncio
+async def test_recipient_change_after_preview_blocks_publication(session):
+    user, current, group = await seed_owner(session)
+    conversation, draft, _ = await prepare_draft(session, user, group)
+    await session.commit()
+
+    group.members = [{"email": "other@example.com", "active": True}]
     await session.flush()
-    return conversation
+
+    with pytest.raises(DomainError) as raised:
+        await publish(session, conversation, draft, current)
+    assert raised.value.code == "preview_stale"
+
+
+@pytest.mark.asyncio
+async def test_publication_requires_groups_and_a_schedule(session):
+    user, current, group = await seed_owner(session)
+    conversation, draft, _ = await prepare_draft(session, user, group)
+    await drafts.save_settings(session, current, draft_id=draft.id,
+        revision=draft.settings_revision, settings=build_settings(group.id))
+    draft.settings = {}
+    draft.settings_hash = None
+    await session.flush()
+    await session.commit()
+
+    with pytest.raises(DomainError) as raised:
+        await publish(session, conversation, draft, current)
+    assert raised.value.code == "settings_incomplete"
+    assert raised.value.details["missing"] == ["notification_group_ids", "schedule"]
 
 
 @pytest.mark.asyncio
 async def test_direct_edit_replaces_the_spec_and_invalidates_the_preview(session):
-    user, group = await seed(session)
-    current = CurrentUser(user_id=user.id, role="admin")
-    conversation = await _conversation(session, user)
-    draft = await drafts.save_draft(session, current, conversation_id=conversation.id,
-                                    spec=build_spec(group.id))
-    spec = DraftSpec.model_validate(draft.spec)
-    recipients = recipients_emails(await load_recipients(session, spec.notification_group_ids))
-    await drafts.save_preview(session, draft, preview_payload(spec, draft, recipients, "100"),
-                              ttl_minutes=60)
+    user, current, group = await seed_owner(session)
+    _, draft, _ = await prepare_draft(session, user, group)
     await session.commit()
 
-    edited = build_spec(group.id).model_copy(update={"name": "Price watch v2"})
-    updated = await drafts.update_draft(session, current, draft_id=draft.id,
-                                        revision=1, spec=edited)
+    updated = await drafts.apply_update(session, current, draft.id, DraftUpdate(
+        spec_revision=draft.spec_revision, spec=build_spec(name="Price watch v2")))
     await session.commit()
 
     assert updated.id == draft.id
-    assert updated.revision == 2
+    assert updated.spec_revision == 2
+    assert updated.settings_revision == 1
     assert updated.spec["name"] == "Price watch v2"
-    assert updated.preview is None and updated.preview_hash is None
+    assert updated.extraction_preview is None and updated.extraction_preview_hash is None
+    assert updated.delivery_preview is None
 
     with pytest.raises(DomainError) as stale:
-        await drafts.update_draft(session, current, draft_id=draft.id,
-                                  revision=1, spec=edited)
+        await drafts.apply_update(session, current, draft.id, DraftUpdate(
+            spec_revision=1, spec=build_spec(name="Price watch v2")))
+    assert stale.value.code == "stale_revision"
+
+
+@pytest.mark.asyncio
+async def test_direct_settings_edit_leaves_the_extraction_preview_intact(session):
+    user, current, group = await seed_owner(session)
+    _, draft, _ = await prepare_draft(session, user, group)
+    await session.commit()
+    extraction_hash = draft.extraction_preview_hash
+
+    updated = await drafts.apply_update(session, current, draft.id, DraftUpdate(
+        settings_revision=draft.settings_revision,
+        settings=build_settings(group.id, interval=3600)))
+    await session.commit()
+    assert updated.settings_revision == 2 and updated.spec_revision == 1
+    assert updated.extraction_preview_hash == extraction_hash
+
+    with pytest.raises(DomainError) as stale:
+        await drafts.apply_update(session, current, draft.id, DraftUpdate(
+            settings_revision=1, settings=build_settings(group.id)))
     assert stale.value.code == "stale_revision"
 
 
 @pytest.mark.asyncio
 async def test_published_draft_cannot_be_edited_directly(session):
-    user, group = await seed(session)
-    current = CurrentUser(user_id=user.id, role="admin")
-    conversation = await _conversation(session, user)
-    draft = await drafts.save_draft(session, current, conversation_id=conversation.id,
-                                    spec=build_spec(group.id))
-    spec = DraftSpec.model_validate(draft.spec)
-    recipients = recipients_emails(await load_recipients(session, spec.notification_group_ids))
-    await drafts.save_preview(session, draft, preview_payload(spec, draft, recipients, "100"),
-                              ttl_minutes=60)
-    await drafts.publish_draft(session, current, conversation_id=conversation.id,
-        draft_id=draft.id, revision=draft.revision,
-        preview_hash=draft.preview_hash or "0" * 64)
+    user, current, group = await seed_owner(session)
+    conversation, draft, _ = await prepare_draft(session, user, group)
+    await session.commit()
+    await publish(session, conversation, draft, current)
     await session.commit()
 
     with pytest.raises(DomainError) as rejected:
-        await drafts.update_draft(session, current, draft_id=draft.id,
-                                  revision=draft.revision, spec=build_spec(group.id))
+        await drafts.apply_update(session, current, draft.id, DraftUpdate(
+            spec_revision=draft.spec_revision, spec=build_spec()))
     assert rejected.value.code == "draft_not_editable"
+
+
+@pytest.mark.asyncio
+async def test_template_snapshot_survives_template_deletion(session):
+    user, current, group = await seed_owner(session)
+    config = EmailTemplateConfig.model_validate({
+        "subject": "{monitor_name} 公告提醒",
+        "blocks": [{"type": "field", "field": "page_title", "emphasis": True}]})
+    template = await templates.write_template(session, current, _template_spec(config))
+    conversation, draft, _ = await prepare_draft(session, user, group,
+        settings=build_settings(group.id, template_id=template.id))
+    await session.commit()
+    monitor = await publish(session, conversation, draft, current)
+    await session.commit()
+    assert monitor.email_template is not None
+    snapshot = dict(monitor.email_template)
+    assert monitor.email_template_name == template.name
+    assert snapshot["config"]["subject"] == "{monitor_name} 公告提醒"
+
+    await templates.disable_template(session, current, template.id)
+    await session.commit()
+    stored = await session.get(Monitor, monitor.id)
+    assert stored.email_template == snapshot
+    assert stored.email_template_name == template.name
+
+
+@pytest.mark.asyncio
+async def test_draft_referencing_a_deleted_template_cannot_publish(session):
+    user, current, group = await seed_owner(session)
+    config = EmailTemplateConfig.model_validate({
+        "subject": "{monitor_name}", "blocks": [{"type": "summary"}]})
+    template = await templates.write_template(session, current, _template_spec(config))
+    conversation, draft, _ = await prepare_draft(session, user, group,
+        settings=build_settings(group.id, template_id=template.id))
+    await session.commit()
+
+    await templates.disable_template(session, current, template.id)
+    await session.commit()
+
+    with pytest.raises(DomainError) as unavailable:
+        await publish(session, conversation, draft, current)
+    assert unavailable.value.code == "template_unavailable"
+
+
+@pytest.mark.asyncio
+async def test_incompatible_template_is_rejected_when_settings_are_saved(session):
+    user, current, group = await seed_owner(session)
+    config = EmailTemplateConfig.model_validate({
+        "subject": "{monitor_name}",
+        "blocks": [{"type": "field", "field": "missing_field"}]})
+    template = await templates.write_template(session, current, _template_spec(config))
+    conversation = await conversation_for(session, user)
+    draft = await drafts.save_spec(session, current, conversation_id=conversation.id,
+                                   spec=build_spec())
+
+    with pytest.raises(DomainError) as raised:
+        await drafts.save_settings(session, current, draft_id=draft.id,
+            revision=draft.settings_revision,
+            settings=build_settings(group.id, template_id=template.id))
+    assert raised.value.code == "template_incompatible"
+    assert raised.value.details["fields"] == ["missing_field"]
+
+
+async def collect_after_settings(session, user, draft):
+    """A derived or edited draft has no preview yet; run the real pipeline for it."""
+    return await collect(session, user, draft,
+                         collection_result(MonitorSpec.model_validate(draft.spec)))
+
+
+def _template_spec(config: EmailTemplateConfig) -> EmailTemplateSpec:
+    return EmailTemplateSpec(name=f"Design {uuid4().hex[:8]}", description="", config=config)

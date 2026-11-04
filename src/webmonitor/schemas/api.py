@@ -3,9 +3,19 @@ from datetime import datetime
 from typing import Any, Generic, Literal, TypeVar
 from uuid import UUID
 
-from pydantic import BaseModel, ConfigDict, EmailStr, Field, StrictBool, field_validator
+from pydantic import (
+    BaseModel,
+    ConfigDict,
+    EmailStr,
+    Field,
+    StrictBool,
+    field_validator,
+    model_validator,
+)
 
-from webmonitor.schemas.monitors import DraftSpec
+from webmonitor.schemas.delivery import DeliverySettings
+from webmonitor.schemas.monitors import MonitorSpec
+from webmonitor.schemas.templates import EmailTemplateConfig
 
 T = TypeVar("T")
 
@@ -39,13 +49,73 @@ class ConversationCreate(Input):
 
 class ApproveRequest(Input):
     draft_id: UUID
-    revision: int = Field(ge=1, strict=True)
-    preview_hash: str = Field(pattern=r"^[0-9a-f]{64}$")
+    spec_revision: int = Field(ge=0, strict=True)
+    settings_revision: int = Field(ge=0, strict=True)
+    extraction_preview_hash: str = Field(pattern=r"^[0-9a-f]{64}$")
+    delivery_preview_hash: str = Field(pattern=r"^[0-9a-f]{64}$")
 
 
-class DraftSpecUpdate(Input):
-    revision: int = Field(ge=1, strict=True)
-    spec: DraftSpec
+class DraftUpdate(Input):
+    """Each section carries its own revision, so an edit cannot overwrite the other."""
+
+    spec_revision: int | None = Field(default=None, ge=0, strict=True)
+    settings_revision: int | None = Field(default=None, ge=0, strict=True)
+    spec: MonitorSpec | None = None
+    settings: DeliverySettings | None = None
+
+    @model_validator(mode="after")
+    def sections(self) -> "DraftUpdate":
+        if self.spec is None and self.settings is None:
+            raise ValueError("spec or settings is required")
+        if self.spec is not None and self.spec_revision is None:
+            raise ValueError("spec requires spec_revision")
+        if self.settings is not None and self.settings_revision is None:
+            raise ValueError("settings requires settings_revision")
+        return self
+
+
+class EmailTemplateSpec(Input):
+    name: str = Field(min_length=1, max_length=200)
+    description: str = Field(default="", max_length=1000)
+    config: EmailTemplateConfig
+
+    @field_validator("name")
+    @classmethod
+    def trimmed_name(cls, value: str) -> str:
+        value = value.strip()
+        if not value:
+            raise ValueError("name must not be blank")
+        return value
+
+
+class EmailTemplatePrompt(Input):
+    """One sentence is the whole input; the model returns the design."""
+
+    description: str = Field(min_length=1, max_length=1000)
+
+    @field_validator("description")
+    @classmethod
+    def trimmed(cls, value: str) -> str:
+        value = value.strip()
+        if not value:
+            raise ValueError("description must not be blank")
+        return value
+
+
+class EmailTemplatePatch(Input):
+    name: str | None = Field(default=None, min_length=1, max_length=200)
+    description: str | None = Field(default=None, max_length=1000)
+    config: EmailTemplateConfig | None = None
+
+    @field_validator("name")
+    @classmethod
+    def trimmed_name(cls, value: str | None) -> str | None:
+        if value is None:
+            return None
+        value = value.strip()
+        if not value:
+            raise ValueError("name must not be blank")
+        return value
 
 
 class MonitorRename(Input):
@@ -160,16 +230,85 @@ class EvidenceRef(BaseModel):
 class DraftView(BaseModel):
     id: UUID
     conversation_id: UUID
-    revision: int
     status: str
     spec: dict[str, Any] | None
     spec_hash: str | None
-    preview: dict[str, Any] | None
-    preview_hash: str | None
-    preview_expires_at: datetime | None
+    spec_revision: int
+    settings: dict[str, Any]
+    settings_hash: str | None
+    settings_revision: int
+    extraction_preview: dict[str, Any] | None
+    extraction_preview_hash: str | None
+    extraction_preview_expires_at: datetime | None
+    delivery_preview: dict[str, Any] | None
+    delivery_preview_hash: str | None
+    delivery_preview_expires_at: datetime | None
     monitor_id: UUID | None
     created_at: datetime
     updated_at: datetime
+
+
+class RenderedEmail(BaseModel):
+    event_type: str
+    subject: str
+    html: str
+    text: str
+    preview_html: str
+
+
+class ExtractionPreview(BaseModel):
+    """What a real collection produced for the saved collection contract."""
+
+    preview_id: str
+    spec_revision: int
+    spec_hash: str
+    extracted_data: dict[str, Any]
+    coverage: dict[str, Any]
+    final_url: str | None
+    evidence_refs: list[EvidenceRef]
+    rule_simulation: dict[str, Any]
+    source: Any | None = None
+    warnings: list[str]
+    created_at: datetime
+    expires_at: datetime
+
+
+class DeliveryPreview(BaseModel):
+    """What the mail will look like for the current settings and template."""
+
+    preview_id: str
+    settings_revision: int
+    settings_hash: str
+    template_id: UUID | None
+    template_name: str | None
+    template_hash: str
+    rendered_emails: list[RenderedEmail]
+    recipients: list[str]
+    recipient_sources: list[dict[str, Any]]
+    warnings: list[str]
+    created_at: datetime
+    expires_at: datetime
+
+
+class EmailTemplateView(BaseModel):
+    id: UUID
+    name: str
+    description: str
+    config: dict[str, Any]
+    created_by_user_id: UUID
+    created_at: datetime
+    updated_at: datetime
+
+
+class EmailTemplatePreview(BaseModel):
+    rendered_emails: list[RenderedEmail]
+
+
+class EmailTemplateProposal(BaseModel):
+    """A generated design; the user still has to save it."""
+
+    name: str
+    config: EmailTemplateConfig
 
 
 class ConversationView(BaseModel):
@@ -204,6 +343,8 @@ class MonitorView(BaseModel):
     baseline_status: str
     health_status: str
     notification_group_ids: list[str]
+    email_template_id: UUID | None = None
+    email_template_name: str | None = None
     next_run_at: datetime
     last_success_at: datetime | None
     last_failure_at: datetime | None
@@ -231,6 +372,7 @@ class MonitorDetail(MonitorView):
     spec: dict[str, Any]
     baseline: SnapshotRecord | None
     approved_recipients: list[str] = Field(default_factory=list)
+    email_template: dict[str, Any] | None = None
 
 
 class SpecVersion(BaseModel):
@@ -320,4 +462,5 @@ class CreateMonitorResult(BaseModel):
 class DerivedDraft(BaseModel):
     conversation_id: UUID
     draft_id: UUID
-    revision: int
+    spec_revision: int
+    settings_revision: int

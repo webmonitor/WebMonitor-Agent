@@ -19,7 +19,7 @@ from webmonitor.collection.types import (
 from webmonitor.collection.validation import validate_collection
 from webmonitor.config import get_settings
 from webmonitor.errors import DomainError
-from webmonitor.schemas.monitors import DraftSpec
+from webmonitor.schemas.monitors import MonitorSpec
 from webmonitor.security.egress import validate_target
 
 _slots: asyncio.Semaphore | None = None
@@ -40,7 +40,7 @@ MAX_CANDIDATE_BYTES = 131072
 NETWORK_DRAIN_SECONDS = 5.0
 
 
-async def collect_browser(url: str, spec: DraftSpec | None = None, *,
+async def collect_browser(url: str, spec: MonitorSpec | None = None, *,
                           network: bool = False) -> CollectionResult:
     network_tasks: set[asyncio.Task] = set()
     candidates: list[dict] = []

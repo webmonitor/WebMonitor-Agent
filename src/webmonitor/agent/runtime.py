@@ -6,7 +6,7 @@ from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from webmonitor.models import Draft
-from webmonitor.schemas.monitors import DraftSpec
+from webmonitor.schemas.monitors import MonitorSpec
 from webmonitor.security.auth import CurrentUser
 
 
@@ -17,17 +17,18 @@ class RuntimeContext:
     job_id: UUID
     worker_id: str
     draft_id: UUID | None = None
-    draft_revision: int | None = None
-    draft_spec: DraftSpec | None = None
+    spec_revision: int | None = None
+    draft_spec: MonitorSpec | None = None
     monitor_id: UUID | None = None
     # Monotonic seconds from `loop.time()` when this attempt's run budget expires.
     # None means no run budget, which only happens outside `execute_job`.
     deadline: float | None = None
 
     def update_draft(self, draft: Draft) -> None:
+        """Only the collection contract is agent-writable; settings stay user-owned."""
         self.draft_id = draft.id
-        self.draft_revision = draft.revision
-        self.draft_spec = DraftSpec.model_validate(draft.spec) if draft.spec is not None else None
+        self.spec_revision = draft.spec_revision
+        self.draft_spec = MonitorSpec.model_validate(draft.spec) if draft.spec is not None else None
         self.monitor_id = draft.monitor_id
 
 

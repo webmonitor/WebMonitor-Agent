@@ -12,10 +12,10 @@ from webmonitor.collection.types import (
 )
 from webmonitor.collection.validation import validate_collection
 from webmonitor.errors import DomainError
-from webmonitor.schemas.monitors import DraftSpec
+from webmonitor.schemas.monitors import MonitorSpec
 
 
-async def collect_http(url: str, spec: DraftSpec | None = None) -> CollectionResult:
+async def collect_http(url: str, spec: MonitorSpec | None = None) -> CollectionResult:
     started = monotonic()
     try:
         async with asyncio.timeout(30):
