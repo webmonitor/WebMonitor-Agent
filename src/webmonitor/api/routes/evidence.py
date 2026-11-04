@@ -9,19 +9,21 @@ from webmonitor.errors import DomainError
 from webmonitor.models import Monitor, Snapshot
 from webmonitor.security.auth import require_owner
 from webmonitor.services import drafts
-from webmonitor.storage.evidence import stream_evidence
+from webmonitor.storage.evidence import CONTENT_TYPES, stream_evidence
 
 router = APIRouter(prefix="/api/v1", tags=["evidence"])
 
 # The archive is an HTML document; it downloads as an attachment so untrusted
 # markup never renders on this origin, but its filename keeps the extension.
 _EVIDENCE_SUFFIXES = {"html": "html", "json": "json", "screenshot": "png"}
+FALLBACK_MEDIA_TYPE = "application/octet-stream"
 
 
 def evidence_media_type(reference: dict) -> str:
-    is_image = reference.get("kind") == "screenshot"
-    return reference.get("content_type") or (
-        "image/png" if is_image else "text/plain; charset=utf-8")
+    content_type = reference.get("content_type")
+    if content_type in CONTENT_TYPES.values():
+        return content_type
+    return FALLBACK_MEDIA_TYPE
 
 
 def evidence_disposition(reference: dict) -> str:

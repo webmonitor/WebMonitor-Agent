@@ -3,6 +3,7 @@
 HTML, JSON, probe and replay all share this redirect, size and error contract;
 callers decide what a status code or media type means.
 """
+import asyncio
 from dataclasses import dataclass
 from urllib.parse import urljoin
 
@@ -56,32 +57,33 @@ async def fetch_bounded(url: str, *, method: str = 'GET', headers: dict[str, str
     if headers:
         request_headers.update(headers)
     try:
-        async with httpx.AsyncClient(proxy=None if transport else get_settings().egress_proxy_url,
-                                     transport=transport, trust_env=False,
-                                     follow_redirects=False, timeout=timeout,
-                                     headers=request_headers) as client:
-            target = await validate_target(url)
-            current_method, current_body = method, body
-            for redirects in range(MAX_REDIRECTS):
-                async with client.stream(current_method, target, content=current_body) as response:
-                    if response.status_code in REDIRECT_CODES:
-                        location = response.headers.get('location')
-                        if not location or redirects == MAX_REDIRECTS - 1:
-                            raise DomainError('redirect_limit', 422)
-                        target = await validate_target(urljoin(target, location))
-                        if response.status_code in {301, 302, 303}:
-                            current_method, current_body = 'GET', None
-                        continue
-                    if response.status_code == 403 and response.headers.get(
-                            'x-squid-error', '').startswith('ERR_ACCESS_DENIED'):
-                        raise DomainError('url_forbidden', 422)
-                    decoder = BoundedDecoder(response.headers.get('content-encoding', 'identity'),
-                                             limit=max_bytes)
-                    async for chunk in response.aiter_raw(chunk_size=65536):
-                        decoder.feed(chunk)
-                    return FetchResult(target, response.status_code, response.headers,
-                                       decoder.finish())
-            raise DomainError('redirect_limit', 422)
+        async with asyncio.timeout(timeout):
+            async with httpx.AsyncClient(proxy=None if transport else get_settings().egress_proxy_url,
+                                         transport=transport, trust_env=False,
+                                         follow_redirects=False, timeout=timeout,
+                                         headers=request_headers) as client:
+                target = await validate_target(url)
+                current_method, current_body = method, body
+                for redirects in range(MAX_REDIRECTS):
+                    async with client.stream(current_method, target, content=current_body) as response:
+                        if response.status_code in REDIRECT_CODES:
+                            location = response.headers.get('location')
+                            if not location or redirects == MAX_REDIRECTS - 1:
+                                raise DomainError('redirect_limit', 422)
+                            target = await validate_target(urljoin(target, location))
+                            if response.status_code in {301, 302, 303}:
+                                current_method, current_body = 'GET', None
+                            continue
+                        if response.status_code == 403 and response.headers.get(
+                                'x-squid-error', '').startswith('ERR_ACCESS_DENIED'):
+                            raise DomainError('url_forbidden', 422)
+                        decoder = BoundedDecoder(response.headers.get('content-encoding', 'identity'),
+                                                 limit=max_bytes)
+                        async for chunk in response.aiter_raw(chunk_size=65536):
+                            decoder.feed(chunk)
+                        return FetchResult(target, response.status_code, response.headers,
+                                           decoder.finish())
+                raise DomainError('redirect_limit', 422)
     except (TimeoutError, httpx.TimeoutException):
         raise DomainError('collection_timeout', 503) from None
     except httpx.ProxyError as exc:

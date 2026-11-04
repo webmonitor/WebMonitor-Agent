@@ -13,10 +13,10 @@ def test_html_archive_downloads_with_an_html_extension():
 
 
 def test_existing_html_references_keep_their_extension():
-    # References written before the content type changed still point at HTML.
+    # A stored content type outside the known set is served as an opaque download.
     item = reference("html", "text/plain; charset=utf-8", sha="b" * 64)
     assert evidence_disposition(item).endswith('.html"')
-    assert evidence_media_type(item) == "text/plain; charset=utf-8"
+    assert evidence_media_type(item) == "application/octet-stream"
 
 
 def test_json_archive_keeps_a_json_extension():

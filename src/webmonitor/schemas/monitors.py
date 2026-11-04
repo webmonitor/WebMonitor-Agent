@@ -64,6 +64,8 @@ REQUEST_TEMPLATE = re.compile(
     r'\{\{steps\.(?P<step>[a-z][a-z0-9_]{0,31})\.'
     r'(?P<path>[A-Za-z0-9_$-]+(?:\.[A-Za-z0-9_$-]+|\[\d+\])*)\}\}')
 JSON_PATH = re.compile(r'^[A-Za-z0-9_$-]+(?:\.[A-Za-z0-9_$-]+|\[\d+\])*$')
+# soupsieve implements jQuery-style pseudos that Chromium does not.
+SOUPSIEVE_ONLY = re.compile(r":(-soup|contains|nth-last-column|matches)\b", re.IGNORECASE)
 
 
 def clean_json_path(value: str) -> str:
@@ -173,6 +175,10 @@ class FieldSpec(Contract):
             soupsieve.compile(value)
         except soupsieve.SelectorSyntaxError as exc:
             raise ValueError('invalid CSS selector') from exc
+        # The browser executes the same string, so selectors only soupsieve
+        # understands would silently select nothing in Chromium.
+        if SOUPSIEVE_ONLY.search(value):
+            raise ValueError('only selectors supported by browsers are allowed')
         return value
 
     @field_validator('path')

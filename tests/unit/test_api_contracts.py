@@ -120,7 +120,9 @@ def test_delivery_settings_validate_groups_and_the_interval():
 
 def test_subject_tokens_are_allowlisted():
     def build(subject: str) -> EmailTemplateConfig:
-        return EmailTemplateConfig.model_validate({"subject": subject})
+        # A design always carries at least one block; only the subject varies here.
+        return EmailTemplateConfig.model_validate({"subject": subject,
+                                                   "blocks": [{"type": "summary"}]})
 
     assert build(" {monitor_name} · {event_label} · {event_date} ").subject == (
         "{monitor_name} · {event_label} · {event_date}")
@@ -135,14 +137,16 @@ def test_subject_tokens_are_allowlisted():
 
 
 def test_template_specs_require_a_name_and_a_valid_config():
-    config = EmailTemplateConfig.model_validate({"subject": "{monitor_name}"})
+    config = EmailTemplateConfig.model_validate({"subject": "{monitor_name}",
+                                                 "blocks": [{"type": "summary"}]})
     spec = EmailTemplateSpec(name="  Price mail  ", config=config)
     assert spec.name == "Price mail"
     assert spec.description == ""
     with pytest.raises(ValidationError):
         EmailTemplateSpec(name="   ", config=config)
     with pytest.raises(ValidationError):
-        EmailTemplateSpec(name="Price mail", config={"subject": "{nope}"})
+        EmailTemplateSpec(name="Price mail",
+                          config={"subject": "{nope}", "blocks": [{"type": "summary"}]})
     with pytest.raises(ValidationError):
         EmailTemplateSpec(name="Price mail", config=config, enabled=True)
     patch = EmailTemplatePatch(description="Only this")

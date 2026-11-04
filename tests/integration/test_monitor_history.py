@@ -87,7 +87,8 @@ async def test_snapshots_are_listed_newest_first_and_detail_names_the_monitor(se
     with pytest.raises(DomainError) as denied:
         await monitors.read_snapshot(session, CurrentUser(user_id=stranger.id, role="member"),
                                      older.id)
-    assert denied.value.code == "forbidden"
+    # A member cannot distinguish a foreign row from a missing one.
+    assert denied.value.code == "not_found"
 
 
 @pytest.mark.asyncio

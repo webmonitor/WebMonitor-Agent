@@ -30,7 +30,6 @@ def monitor_view(monitor: Monitor) -> MonitorView:
         health_status=monitor.health_status,
         notification_group_ids=list(monitor.notification_group_ids or []),
         email_template_id=monitor.email_template_id,
-        email_template_name=monitor.email_template_name,
         next_run_at=monitor.next_run_at, last_success_at=monitor.last_success_at,
         last_failure_at=monitor.last_failure_at, created_at=monitor.created_at,
         archived_at=monitor.archived_at)
@@ -88,11 +87,14 @@ async def pause_monitor(session: AsyncSession, user: CurrentUser, monitor_id: UU
 
 async def resume_monitor(session: AsyncSession, user: CurrentUser, monitor_id: UUID) -> Monitor:
     monitor = await read_monitor_row(session, user, monitor_id, lock=True)
+    if monitor.archived_at is not None:
+        raise DomainError("monitor_archived", 409)
     if monitor.status == "active":
         return monitor
     await session.execute(select(User.id).where(User.id == monitor.user_id).with_for_update())
     active = await session.scalar(select(func.count()).select_from(Monitor).where(
-        Monitor.user_id == monitor.user_id, Monitor.status == "active"))
+        Monitor.user_id == monitor.user_id, Monitor.status == "active",
+        Monitor.archived_at.is_(None)))
     if (active or 0) >= get_settings().max_active_monitors:
         raise DomainError("quota_exceeded", 409)
     monitor.status, monitor.paused_at, monitor.next_run_at = "active", None, utc_now()
@@ -108,6 +110,8 @@ async def enqueue_manual(session: AsyncSession, user: CurrentUser, monitor_id: U
         Job.kind == "production", Job.status.in_(ACTIVE)))
     if existing is not None:
         return existing
+    await jobs.enforce_hourly_quota(session, user_id=monitor.user_id, kind="production",
+                                    limit=get_settings().manual_runs_per_hour)
     return await jobs.enqueue(session, user_id=monitor.user_id, kind="production",
         monitor_id=monitor.id, url=monitor.url, spec=monitor.spec,
         revision=monitor.spec_version)

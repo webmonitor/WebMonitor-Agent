@@ -29,7 +29,8 @@ NOTIFICATION_ERRORS = frozenset({"notification_routes_invalid", "notification_re
 async def schedule_due(session: AsyncSession, *, now=None, limit: int = 200) -> int:
     now = now or utc_now()
     due = (await session.scalars(select(Monitor).where(
-        Monitor.status == "active", Monitor.next_run_at <= now)
+        Monitor.status == "active", Monitor.archived_at.is_(None),
+        Monitor.next_run_at <= now)
         .order_by(Monitor.next_run_at, Monitor.id).limit(limit)
         .with_for_update(skip_locked=True).execution_options(populate_existing=True))).all()
     created = 0
@@ -102,6 +103,14 @@ async def _event(session: AsyncSession, monitor: Monitor, job: Job, event_type: 
     return event
 
 
+def _summary_line(item: dict) -> str:
+    """A list shows how many rows moved; a scalar shows the two values it had."""
+    if item["type"].startswith("list_"):
+        return f"{item['field']}: {len(item.get('items') or [])} 项变化"
+    return (f"{item['field']}: {json.dumps(item['before'], ensure_ascii=False)} → "
+            f"{json.dumps(item['after'], ensure_ascii=False)}")
+
+
 def _event_type(spec: MonitorSpec, diff: dict) -> str:
     fields = {field.name: field for field in spec.fields}
     for rule in spec.change_rules.rules:
@@ -137,10 +146,7 @@ async def commit_success(session: AsyncSession, job: Job, result: dict) -> bool:
                 summary="采集已恢复", fields=fields, snapshot_id=snapshot.id,
                 fingerprint=monitor.failure_fingerprint)
         if diff["triggered"]:
-            summary = "; ".join(
-                f"{item['field']}: {json.dumps(item['before'], ensure_ascii=False)} → "
-                f"{json.dumps(item['after'], ensure_ascii=False)}"
-                for item in diff["differences"])
+            summary = "; ".join(_summary_line(item) for item in diff["differences"])
             await _event(session, monitor, job, _event_type(spec, diff), before=previous,
                 after=fields, summary=summary, fields=fields, snapshot_id=snapshot.id,
                 differences=diff["differences"])

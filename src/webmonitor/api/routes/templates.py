@@ -55,8 +55,8 @@ async def delete_template(template_id: UUID, session: DatabaseSession, user: Aut
 async def generate_template(body: EmailTemplatePrompt, session: DatabaseSession,
                             user: AuthenticatedUser):
     """One sentence in, one design out. Nothing is saved until the user saves it."""
-    del session, user
-    proposal = await templates.draft(body.description)
+    del session
+    proposal = await templates.draft(body.description, user=user)
     return EmailTemplateProposal(name=proposal.name, config=proposal.config)
 
 

@@ -57,7 +57,17 @@ class ListChangesBlock(Contract):
 class AllFieldsBlock(Contract):
     type: Literal['all_fields']
     # None means every top-level field, in payload order.
-    fields: list[str] | None = None
+    fields: list[str] | None = Field(default=None, max_length=64)
+
+    @field_validator('fields')
+    @classmethod
+    def valid_fields(cls, value: list[str] | None) -> list[str] | None:
+        if value is None:
+            return None
+        for name in value:
+            if not 1 <= len(name) <= 64:
+                raise ValueError('each field name is limited to 1..64 characters')
+        return value
 
 
 class EventTimeBlock(Contract):
@@ -90,7 +100,7 @@ class EmailTemplateConfig(Contract):
     style: TemplateStyle = Field(default_factory=TemplateStyle)
     subject: str = Field(min_length=1, max_length=200)
     intros: dict[str, str] = Field(default_factory=dict)
-    blocks: list[TemplateBlock] = Field(default_factory=list, max_length=MAX_BLOCKS)
+    blocks: list[TemplateBlock] = Field(min_length=1, max_length=MAX_BLOCKS)
 
     @field_validator('subject')
     @classmethod

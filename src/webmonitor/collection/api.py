@@ -119,12 +119,14 @@ def _total(body: Any, pagination: PagePagination) -> int:
                           details={'reason': 'total_missing'}) from None
     if isinstance(candidate, bool) or not isinstance(candidate, int):
         raise DomainError('api_schema_invalid', 422, details={'reason': 'total_missing'})
+    if candidate < 0:
+        raise DomainError('api_schema_invalid', 422, details={'reason': 'total_invalid'})
     return candidate
 
 
 async def _paginate(request: ApiRequest, step: dict, pagination: PagePagination,
                     spec: MonitorSpec, *, transport: httpx.AsyncBaseTransport | None
-                    ) -> tuple[dict, int, bool, FetchResult, FetchResult]:
+                    ) -> tuple[dict, int, bool, bool, FetchResult, FetchResult]:
     list_field = next(field for field in spec.fields if field.type == 'list')
     fields = {}
     items: list = []
@@ -132,6 +134,7 @@ async def _paginate(request: ApiRequest, step: dict, pagination: PagePagination,
     page = pagination.start_page
     pages = 0
     truncated = False
+    converged = False
     first: FetchResult | None = None
     last: FetchResult | None = None
     while True:
@@ -156,25 +159,33 @@ async def _paginate(request: ApiRequest, step: dict, pagination: PagePagination,
         items.extend(rows)
         if pages == 1 and not items:
             raise DomainError('api_empty_result', 422, details={'field': list_field.name})
-        if not rows and pagination.stop == 'empty':
-            break
-        if total is not None and len(items) >= total:
-            break
+        if total is not None:
+            if len(items) > total:
+                raise DomainError('api_schema_invalid', 422,
+                                  details={'reason': 'total_exceeded'})
+            if len(items) == total:
+                converged = True
+                break
+        # Exceeding the item budget is truncation regardless of what the API says.
         if len(items) > pagination.max_items:
             del items[pagination.max_items:]
             truncated = True
-        elif len(items) >= pagination.max_items:
+            break
+        # Convergence is proven only by the API itself: an empty page or a page
+        # shorter than the requested size, never by our own budgets.
+        if pagination.stop == 'empty' and not rows:
+            converged = True
+            break
+        if (pagination.stop == 'empty' and pagination.size is not None
+                and len(rows) < pagination.size):
+            converged = True
+            break
+        if len(items) == pagination.max_items or pages >= pagination.max_pages:
             truncated = True
-        elif pages >= pagination.max_pages:
-            truncated = True
-        if truncated:
             break
         page += 1
     fields[list_field.name] = items
-    if truncated and spec.coverage.scope == 'full':
-        raise DomainError('api_pagination_limit', 422,
-                          details={'pages': pages, 'items': len(items)})
-    return fields, pages, truncated, first, last
+    return fields, pages, truncated, converged, first, last
 
 
 async def collect_api(url: str, spec: MonitorSpec, *,
@@ -207,10 +218,15 @@ async def collect_api(url: str, spec: MonitorSpec, *,
                                           details={'field': field.name})
                 pages, truncated = 1, False
             else:
-                fields, pages, truncated, page_one, last = await _paginate(
+                fields, pages, truncated, converged, page_one, last = await _paginate(
                     source.steps[-1].request, steps[-1], source.pagination, spec,
                     transport=transport)
                 steps[-1]['pages'] = pages
+                if not converged and spec.coverage.scope == 'full':
+                    list_field = next(field for field in spec.fields if field.type == 'list')
+                    raise DomainError('api_pagination_limit', 422,
+                                      details={'pages': pages,
+                                               'items': len(fields[list_field.name])})
             coverage = {'scope': spec.coverage.scope, 'description': spec.coverage.description}
             warnings = ['pagination_truncated'] if truncated else []
             analysis = {
@@ -224,11 +240,7 @@ async def collect_api(url: str, spec: MonitorSpec, *,
                                       None, fields, coverage,
                                       int((monotonic() - started) * 1000), warnings, analysis,
                                       body_kind='json')
-            try:
-                validate_collection(spec, fields, coverage=coverage)
-            except DomainError as exc:
-                exc.collection_result = result
-                raise
+            validate_collection(spec, fields, coverage=coverage)
             return result
     except TimeoutError:
         raise DomainError('collection_timeout', 503) from None

@@ -37,6 +37,15 @@ async def initialize_bucket() -> None:
     await asyncio.to_thread(ensure)
 
 
+# A bucket can disappear while the process is running (fresh dev stack, deleted
+# volume); concurrent uploads must recreate it once, not race each other.
+_bucket_lock = asyncio.Lock()
+
+
+def _error_code(exc: ClientError) -> str:
+    return exc.response.get("Error", {}).get("Code", "")
+
+
 CONTENT_TYPES = {"screenshot": "image/png", "json": "application/json",
                  "html": "text/html; charset=utf-8"}
 
@@ -48,9 +57,20 @@ async def upload_evidence(*, prefix: str, kind: str, data: bytes) -> dict:
     key = f"{prefix}/{uuid4()}"
     content_type = CONTENT_TYPES.get(kind, "text/plain; charset=utf-8")
     digest = hashlib.sha256(data).hexdigest()
-    try:
-        await asyncio.to_thread(s3_client().put_object, Bucket=bucket, Key=key, Body=data,
+
+    def put():
+        s3_client().put_object(Bucket=bucket, Key=key, Body=data,
             ContentType=content_type, Metadata={"sha256": digest})
+
+    try:
+        try:
+            await asyncio.to_thread(put)
+        except ClientError as exc:
+            if _error_code(exc) != "NoSuchBucket":
+                raise
+            async with _bucket_lock:
+                await initialize_bucket()
+            await asyncio.to_thread(put)
     except (BotoCoreError, ClientError, OSError):
         raise DomainError("storage_unavailable", 503) from None
     return {"kind": kind, "bucket": bucket, "object_key": key,
@@ -60,7 +80,11 @@ async def upload_evidence(*, prefix: str, kind: str, data: bytes) -> dict:
 async def stream_evidence(bucket: str, key: str):
     try:
         response = await asyncio.to_thread(s3_client().get_object, Bucket=bucket, Key=key)
-    except (BotoCoreError, ClientError, OSError):
+    except ClientError as exc:
+        if _error_code(exc) in {"NoSuchKey", "404"}:
+            raise DomainError("not_found", 404) from None
+        raise DomainError("storage_unavailable", 503) from None
+    except (BotoCoreError, OSError):
         raise DomainError("storage_unavailable", 503) from None
     body = response["Body"]
 
@@ -72,3 +96,16 @@ async def stream_evidence(bucket: str, key: str):
             await asyncio.to_thread(body.close)
 
     return chunks()
+
+
+async def delete_evidence(bucket: str, key: str) -> None:
+    """Delete an uploaded object that never became a committed reference."""
+    def remove():
+        try:
+            s3_client().delete_object(Bucket=bucket, Key=key)
+        except ClientError as exc:
+            if _error_code(exc) in {"NoSuchKey", "404"}:
+                return
+            raise
+
+    await asyncio.to_thread(remove)

@@ -49,15 +49,17 @@ def _rows(rows: Any, keys: list[str]) -> dict[str, dict]:
 def evaluate_rules(spec: MonitorSpec, previous: dict | None, current: dict, previous_state: dict) -> dict:
     """Return JSON-safe event evidence and next persistent state.
 
-    ``rule_state`` is {predicates: {rule-index: bool}, aggregate: bool}.
+    ``rule_state`` is {predicates: {rule-index: bool}, aggregate: bool,
+    persistent_aggregate: bool}. A persistent rule fires on its transition; a change
+    rule fires on its own evidence in this snapshot, never on a previous true state.
     ``differences`` includes every currently matching rule when an event fires;
     list entries include only this snapshot's added/removed/updated rows.
     """
     fields = {field.name: field for field in spec.fields}
     predicates: list[bool] = []
+    persistent_predicates: list[bool] = []
     matches: list[dict] = []
     warnings: list[dict] = []
-    has_change = False
     change_evidence = False
     persistent_state: dict[str, bool] = {}
     for index, rule in enumerate(spec.change_rules.rules):
@@ -65,7 +67,6 @@ def evaluate_rules(spec: MonitorSpec, previous: dict | None, current: dict, prev
         after = current.get(rule.field, _MISSING)
         field = fields[rule.field]
         persistent = rule.type in PERSISTENT
-        has_change |= not persistent
         matched = False
         detail: dict[str, Any] = {}
         if rule.type in ('keyword_present', 'keyword_absent'):
@@ -122,17 +123,27 @@ def evaluate_rules(spec: MonitorSpec, previous: dict | None, current: dict, prev
                 matched = bool(detail['items'])
         predicates.append(matched)
         if persistent:
+            persistent_predicates.append(matched)
             persistent_state[str(index)] = matched
         else:
             change_evidence |= matched
         if matched:
+            # A list's newest row delta is the evidence; a second copy is not.
+            listed = rule.type.startswith('list_')
             matches.append({'rule_index': index, 'type': rule.type, 'field': rule.field,
-                            'before': None if before is _MISSING else before,
-                            'after': None if after is _MISSING else after, **detail})
+                            'before': None if before is _MISSING or listed else before,
+                            'after': None if after is _MISSING or listed else after, **detail})
     aggregate = all(predicates) if spec.change_rules.mode == 'all' else any(predicates)
+    if persistent_predicates:
+        persistent_aggregate = (all(persistent_predicates)
+                                if spec.change_rules.mode == 'all'
+                                else any(persistent_predicates))
+    else:
+        persistent_aggregate = False
     triggered = previous is not None and aggregate and (
-        change_evidence if has_change else not previous_state.get('aggregate', False)
-    )
+        change_evidence
+        or (persistent_aggregate and not previous_state.get(
+            'persistent_aggregate', previous_state.get('aggregate', False))))
     event_type = None
     if triggered:
         matched_fields = [fields[item['field']].type for item in matches]
@@ -142,6 +153,7 @@ def evaluate_rules(spec: MonitorSpec, previous: dict | None, current: dict, prev
     return json.loads(canonical_json({
         'triggered': triggered, 'event_type': event_type,
         'differences': matches if triggered else [],
-        'rule_state': {'predicates': persistent_state, 'aggregate': aggregate},
+        'rule_state': {'predicates': persistent_state, 'aggregate': aggregate,
+                       'persistent_aggregate': persistent_aggregate},
         'warnings': warnings,
     }))

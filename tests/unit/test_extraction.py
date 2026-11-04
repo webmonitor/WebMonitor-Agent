@@ -80,6 +80,21 @@ def test_money_currency_markers_and_historical_currency_are_checked():
                                         {'value': {'amount': '12', 'currency': 'EUR'}}), 'currency_changed')
 
 
+@pytest.mark.parametrize('raw,currency', [
+    ('US$12.50', 'USD'), ('R$ 12.50', 'BRL'), ('A$12.50', 'AUD'), ('C$12.50', 'CAD')])
+def test_multi_letter_currency_prefixes_are_recognised(raw, currency):
+    spec = scalar('money', normalize={'decimal_separator': '.', 'currency': currency})
+    assert extract(spec, f'<b class="value">{raw}</b>') == {
+        'value': {'amount': '12.50', 'currency': currency}}
+
+
+@pytest.mark.parametrize('raw,currency', [
+    ('US$12.50', 'EUR'), ('R$12.50', 'USD'), ('A$12.50', 'CAD'), ('C$12.50', 'AUD')])
+def test_a_mismatched_multi_letter_prefix_is_not_discarded(raw, currency):
+    spec = scalar('money', normalize={'decimal_separator': '.', 'currency': currency})
+    rejected(lambda: extract(spec, f'<b class="value">{raw}</b>'), 'currency_mismatch')
+
+
 def test_boolean_uses_exact_normalized_configured_values():
     spec = scalar('boolean', normalize={'collapse_whitespace': True, 'true_values': ['in stock'], 'false_values': ['sold out']})
     assert extract(spec, '<b class="label">Availability</b><b class="value"> in \n stock </b>')['value'] is True

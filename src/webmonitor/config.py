@@ -61,6 +61,10 @@ class Settings(BaseSettings):
     agent_timeout_seconds: int = 600
     agent_runs_per_hour: int = 30
     agent_history_messages: int = 30
+    agent_history_chars: int = 60000
+    preview_runs_per_hour: int = 60
+    manual_runs_per_hour: int = 120
+    template_generation_per_hour: int = 10
     agent_concurrency: int = 2
     http_concurrency: int = 8
     browser_concurrency: int = 4
@@ -101,6 +105,8 @@ class Settings(BaseSettings):
                      "browser_concurrency", "max_attempts", "max_active_monitors",
                      "login_attempts", "login_window_minutes", "agent_max_turns",
                      "agent_max_tokens", "agent_timeout_seconds", "agent_history_messages",
+                     "agent_history_chars", "preview_runs_per_hour", "manual_runs_per_hour",
+                     "template_generation_per_hour",
                      "agent_max_attempts", "message_max_chars", "agent_runs_per_hour"):
             if getattr(self, name) < 1:
                 raise ValueError(f"{name.upper()} must be at least 1")

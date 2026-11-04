@@ -36,13 +36,9 @@ async def collect_http(url: str, spec: MonitorSpec | None = None) -> CollectionR
             result = CollectionResult(fetched.final_url, html, None, {}, coverage,
                                       int((monotonic() - started) * 1000), warnings, analysis,
                                       body_kind='html')
-            try:
-                if spec:
-                    result.fields = extract_fields(html, spec, final_url=fetched.final_url)
-                    validate_collection(spec, result.fields, coverage=coverage)
-            except DomainError as exc:
-                exc.collection_result = result
-                raise
+            if spec:
+                result.fields = extract_fields(html, spec, final_url=fetched.final_url)
+                validate_collection(spec, result.fields, coverage=coverage)
             return result
     except TimeoutError:
         raise DomainError('collection_timeout', 503) from None

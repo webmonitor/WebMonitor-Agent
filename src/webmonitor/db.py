@@ -10,10 +10,8 @@ from webmonitor.models import Base, User, utc_now
 
 logger = logging.getLogger(__name__)
 
-EXPECTED_TABLES = frozenset({
-    "users", "sessions", "invitations", "conversations", "messages", "jobs", "drafts",
-    "monitors", "snapshots", "events", "notification_groups", "email_deliveries",
-})
+# Readiness follows the model itself, so a new table is never silently missing.
+EXPECTED_TABLES = frozenset(Base.metadata.tables)
 
 
 @lru_cache

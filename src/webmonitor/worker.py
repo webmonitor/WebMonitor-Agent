@@ -23,12 +23,13 @@ from webmonitor.errors import DomainError
 from webmonitor.models import Draft, EmailDelivery, Job
 from webmonitor.notifications.delivery import SendFailure, send_email
 from webmonitor.schemas.monitors import MonitorSpec
-from webmonitor.services import drafts, jobs, notifications, runs
-from webmonitor.storage.evidence import upload_evidence
+from webmonitor.services import accounts, drafts, jobs, notifications, runs
+from webmonitor.storage.evidence import delete_evidence, upload_evidence
 
 logger = logging.getLogger(__name__)
 
 RENEW_SECONDS = 15
+SESSION_PURGE_SECONDS = 3600
 COLLECTION_RETRYABLE = frozenset({"lease_expired", "collection_timeout", "target_unavailable",
                                   "storage_unavailable", "browser_collection_failed"})
 
@@ -54,20 +55,29 @@ def _owned(job: Job | None, worker_id: str, *, terminal: bool = False) -> bool:
 
 
 async def _renew(job_id: UUID, worker_id: str, task: asyncio.Task) -> None:
+    """Keep the lease alive; a transient database hiccup must not kill the work."""
+    loop = asyncio.get_running_loop()
+    last_ok = loop.time()
     try:
         while True:
             await asyncio.sleep(RENEW_SECONDS)
-            async with _session() as session:
-                alive = await jobs.renew(session, job_id, worker_id)
-                await session.commit()
+            try:
+                async with _session() as session:
+                    alive = await jobs.renew(session, job_id, worker_id)
+                    await session.commit()
+            except Exception:
+                # The lease is still provable for one more window; retry inside it.
+                if loop.time() - last_ok <= jobs.LEASE_SECONDS - RENEW_SECONDS:
+                    logger.warning("Lease renewal failed; retrying", exc_info=True)
+                    continue
+                task.cancel()
+                return
             if not alive:
                 task.cancel()
                 return
+            last_ok = loop.time()
     except asyncio.CancelledError:
         raise
-    except Exception:
-        # Without a verified lease the work must stop; durable state stays recoverable.
-        task.cancel()
 
 
 def _prefix(job: Job) -> str:
@@ -76,6 +86,16 @@ def _prefix(job: Job) -> str:
     if job.kind == "preview":
         return f"drafts/{job.draft_id}/{job.id}"
     return f"analysis/{job.id}"
+
+
+async def _discard_evidence(refs: list[dict]) -> None:
+    """Delete uploads that were never committed; the snapshot will not reference them."""
+    for ref in refs:
+        try:
+            await delete_evidence(ref["bucket"], ref["object_key"])
+        except Exception:
+            logger.warning("Could not delete orphaned evidence %s", ref["object_key"],
+                           exc_info=True)
 
 
 async def _collect(job_id: UUID, worker_id: str) -> None:
@@ -93,6 +113,7 @@ async def _collect(job_id: UUID, worker_id: str) -> None:
     op = (stored or {}).get("op")
     current = asyncio.current_task()
     renewal = asyncio.create_task(_renew(job_id, worker_id, current))
+    uploaded: list[dict] = []
     try:
         if op == "network":
             result = await collect_browser(url, network=True)
@@ -101,22 +122,23 @@ async def _collect(job_id: UUID, worker_id: str) -> None:
         else:
             collector = collect_browser if mode == "browser" else collect_http
             result = await collector(url, spec)
-        refs = []
         if result.body is not None:
-            refs.append(await upload_evidence(prefix=_prefix(job), kind=result.body_kind,
-                                              data=result.body.encode("utf-8")))
+            uploaded.append(await upload_evidence(prefix=_prefix(job), kind=result.body_kind,
+                                                  data=result.body.encode("utf-8")))
         if result.screenshot is not None:
-            refs.append(await upload_evidence(prefix=_prefix(job), kind="screenshot",
-                                              data=result.screenshot))
+            uploaded.append(await upload_evidence(prefix=_prefix(job), kind="screenshot",
+                                                  data=result.screenshot))
         payload = {"final_url": result.final_url, "fields": result.fields,
-                   "coverage": result.coverage, "evidence_refs": refs,
+                   "coverage": result.coverage, "evidence_refs": uploaded,
                    "duration_ms": result.duration_ms, "warnings": result.warnings,
                    "analysis": result.analysis}
         async with _session() as session, session.begin():
             live = await _locked(session, job_id)
             if not _owned(live, worker_id, terminal=True):
+                await _discard_evidence(uploaded)
                 return
             if live.cancel_requested_at is not None:
+                await _discard_evidence(uploaded)
                 await jobs.finish(session, live, "cancelled", error_code="collection_cancelled")
                 return
             if live.kind == "production":
@@ -130,7 +152,10 @@ async def _collect(job_id: UUID, worker_id: str) -> None:
                         raise DomainError("draft_missing", 409)
                     await drafts.build_preview(session, draft, live)
                 await jobs.finish(session, live, "succeeded", result=payload)
+        # Committed: the rows now reference these objects.
+        uploaded = []
     except asyncio.CancelledError:
+        await _discard_evidence(uploaded)
         async with _session() as session, session.begin():
             live = await _locked(session, job_id)
             if _owned(live, worker_id, terminal=True):
@@ -138,6 +163,7 @@ async def _collect(job_id: UUID, worker_id: str) -> None:
                                   error_code="collection_cancelled")
         raise
     except Exception as exc:
+        await _discard_evidence(uploaded)
         code = exc.code if isinstance(exc, DomainError) else "collection_failed"
         details = exc.details if isinstance(exc, DomainError) else {}
         await _fail(job_id, worker_id, code=code, details=details)
@@ -170,16 +196,22 @@ async def _fail(job_id: UUID, worker_id: str, *, code: str, details: dict) -> No
 
 
 async def scheduler_loop() -> None:
+    loop = asyncio.get_running_loop()
+    purged_at = 0.0
     while True:
-        started = asyncio.get_running_loop().time()
+        started = loop.time()
         try:
             async with _session() as session, session.begin():
                 await runs.schedule_due(session)
+            if started - purged_at >= SESSION_PURGE_SECONDS:
+                async with _session() as session, session.begin():
+                    await accounts.purge_expired_sessions(session)
+                purged_at = started
         except asyncio.CancelledError:
             raise
         except Exception:
-            logger.error("Scheduler tick failed")
-        await asyncio.sleep(max(0.0, 1 - (asyncio.get_running_loop().time() - started)))
+            logger.exception("Scheduler tick failed")
+        await asyncio.sleep(max(0.0, 1 - (loop.time() - started)))
 
 
 async def _agent_slot(worker_id: str) -> None:
@@ -203,7 +235,7 @@ async def _agent_slot(worker_id: str) -> None:
             if asyncio.current_task().cancelling():
                 raise
         except Exception:
-            logger.error("Agent slot iteration failed; durable state retained")
+            logger.exception("Agent slot iteration failed; durable state retained")
             await asyncio.sleep(2)
 
 
@@ -229,7 +261,7 @@ async def _collection_slot(worker_id: str, mode: str) -> None:
             if asyncio.current_task().cancelling():
                 raise
         except Exception:
-            logger.error("Collection slot iteration failed")
+            logger.exception("Collection slot iteration failed")
             await asyncio.sleep(2)
 
 
@@ -245,7 +277,7 @@ async def _mailer_slot(worker_id: str) -> None:
         except asyncio.CancelledError:
             raise
         except Exception:
-            logger.error("Mail delivery iteration failed")
+            logger.exception("Mail delivery iteration failed")
             await asyncio.sleep(5)
 
 
@@ -268,11 +300,21 @@ async def _deliver(delivery: EmailDelivery, worker_id: str) -> None:
         code = await send_email(delivery, rendered)
     except SendFailure as exc:
         failure = exc
-    async with _session() as session, session.begin():
-        live = await session.get(EmailDelivery, delivery_id, with_for_update=True,
-                                 populate_existing=True)
-        await notifications.finish_delivery(session, live, worker_id=worker_id,
-                                            failure=failure, response_code=code)
+    except Exception:
+        # An unexpected fault must still end this attempt, never leave it `sending`.
+        logger.exception("Mail delivery aborted: delivery=%s", delivery_id)
+        failure = SendFailure("delivery_aborted", "Delivery aborted", retryable=False)
+    try:
+        async with _session() as session, session.begin():
+            live = await session.get(EmailDelivery, delivery_id, with_for_update=True,
+                                     populate_existing=True)
+            if live is None:
+                return
+            await notifications.finish_delivery(session, live, worker_id=worker_id,
+                                                failure=failure, response_code=code)
+    except Exception:
+        # The lease expires and the row is claimed again; nothing is lost.
+        logger.exception("Mail delivery result could not be stored: delivery=%s", delivery_id)
 
 
 async def agent_loop(worker_id: str) -> None:
@@ -295,10 +337,10 @@ async def mailer_loop(worker_id: str) -> None:
 async def run_worker() -> None:
     """Scheduler, agent, both collectors and the mailer in one process."""
     worker_id = make_worker_id()
-    await asyncio.gather(
-        scheduler_loop(),
-        agent_loop(worker_id),
-        collection_loop(worker_id, "http"),
-        collection_loop(worker_id, "browser"),
-        mailer_loop(worker_id),
-    )
+    # One loop crashing takes the process down loudly instead of running half-deaf.
+    async with asyncio.TaskGroup() as group:
+        group.create_task(scheduler_loop())
+        group.create_task(agent_loop(worker_id))
+        group.create_task(collection_loop(worker_id, "http"))
+        group.create_task(collection_loop(worker_id, "browser"))
+        group.create_task(mailer_loop(worker_id))

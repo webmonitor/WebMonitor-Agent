@@ -1,4 +1,5 @@
 """JSON API collection: ordered steps, assertions, pagination and failures."""
+import asyncio
 import json
 
 import httpx
@@ -272,3 +273,99 @@ async def test_unresolved_template_reports_the_step_and_token():
             lambda request: json_response({'code': 200, 'data': {}})))
     assert error.value.code == 'api_template_unresolved'
     assert error.value.details == {'step': 'info', 'token': '{{steps.info.data.id}}'}
+
+
+@pytest.mark.asyncio
+async def test_negative_total_is_a_schema_error():
+    monitor = spec(steps=[step('https://api.example.com/items')],
+                   pagination={'kind': 'page', 'total_path': 'data.total',
+                               'stop': 'total_reached', 'max_pages': 3})
+    with pytest.raises(DomainError) as error:
+        await collect_api(monitor.url, monitor, transport=httpx.MockTransport(
+            lambda request: json_response(page_body(1, total=-1))))
+    assert error.value.code == 'api_schema_invalid'
+    assert error.value.details == {'reason': 'total_invalid'}
+
+
+@pytest.mark.asyncio
+async def test_a_short_last_page_proves_full_coverage_at_the_item_budget():
+    # Three rows per page and a budget of four: the second page is short, which
+    # is the API's own proof that nothing more exists. No truncation warning.
+    def handler(request):
+        page = int(dict(httpx.QueryParams(request.url.query.decode())).get('page', 1))
+        rows = {1: ['1', '2', '3'], 2: ['4']}.get(page, [])
+        return json_response({'code': 200, 'data': {'list': [{'id': row} for row in rows]}})
+
+    monitor = spec(steps=[step('https://api.example.com/items')], coverage='full',
+                   pagination={'kind': 'page', 'size_param': 'size', 'size': 3,
+                               'stop': 'empty', 'max_pages': 5, 'max_items': 4})
+    result = await collect_api(monitor.url, monitor,
+                               transport=httpx.MockTransport(handler))
+    assert [row['id'] for row in result.fields['items']] == ['1', '2', '3', '4']
+    assert result.warnings == []
+    assert result.coverage == {'scope': 'full', 'description': 'Rows'}
+
+
+@pytest.mark.asyncio
+async def test_full_coverage_needs_proof_when_pagination_is_capped():
+    monitor = spec(steps=[step('https://api.example.com/items')], coverage='full',
+                   pagination={'kind': 'page', 'size_param': 'size', 'size': 2,
+                               'stop': 'empty', 'max_pages': 3, 'max_items': 100})
+    with pytest.raises(DomainError) as error:
+        await collect_api(monitor.url, monitor, transport=httpx.MockTransport(paged(4)))
+    assert error.value.code == 'api_pagination_limit'
+    assert error.value.details == {'pages': 3, 'items': 6}
+
+
+@pytest.mark.asyncio
+async def test_a_total_equal_to_the_rows_collected_is_convergence():
+    monitor = spec(steps=[step('https://api.example.com/items')], coverage='full',
+                   pagination={'kind': 'page', 'size_param': 'size', 'size': 2,
+                               'total_path': 'data.total', 'stop': 'total_reached',
+                               'max_pages': 4, 'max_items': 100})
+    result = await collect_api(monitor.url, monitor,
+                               transport=httpx.MockTransport(paged(4)))
+    assert len(result.fields['items']) == 8
+    assert result.warnings == []
+    assert result.coverage == {'scope': 'full', 'description': 'Rows'}
+
+
+class _SlowStream(httpx.AsyncBaseTransport):
+    """A body that keeps trickling after the client deadline has passed."""
+
+    def __init__(self, delay: float):
+        self.delay = delay
+
+    async def handle_async_request(self, request):
+        async def body():
+            for _ in range(50):
+                await asyncio.sleep(self.delay)
+                yield b'<p>x</p>'
+        return httpx.Response(200, headers={'content-type': 'text/html'}, content=body())
+
+
+@pytest.mark.asyncio
+async def test_a_slow_stream_is_cut_off_by_the_total_deadline():
+    from webmonitor.collection.fetch import fetch_bounded
+
+    with pytest.raises(DomainError) as error:
+        await fetch_bounded('https://example.com/page', accept='text/html',
+                            max_bytes=1024, transport=_SlowStream(0.02), timeout=0.1)
+    assert error.value.code == 'collection_timeout'
+    assert error.value.status == 503
+
+
+@pytest.mark.asyncio
+async def test_a_hung_probe_reports_a_collection_timeout(monkeypatch):
+    from webmonitor.collection import probe
+
+    class Hanging(httpx.AsyncBaseTransport):
+        async def handle_async_request(self, request):
+            await asyncio.sleep(5)
+            raise AssertionError('unreachable')
+
+    monkeypatch.setattr(probe, 'TOTAL_TIMEOUT_SECONDS', 0.05)
+    with pytest.raises(DomainError) as error:
+        await probe.probe('https://example.com/page', transport=Hanging())
+    assert error.value.code == 'collection_timeout'
+    assert error.value.status == 503

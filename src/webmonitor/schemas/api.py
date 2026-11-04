@@ -36,7 +36,8 @@ class Page(BaseModel, Generic[T]):
 # ---- requests ---------------------------------------------------------------
 
 class PostMessageRequest(Input):
-    content: str = Field(min_length=1)
+    # The service enforces the configured limit; this is only the abuse ceiling.
+    content: str = Field(min_length=1, max_length=200_000)
     client_message_id: str = Field(min_length=1, max_length=64)
 
 
@@ -145,23 +146,50 @@ class MemberSpec(Input):
         return value.strip().casefold() if isinstance(value, str) else value
 
 
+def unique_members(members: list[MemberSpec]) -> list[MemberSpec]:
+    if len({str(member.email) for member in members}) != len(members):
+        raise ValueError("duplicate recipient email")
+    return members
+
+
 class GroupSpec(Input):
     name: str = Field(min_length=1, max_length=200)
     enabled: StrictBool = True
-    members: list[MemberSpec] = Field(default_factory=list)
+    members: list[MemberSpec] = Field(default_factory=list, max_length=500)
+
+    @field_validator("name")
+    @classmethod
+    def trimmed_name(cls, value: str) -> str:
+        value = value.strip()
+        if not value:
+            raise ValueError("name must not be blank")
+        return value
 
     @field_validator("members")
     @classmethod
-    def unique_members(cls, value: list[MemberSpec]) -> list[MemberSpec]:
-        if len({str(member.email) for member in value}) != len(value):
-            raise ValueError("duplicate recipient email")
-        return value
+    def checked_members(cls, value: list[MemberSpec]) -> list[MemberSpec]:
+        return unique_members(value)
 
 
 class GroupPatch(Input):
     name: str | None = Field(default=None, max_length=200)
     enabled: StrictBool | None = None
-    members: list[MemberSpec] | None = None
+    members: list[MemberSpec] | None = Field(default=None, max_length=500)
+
+    @field_validator("name")
+    @classmethod
+    def trimmed_name(cls, value: str | None) -> str | None:
+        if value is None:
+            return None
+        value = value.strip()
+        if not value:
+            raise ValueError("name must not be blank")
+        return value
+
+    @field_validator("members")
+    @classmethod
+    def checked_members(cls, value: list[MemberSpec] | None) -> list[MemberSpec] | None:
+        return None if value is None else unique_members(value)
 
 
 class Availability(Input):
@@ -344,7 +372,6 @@ class MonitorView(BaseModel):
     health_status: str
     notification_group_ids: list[str]
     email_template_id: UUID | None = None
-    email_template_name: str | None = None
     next_run_at: datetime
     last_success_at: datetime | None
     last_failure_at: datetime | None
@@ -400,6 +427,8 @@ class EventView(BaseModel):
     change: dict[str, Any]
     created_at: datetime
     acknowledged_at: datetime | None
+    # Why no mail was generated for this event; NULL means it was routed normally.
+    notifications_skipped: str | None = None
 
 
 class Group(BaseModel):
@@ -407,6 +436,7 @@ class Group(BaseModel):
     name: str
     enabled: bool
     members: list[MemberSpec]
+    member_count: int = 0
     created_at: datetime
     updated_at: datetime
 

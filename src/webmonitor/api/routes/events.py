@@ -17,18 +17,23 @@ def _view(event: Event, monitor_name: str) -> EventView:
     return EventView(id=event.id, monitor_id=event.monitor_id, monitor_name=monitor_name,
         job_id=event.job_id, snapshot_id=event.snapshot_id, type=event.type,
         change=event.change or {}, created_at=event.created_at,
-        acknowledged_at=event.acknowledged_at)
+        acknowledged_at=event.acknowledged_at,
+        notifications_skipped=(event.payload or {}).get("skipped"))
 
 
 @router.get("", response_model=Page[EventView])
 async def list_events(session: DatabaseSession, user: AuthenticatedUser,
                       limit: int = Query(50, ge=1, le=100), offset: int = Query(0, ge=0),
-                      monitor_id: UUID | None = None, event_type: EventType | None = None):
+                      monitor_id: UUID | None = None, event_type: EventType | None = None,
+                      acknowledged: bool | None = None):
     query = select(Event)
     if monitor_id is not None:
         query = query.where(Event.monitor_id == monitor_id)
     if event_type is not None:
         query = query.where(Event.type == event_type)
+    if acknowledged is not None:
+        query = query.where(Event.acknowledged_at.is_not(None) if acknowledged
+                            else Event.acknowledged_at.is_(None))
     if user.role != "admin":
         query = query.join(Monitor, Monitor.id == Event.monitor_id).where(
             Monitor.user_id == user.user_id)
@@ -48,11 +53,13 @@ async def acknowledge(event_id: UUID, session: DatabaseSession, user: Authentica
     if event is None:
         raise DomainError("not_found", 404)
     monitor = await session.get(Monitor, event.monitor_id)
-    if monitor is not None and monitor.user_id != user.user_id and user.role != "admin":
-        raise DomainError("forbidden", 403)
+    if monitor is None:
+        raise DomainError("not_found", 404)
+    if monitor.user_id != user.user_id and user.role != "admin":
+        raise DomainError("not_found", 404)
     if event.acknowledged_at is None:
         event.acknowledged_at = utc_now()
         event.acknowledged_by_user_id = user.user_id
-    result = _view(event, monitor.name if monitor is not None else "")
+    result = _view(event, monitor.name)
     await session.commit()
     return result

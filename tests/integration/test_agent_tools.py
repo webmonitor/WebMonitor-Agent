@@ -165,3 +165,42 @@ async def test_hourly_run_cap_blocks_a_new_message(session, monkeypatch):
     assert raised.value.code == "rate_limited"
     assert raised.value.details["limit"] == 1
     assert raised.value.details["retry_after"] >= 1
+
+
+@pytest.mark.asyncio
+async def test_preview_tool_returns_the_evidence_the_model_must_describe(session, monkeypatch):
+    from support import build_spec, collect, collection_result
+    from webmonitor.agent.tools import preview_monitor
+    from webmonitor.services import drafts
+
+    user, job = await running_agent_job(session)
+    runtime = _runtime(user, job)
+    draft = await drafts.save_spec(session, runtime.user, conversation_id=job.conversation_id,
+                                   spec=build_spec())
+    await session.commit()
+    runtime.update_draft(draft)
+    await collect(session, user, draft, collection_result(build_spec()))
+    await session.commit()
+
+    finished = await jobs.enqueue(session, user_id=user.id, kind="preview",
+        draft_id=draft.id, revision=draft.spec_revision)
+    await jobs.finish(session, finished, "succeeded", result={})
+    await session.commit()
+
+    async def existing(session_, user_, draft_id):
+        return finished
+
+    monkeypatch.setattr(drafts, "start_preview", existing)
+    arguments = json.dumps({"draft_id": str(draft.id), "spec_revision": draft.spec_revision})
+    context = ToolContext(context=runtime, tool_name="preview_monitor",
+                          tool_call_id="preview", tool_arguments=arguments)
+    response = await preview_monitor.on_invoke_tool(context, arguments)
+    if isinstance(response, str):
+        response = json.loads(response)
+    assert "error" not in response, response
+    assert response["spec_revision"] == draft.spec_revision
+    assert "rule_simulation" in response and response["rule_simulation"]["rule_state"]
+    assert response["final_url"] == draft.spec["url"]
+    assert response["coverage"]["scope"] == "full"
+    assert isinstance(response["evidence_refs"], list)
+    assert response["expires_at"]

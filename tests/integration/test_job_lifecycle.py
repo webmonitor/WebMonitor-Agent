@@ -3,6 +3,7 @@ from uuid import uuid4
 
 import pytest
 
+from webmonitor.errors import DomainError
 from webmonitor.models import Conversation, Draft, Job, User
 from webmonitor.services import jobs
 
@@ -124,3 +125,27 @@ async def test_wait_surfaces_job_failure(session):
     with pytest.raises(DomainError) as raised:
         await jobs.wait(job.id, timeout=1)
     assert raised.value.code == "target_unavailable"
+
+
+@pytest.mark.asyncio
+async def test_an_enqueue_that_loses_the_unique_index_reports_a_conflict(session):
+    user = await seed(session)
+    monitor_id = uuid4()
+    await jobs.enqueue(session, user_id=user.id, kind="production", monitor_id=monitor_id)
+    await session.commit()
+    with pytest.raises(DomainError) as conflict:
+        await jobs.enqueue(session, user_id=user.id, kind="production", monitor_id=monitor_id)
+    assert conflict.value.code == "job_conflict"
+
+
+@pytest.mark.asyncio
+async def test_hourly_quota_counts_the_users_own_recent_jobs(session):
+    user = await seed(session)
+    for _ in range(3):
+        await jobs.enqueue(session, user_id=user.id, kind="preview")
+    await session.commit()
+    await jobs.enforce_hourly_quota(session, user_id=user.id, kind="preview", limit=5)
+    with pytest.raises(DomainError) as blocked:
+        await jobs.enforce_hourly_quota(session, user_id=user.id, kind="preview", limit=3)
+    assert blocked.value.code == "rate_limited"
+    assert blocked.value.details["limit"] == 3

@@ -4,6 +4,7 @@
 sends one concrete request and summarizes the JSON it returns. Neither writes
 database rows or evidence.
 """
+import asyncio
 import json
 from typing import Any
 
@@ -17,6 +18,8 @@ from webmonitor.errors import DomainError
 from webmonitor.schemas.monitors import ApiRequest, canonical_json
 
 MAX_JSON_BYTES = 5 * 1024 * 1024
+# A probe is one page plus parsing; a hung target must not hold the agent turn.
+TOTAL_TIMEOUT_SECONDS = 30
 PROBE_ACCEPT = 'text/html,application/xhtml+xml,application/json;q=0.9,*/*;q=0.5'
 REPLAY_ACCEPT = 'application/json,text/html;q=0.8'
 TEXT_SAMPLE = 2000
@@ -47,6 +50,14 @@ def _json_payload(body: bytes) -> tuple[dict | None, str | None]:
 
 async def probe(url: str, *, transport: httpx.AsyncBaseTransport | None = None) -> dict:
     """One bounded fetch; the result is already bounded and safe to hand to a model."""
+    try:
+        async with asyncio.timeout(TOTAL_TIMEOUT_SECONDS):
+            return await _probe(url, transport=transport)
+    except TimeoutError:
+        raise DomainError('collection_timeout', 503) from None
+
+
+async def _probe(url: str, *, transport: httpx.AsyncBaseTransport | None) -> dict:
     fetched = await fetch_bounded(url, accept=PROBE_ACCEPT, max_bytes=MAX_HTML_BYTES,
                                   transport=transport)
     media_type = content_type_base(fetched.headers)
@@ -81,6 +92,15 @@ async def probe(url: str, *, transport: httpx.AsyncBaseTransport | None = None) 
 async def replay(request: ApiRequest, *,
                  transport: httpx.AsyncBaseTransport | None = None) -> dict:
     """Send one request; a non-200 status is returned so the agent can assert on it."""
+    try:
+        async with asyncio.timeout(TOTAL_TIMEOUT_SECONDS):
+            return await _replay(request, transport=transport)
+    except TimeoutError:
+        raise DomainError('collection_timeout', 503) from None
+
+
+async def _replay(request: ApiRequest, *,
+                  transport: httpx.AsyncBaseTransport | None) -> dict:
     if '{{' in request.url:
         raise DomainError('validation_failed', 422, details={'field': 'url'})
     headers = dict(request.headers)

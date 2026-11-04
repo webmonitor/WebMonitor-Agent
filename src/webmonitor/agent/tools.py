@@ -14,7 +14,7 @@ from webmonitor.agent.runtime import RuntimeContext, current_draft
 from webmonitor.collection.probe import probe, replay
 from webmonitor.db import get_session_factory
 from webmonitor.errors import DomainError
-from webmonitor.models import Draft, Job, utc_now
+from webmonitor.models import Job, utc_now
 from webmonitor.schemas.delivery import DeliverySettings
 from webmonitor.schemas.monitors import ApiRequest, MonitorSpec
 from webmonitor.services import conversations, drafts, jobs
@@ -225,15 +225,29 @@ async def save_monitor_draft(ctx: ToolContext[RuntimeContext], spec: MonitorSpec
             job = await _check(session, ctx, lock=True)
             runtime = ctx.context
             current = await current_draft(session, job.conversation_id, lock=True)
-            if ((current.id if current is not None else None) != runtime.draft_id
-                    or (current is not None and current.spec_revision != runtime.spec_revision)):
-                raise DomainError("stale_revision", 409)
             if draft_id is not None and UUID(draft_id) != runtime.draft_id:
                 raise DomainError("not_found", 404)
+            if current is None:
+                if runtime.draft_id is not None:
+                    # The run's context names a draft that no longer exists.
+                    raise DomainError("stale_revision", 409)
+                target = None
+            elif current.status == "draft":
+                if current.id != runtime.draft_id or \
+                        current.spec_revision != runtime.spec_revision:
+                    raise DomainError("stale_revision", 409)
+                target = current
+            else:
+                # The conversation's last draft was published; this is a new proposal
+                # for the same monitor, so approval updates it instead of adding one.
+                target = None
             async with session.begin_nested():
                 draft = await drafts.save_spec(session, runtime.user,
                     conversation_id=job.conversation_id, spec=parsed,
-                    draft_id=runtime.draft_id, expected_revision=runtime.spec_revision)
+                    draft_id=target.id if target is not None else None,
+                    expected_revision=target.spec_revision if target is not None else None,
+                    monitor_id=target.monitor_id if target is not None else (
+                        current.monitor_id if current is not None else runtime.monitor_id))
             await session.commit()
             runtime.update_draft(draft)
             return {"draft_id": str(draft.id), "spec_revision": draft.spec_revision,
@@ -258,11 +272,9 @@ async def preview_monitor(ctx: ToolContext[RuntimeContext], draft_id: str,
         await jobs.wait(preview_job.id, timeout=timeout, cancel_on_timeout=True)
         async with get_session_factory()() as session:
             await _check(session, ctx, lock=True)
-            draft = await session.scalar(select(Draft).where(Draft.id == UUID(draft_id))
-                .execution_options(populate_existing=True))
-            if draft is None or draft.extraction_preview is None:
-                raise DomainError("preview_not_ready", 409)
-            preview = draft.extraction_preview
+            draft = await drafts.require_draft(session, ctx.context.user, UUID(draft_id),
+                                              lock=True)
+            preview = drafts.validate_extraction_preview(draft)
             field_json = json.dumps(preview.get("extracted_data") or {},
                                     ensure_ascii=False).encode("utf-8")
             truncated = len(field_json) > 8192
@@ -272,6 +284,12 @@ async def preview_monitor(ctx: ToolContext[RuntimeContext], draft_id: str,
                                                 if truncated else None),
                     "fields_truncated": truncated,
                     "coverage": preview.get("coverage"),
+                    "final_url": preview.get("final_url"),
+                    "evidence_refs": [{"kind": item.get("kind"),
+                                       "sha256": item.get("sha256"),
+                                       "size_bytes": item.get("size_bytes")}
+                                      for item in preview.get("evidence_refs") or []],
+                    "rule_simulation": preview.get("rule_simulation") or {},
                     "expires_at": preview.get("expires_at"),
                     "warnings": preview.get("warnings") or []}
     return await _observed(ctx, operation)

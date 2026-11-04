@@ -52,6 +52,11 @@ def extract_json_field(body: Any, field: FieldSpec, final_url: str, path: str):
         if field.required:
             invalid(path, 'required_missing')
         return MISSING
+    if value is None:
+        # JSON null is a present-but-empty value, exactly as it is for scalars.
+        if field.required:
+            invalid(path, 'invalid_null')
+        return MISSING
     if field.type != 'list':
         return normalize_json_scalar(value, field, final_url, path)
     if not isinstance(value, list):

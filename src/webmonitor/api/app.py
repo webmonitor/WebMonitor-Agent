@@ -23,6 +23,7 @@ from webmonitor.config import get_settings
 from webmonitor.db import database_ready, get_engine, initialize_database
 from webmonitor.errors import DomainError, domain_error_handler
 from webmonitor.security.csrf import CSRFMiddleware
+from webmonitor.security.limits import MaxBodyMiddleware, RequestTooLarge
 
 logger = logging.getLogger(__name__)
 
@@ -36,6 +37,14 @@ async def lifespan(app: FastAPI):
     if get_settings().workers_enabled:
         from webmonitor.worker import run_worker
         task = asyncio.create_task(run_worker())
+        app.state.worker_task = task
+
+        def report(done: asyncio.Task) -> None:
+            # A dead worker means nothing is collected or mailed; say so loudly.
+            if not done.cancelled() and done.exception() is not None:
+                logger.critical("Background worker stopped", exc_info=done.exception())
+
+        task.add_done_callback(report)
     try:
         yield
     finally:
@@ -49,13 +58,28 @@ async def lifespan(app: FastAPI):
 
 
 def create_app() -> FastAPI:
+    settings = get_settings()
     app = FastAPI(title="WebMonitor", version="0.2.0", lifespan=lifespan,
-                  openapi_url="/api/v1/openapi.json", docs_url=None, redoc_url=None)
+                  openapi_url="/api/v1/openapi.json" if settings.development_mode else None,
+                  docs_url=None, redoc_url=None)
     app.add_exception_handler(DomainError, domain_error_handler)
     app.add_middleware(CSRFMiddleware)
+    # Outermost, so an oversized body is refused before CSRF and routing see it.
+    app.add_middleware(MaxBodyMiddleware)
     for module in (auth, members, conversations, monitors, events, notifications, templates,
                    evidence):
         app.include_router(module.router)
+
+    @app.middleware("http")
+    async def private_api(request: Request, call_next):
+        response = await call_next(request)
+        if request.url.path.startswith("/api/v1"):
+            response.headers.setdefault("Cache-Control", "no-store")
+        return response
+
+    @app.exception_handler(RequestTooLarge)
+    async def too_large(request: Request, exc: RequestTooLarge):
+        return await domain_error_handler(request, DomainError("request_too_large", 413))
 
     @app.exception_handler(OperationalError)
     async def database_error(request: Request, exc: OperationalError):
@@ -89,6 +113,9 @@ def create_app() -> FastAPI:
     async def ready():
         if not await database_ready():
             raise DomainError("not_ready", 503, "Database is unavailable or uninitialized")
+        worker = getattr(app.state, "worker_task", None)
+        if get_settings().workers_enabled and worker is not None and worker.done():
+            raise DomainError("worker_unavailable", 503, "Background worker stopped")
         return {"status": "ready"}
 
     return app

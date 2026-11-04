@@ -223,7 +223,6 @@ class Monitor(UUIDPrimaryKey, Created, Updated, Base):
     notification_group_ids: Mapped[list[str]] = mapped_column(JSONB, default=list, server_default="[]")
     email_template_id: Mapped[UUID | None] = mapped_column(
         ForeignKey("email_templates.id", ondelete="SET NULL"), index=True)
-    email_template_name: Mapped[str | None] = mapped_column(String(200))
     # Frozen EmailTemplateConfig at approval; NULL means the packaged default template.
     email_template: Mapped[dict[str, Any] | None] = mapped_column(JSONB)
     approved_recipients: Mapped[list[dict[str, Any]]] = mapped_column(JSONB)
@@ -308,6 +307,7 @@ class EmailDelivery(UUIDPrimaryKey, Created, Base):
     __tablename__ = "email_deliveries"
     __table_args__ = (
         CheckConstraint("status IN ('queued', 'sending', 'retrying', 'sent', 'failed', 'cancelled')", name="status"),
+        UniqueConstraint("event_id", "recipient"),
         Index("ix_email_deliveries_created", "created_at"),
         Index("ix_email_deliveries_event", "event_id"),
     )

@@ -18,6 +18,8 @@ _CURRENCY_SYMBOLS = {
     '€': frozenset(('EUR',)), '£': frozenset(('GBP',)),
     '¥': frozenset(('JPY', 'CNY')), '₹': frozenset(('INR',)),
     '₩': frozenset(('KRW',)), '₽': frozenset(('RUB',)),
+    'US$': frozenset(('USD',)), 'R$': frozenset(('BRL',)),
+    'A$': frozenset(('AUD',)), 'C$': frozenset(('CAD',)),
 }
 MISSING = object()
 
@@ -61,7 +63,7 @@ def _money(value: str, field: FieldSpec, path: str) -> dict:
     currency = field.normalize.currency
     # A currency marker is optional for numeric attributes; if visible it must
     # agree, not be discarded as generic nonnumeric decoration.
-    marker = re.match(r'^([A-Za-z]{3}|[^0-9+\-.,\s])\s*', value)
+    marker = re.match(r'^([A-Za-z]{1,3}\$|[A-Za-z]{3}|[^\d+\-.,\s])\s*', value)
     suffix = re.search(r'\s*([A-Za-z]{3}|[^0-9.,\s])$', value)
     if marker:
         token = marker.group(1)

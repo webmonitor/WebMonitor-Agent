@@ -294,14 +294,14 @@ async def test_template_snapshot_survives_template_deletion(session):
     await session.commit()
     assert monitor.email_template is not None
     snapshot = dict(monitor.email_template)
-    assert monitor.email_template_name == template.name
+    assert snapshot["name"] == template.name
     assert snapshot["config"]["subject"] == "{monitor_name} 公告提醒"
 
     await templates.disable_template(session, current, template.id)
     await session.commit()
     stored = await session.get(Monitor, monitor.id)
     assert stored.email_template == snapshot
-    assert stored.email_template_name == template.name
+    assert stored.email_template["name"] == template.name
 
 
 @pytest.mark.asyncio

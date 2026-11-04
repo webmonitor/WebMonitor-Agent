@@ -111,9 +111,9 @@ def _unreadable(proposal: Proposal) -> list[str]:
     """A design nobody can read is not a design."""
     style = proposal.config.style
     problems = []
-    if _contrast(style.text, style.surface) < 3:
+    if _contrast(style.text, style.surface) < 4.5:
         problems.append("style.text has too little contrast on style.surface")
-    if _contrast(style.muted, style.surface) < 2:
+    if _contrast(style.muted, style.surface) < 3:
         problems.append("style.muted has too little contrast on style.surface")
     if _contrast(style.accent, style.surface) < 2:
         problems.append("style.accent has too little contrast on style.surface")

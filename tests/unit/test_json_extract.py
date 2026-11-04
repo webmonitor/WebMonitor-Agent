@@ -120,3 +120,14 @@ def test_unknown_json_path_is_reported_as_missing():
              'required_missing')
     assert extract_json_field({'data': {}}, field('text', path='data.missing', required=False),
                               'https://e.com/', 'value') is MISSING
+
+
+def test_null_list_is_invalid_when_required_and_absent_otherwise():
+    required = field('list', name='items', path='data.list', item_fields=[
+        {'name': 'id', 'type': 'text', 'semantic': 'ID', 'path': 'id'}])
+    rejected(lambda: extract_json_field({'data': {'list': None}}, required,
+                                        'https://e.com/', 'items'), 'invalid_null')
+    optional = field('list', name='items', path='data.list', required=False, item_fields=[
+        {'name': 'id', 'type': 'text', 'semantic': 'ID', 'path': 'id'}])
+    assert extract_json_field({'data': {'list': None}}, optional,
+                              'https://e.com/', 'items') is MISSING

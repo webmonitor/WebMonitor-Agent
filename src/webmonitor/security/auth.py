@@ -30,5 +30,6 @@ def require_owner(user: CurrentUser, resource: Owned | None) -> Owned:
     if resource is None:
         raise DomainError("not_found", 404)
     if resource.user_id != user.user_id and not is_admin(user):
-        raise DomainError("forbidden", 403)
+        # A member cannot tell an existing foreign row from a missing one.
+        raise DomainError("not_found", 404)
     return resource

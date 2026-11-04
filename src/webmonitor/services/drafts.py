@@ -96,13 +96,15 @@ def delivery_hash(payload: dict) -> str:
 # ---- writing each section ---------------------------------------------------
 
 async def _open_draft(session: AsyncSession, user: CurrentUser, *, conversation_id: UUID,
-                      draft_id: UUID | None) -> Draft:
+                      draft_id: UUID | None, monitor_id: UUID | None = None) -> Draft:
     conversation = await session.scalar(select(Conversation).where(
         Conversation.id == conversation_id).with_for_update()
         .execution_options(populate_existing=True))
     require_owner(user, conversation)
     if draft_id is None:
-        draft = Draft(user_id=user.user_id, conversation_id=conversation.id, status="draft")
+        # A draft derived from an existing monitor keeps pointing at it.
+        draft = Draft(user_id=user.user_id, conversation_id=conversation.id, status="draft",
+                      monitor_id=monitor_id)
         session.add(draft)
         await session.flush()
         return draft
@@ -116,10 +118,12 @@ async def _open_draft(session: AsyncSession, user: CurrentUser, *, conversation_
 
 async def save_spec(session: AsyncSession, user: CurrentUser, *, conversation_id: UUID,
                     spec: MonitorSpec, draft_id: UUID | None = None,
-                    expected_revision: int | None = None) -> Draft:
+                    expected_revision: int | None = None,
+                    monitor_id: UUID | None = None) -> Draft:
     """Replace the collection contract; delivery settings are never touched."""
     spec = MonitorSpec.model_validate(spec)
-    draft = await _open_draft(session, user, conversation_id=conversation_id, draft_id=draft_id)
+    draft = await _open_draft(session, user, conversation_id=conversation_id, draft_id=draft_id,
+                              monitor_id=monitor_id)
     if expected_revision is not None and expected_revision != draft.spec_revision:
         raise DomainError("stale_revision", 409)
     draft.spec_revision += 1
@@ -172,6 +176,10 @@ async def save_settings(session: AsyncSession, user: CurrentUser, *, draft_id: U
 async def apply_update(session: AsyncSession, user: CurrentUser, draft_id: UUID,
                        payload: DraftUpdate) -> Draft:
     """Apply the sections the caller supplied, each behind its own revision."""
+    # Lock order matches publication: conversation first, then the draft.
+    current = await require_draft(session, user, draft_id)
+    await session.execute(select(Conversation.id).where(
+        Conversation.id == current.conversation_id).with_for_update())
     draft = await require_draft(session, user, draft_id, lock=True)
     if draft.status != "draft":
         raise DomainError("draft_not_editable", 409)
@@ -215,6 +223,8 @@ async def draft_from_monitor(session: AsyncSession, user: CurrentUser,
 
 async def start_preview(session: AsyncSession, user: CurrentUser, draft_id: UUID) -> Job:
     draft = await require_draft(session, user, draft_id, lock=True)
+    if draft.status != "draft":
+        raise DomainError("draft_not_editable", 409)
     spec = _spec(draft)
     validate_url(spec.url)
     existing = await session.scalar(select(Job).where(Job.draft_id == draft.id,
@@ -222,6 +232,8 @@ async def start_preview(session: AsyncSession, user: CurrentUser, draft_id: UUID
         Job.status.in_(("queued", "running"))))
     if existing is not None:
         return existing
+    await jobs.enforce_hourly_quota(session, user_id=draft.user_id, kind="preview",
+                                    limit=get_settings().preview_runs_per_hour)
     return await jobs.enqueue(session, user_id=draft.user_id, kind="preview",
         draft_id=draft.id, revision=draft.spec_revision, url=spec.url,
         spec=spec.model_dump(mode="json"), conversation_id=draft.conversation_id)
@@ -460,16 +472,18 @@ async def publish_draft(session: AsyncSession, user: CurrentUser, *, conversatio
     validate_url(spec.url)
     validate_extraction_preview(draft)
     delivery = await validate_delivery_preview(session, draft)
-    template_id, template_name, snapshot = await _template_snapshot(session, settings, spec)
+    template_id, snapshot = await _template_snapshot(session, settings, spec)
     if monitor is not None and _contract(monitor.spec or {}) == _contract(
             spec.model_dump(mode="json")):
-        _apply_settings(monitor, spec, settings, schedule, template_id, template_name,
-                        snapshot)
+        _apply_settings(monitor, spec, settings, schedule, template_id, snapshot,
+                        delivery["recipient_sources"])
         draft.published_spec_version = None
     elif monitor is not None:
+        # In-flight collection belongs to the contract being replaced.
+        await jobs.cancel_pending(session, monitor_id=monitor.id)
         _apply_contract(monitor, spec, draft.spec_hash)
-        _apply_settings(monitor, spec, settings, schedule, template_id, template_name,
-                        snapshot)
+        _apply_settings(monitor, spec, settings, schedule, template_id, snapshot,
+                        delivery["recipient_sources"])
         draft.published_spec_version = monitor.spec_version
     else:
         await _enforce_quota(session, draft.user_id)
@@ -479,8 +493,7 @@ async def publish_draft(session: AsyncSession, user: CurrentUser, *, conversatio
             interval_seconds=schedule.interval_seconds,
             timezone=schedule.timezone,
             notification_group_ids=[str(item) for item in settings.notification_group_ids],
-            email_template_id=template_id, email_template_name=template_name,
-            email_template=snapshot,
+            email_template_id=template_id, email_template=snapshot,
             approved_recipients=delivery["recipient_sources"],
             baseline_status="pending_first_success", rule_state={}, next_run_at=utc_now())
         session.add(monitor)
@@ -508,15 +521,16 @@ def _apply_contract(monitor: Monitor, spec: MonitorSpec, spec_hash: str | None) 
 
 def _apply_settings(monitor: Monitor, spec: MonitorSpec, settings: DeliverySettings,
                     schedule: Schedule, template_id: UUID | None,
-                    template_name: str | None, snapshot: dict | None) -> None:
+                    snapshot: dict | None, approved_recipients: list[dict]) -> None:
     """Who is told, how often and in which design; the baseline is untouched."""
     interval = schedule.interval_seconds
     monitor.interval_seconds = interval
     monitor.timezone = schedule.timezone
     monitor.notification_group_ids = [str(item) for item in settings.notification_group_ids]
     monitor.email_template_id = template_id
-    monitor.email_template_name = template_name
     monitor.email_template = snapshot
+    # The approved snapshot follows the publication the user confirmed.
+    monitor.approved_recipients = approved_recipients
     if monitor.name != spec.name:
         # The name lives in the contract; keep the stored one consistent.
         monitor.name = spec.name
@@ -527,19 +541,20 @@ def _apply_settings(monitor: Monitor, spec: MonitorSpec, settings: DeliverySetti
 
 
 async def _template_snapshot(session: AsyncSession, settings: DeliverySettings,
-                             spec: MonitorSpec) -> tuple[UUID | None, str | None, dict | None]:
+                             spec: MonitorSpec) -> tuple[UUID | None, dict | None]:
     if settings.email_template_id is None:
-        return None, None, None
+        return None, None
     template_id, config, name = await _resolve_template(session, settings.email_template_id, spec)
-    return template_id, name, {"id": str(template_id), "name": name,
-                               "config": config.model_dump(mode="json")}
+    return template_id, {"id": str(template_id), "name": name,
+                         "config": config.model_dump(mode="json")}
 
 
 async def _enforce_quota(session: AsyncSession, user_id: UUID) -> None:
     settings = get_settings()
     await session.execute(select(User.id).where(User.id == user_id).with_for_update())
     active = await session.scalar(select(func.count()).select_from(Monitor).where(
-        Monitor.user_id == user_id, Monitor.status == "active"))
+        Monitor.user_id == user_id, Monitor.status == "active",
+        Monitor.archived_at.is_(None)))
     if (active or 0) >= settings.max_active_monitors:
         raise DomainError("quota_exceeded", 409)
 

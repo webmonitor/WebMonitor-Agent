@@ -1,5 +1,6 @@
 """Structured templates render data, never code; packaged mail keeps working."""
 import pytest
+from pydantic import ValidationError
 
 from webmonitor.errors import DomainError
 from webmonitor.notifications.custom import preview_template, render_custom_email, sample_payload
@@ -231,3 +232,43 @@ def test_unknown_event_type_is_rejected():
     with pytest.raises(DomainError) as raised:
         render_email("something_else", sample_payload())
     assert raised.value.code == "template_unavailable"
+
+
+def test_a_design_without_blocks_is_rejected():
+    with pytest.raises(ValidationError):
+        EmailTemplateConfig.model_validate({"subject": "Alert", "blocks": []})
+
+
+def test_an_all_fields_block_cannot_list_an_unbounded_number_of_fields():
+    too_many = [f"field_{index}" for index in range(65)]
+    with pytest.raises(ValidationError):
+        EmailTemplateConfig.model_validate({"subject": "Alert",
+            "blocks": [{"type": "all_fields", "fields": too_many}]})
+
+
+def test_a_field_name_must_stay_a_name():
+    with pytest.raises(ValidationError):
+        EmailTemplateConfig.model_validate({"subject": "Alert",
+            "blocks": [{"type": "all_fields", "fields": ["x" * 65]}]})
+    with pytest.raises(ValidationError):
+        EmailTemplateConfig.model_validate({"subject": "Alert",
+            "blocks": [{"type": "all_fields", "fields": [""]}]})
+
+
+def test_a_low_contrast_design_is_rejected():
+    """Body text below 4.5:1 and muted text below 3:1 cannot be read."""
+    from webmonitor.agent.template_draft import Proposal, _unreadable
+
+    dim = EmailTemplateConfig.model_validate({"subject": "Alert",
+        "blocks": [{"type": "summary"}],
+        "style": {"text": "#9a948a", "surface": "#fffdf8"}})
+    assert _unreadable(Proposal(name="Dim", config=dim))
+
+    muted = EmailTemplateConfig.model_validate({"subject": "Alert",
+        "blocks": [{"type": "summary"}],
+        "style": {"muted": "#c9c2b4", "surface": "#fffdf8"}})
+    assert _unreadable(Proposal(name="Faint", config=muted))
+
+    readable = EmailTemplateConfig.model_validate({"subject": "Alert",
+        "blocks": [{"type": "summary"}]})
+    assert _unreadable(Proposal(name="Default", config=readable)) == []

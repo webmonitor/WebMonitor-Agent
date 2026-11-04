@@ -195,6 +195,10 @@ async def _finish(job_id: UUID, worker_id: str, *, error: str | None = None,
             if reason:
                 message += f" ({reason})"
             await jobs.finish(session, job, "failed", error_code=error, error_message=message)
+        elif job.cancel_requested_at is not None:
+            # The user stopped the run while the last turn was finishing.
+            job.partial_text = ""
+            await jobs.finish(session, job, "cancelled", error_code="run_cancelled")
         else:
             await jobs.finish(session, job, "succeeded", result=result)
         await session.commit()
@@ -206,13 +210,25 @@ async def _cancellation_requested(job_id: UUID) -> bool:
         return job is not None and job.cancel_requested_at is not None
 
 
-async def _history(conversation_id: UUID, limit: int) -> list[dict]:
+async def _history(conversation_id: UUID, limit: int, max_chars: int) -> list[dict]:
+    """Newest messages first, bounded by both count and characters."""
     async with get_session_factory()() as session:
         rows = (await session.scalars(select(Message).where(
             Message.conversation_id == conversation_id,
             Message.role.in_(("user", "assistant")))
             .order_by(Message.created_at.desc(), Message.id.desc()).limit(limit))).all()
-    return [{"role": row.role, "content": row.content} for row in reversed(rows)]
+    kept: list[dict] = []
+    used = 0
+    for row in rows:
+        content = row.content
+        if not kept:
+            # The newest message is what the user just asked; never drop it whole.
+            content = content[:max_chars]
+        elif used + len(content) > max_chars:
+            break
+        kept.append({"role": row.role, "content": content})
+        used += len(content)
+    return list(reversed(kept))
 
 
 TITLE_TIMEOUT_SECONDS = 20.0
@@ -360,7 +376,8 @@ async def execute_job(job_id: UUID, worker_id: str) -> None:
         runtime = await _context(job_id, worker_id)
         # A retried attempt builds a fresh context, so the budget always restarts here.
         runtime.deadline = asyncio.get_running_loop().time() + settings.agent_timeout_seconds
-        history = await _history(runtime.conversation_id, settings.agent_history_messages)
+        history = await _history(runtime.conversation_id, settings.agent_history_messages,
+                                 settings.agent_history_chars)
         if not history:
             raise DomainError("conversation_empty", 409)
         if not settings.openai_api_key.get_secret_value() or not settings.openai_model:

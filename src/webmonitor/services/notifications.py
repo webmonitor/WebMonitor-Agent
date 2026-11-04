@@ -1,5 +1,6 @@
 """Notification groups, recipient resolution and leased email delivery."""
 from datetime import timedelta
+from email.utils import parseaddr
 from typing import Any
 from uuid import UUID, uuid4
 
@@ -22,22 +23,25 @@ from webmonitor.schemas.templates import EmailTemplateConfig
 from webmonitor.security.auth import CurrentUser, require_admin
 from webmonitor.services.jobs import LEASE_SECONDS
 
-MAX_ATTEMPTS = 3
 
-
-def group_view(group: NotificationGroup) -> Group:
+def group_view(group: NotificationGroup, *, include_members: bool = True) -> Group:
+    """Members are an administrator secret; everyone else sees how many are active."""
+    active = [item for item in group.members or [] if item.get("active", True)]
     return Group(id=group.id, name=group.name, enabled=group.enabled,
         members=[MemberSpec(email=item["email"], active=item.get("active", True))
-                 for item in group.members or []],
+                 for item in group.members or []] if include_members else [],
+        member_count=len(active),
         created_at=group.created_at, updated_at=group.updated_at)
 
 
-async def list_groups(session: AsyncSession, limit: int, offset: int) -> Page[Group]:
+async def list_groups(session: AsyncSession, limit: int, offset: int, *,
+                      include_members: bool = True) -> Page[Group]:
     query = select(NotificationGroup).where(NotificationGroup.deleted_at.is_(None))
     rows = (await session.scalars(query.order_by(NotificationGroup.name)
         .limit(limit).offset(offset))).all()
     total = await session.scalar(select(func.count()).select_from(query.subquery()))
-    return Page[Group](items=[group_view(row) for row in rows], total=total or 0)
+    return Page[Group](items=[group_view(row, include_members=include_members) for row in rows],
+                       total=total or 0)
 
 
 async def get_group(session: AsyncSession, group_id: UUID, *, lock: bool = False) -> NotificationGroup:
@@ -55,6 +59,21 @@ def _members(members: list[MemberSpec]) -> list[dict[str, Any]]:
     return [{"email": str(member.email), "active": member.active} for member in members]
 
 
+async def _referencing_monitors(session: AsyncSession, group_id: UUID) -> list[UUID]:
+    """Archived monitors keep their settings but never block a group deletion."""
+    rows = await session.scalars(select(Monitor.id).where(
+        Monitor.archived_at.is_(None),
+        Monitor.notification_group_ids.contains([str(group_id)])))
+    return list(rows.all())
+
+
+async def _require_unreferenced(session: AsyncSession, group_id: UUID) -> None:
+    monitors = await _referencing_monitors(session, group_id)
+    if monitors:
+        raise DomainError("group_in_use", 409,
+                          details={"monitor_ids": [str(item) for item in monitors]})
+
+
 async def write_group(session: AsyncSession, user: CurrentUser, body, *,
                       group_id: UUID | None = None) -> NotificationGroup:
     require_admin(user)
@@ -67,8 +86,11 @@ async def write_group(session: AsyncSession, user: CurrentUser, body, *,
                 await session.flush()
             else:
                 group = await get_group(session, group_id, lock=True)
-                group.name = (body.name or group.name).strip()
+                if body.name is not None:
+                    group.name = body.name
                 if getattr(body, "enabled", None) is not None:
+                    if not body.enabled:
+                        await _require_unreferenced(session, group.id)
                     group.enabled = body.enabled
                 if getattr(body, "members", None) is not None:
                     group.members = _members(body.members)
@@ -83,6 +105,7 @@ async def write_group(session: AsyncSession, user: CurrentUser, body, *,
 async def disable_group(session: AsyncSession, user: CurrentUser, group_id: UUID) -> NotificationGroup:
     require_admin(user)
     group = await get_group(session, group_id, lock=True)
+    await _require_unreferenced(session, group.id)
     group.enabled = False
     group.deleted_at = utc_now()
     group.members = []
@@ -170,6 +193,7 @@ async def enqueue_event_deliveries(session: AsyncSession, monitor: Monitor, even
         # is still the valid record of what the monitor was approved with.
         raise DomainError("template_unavailable", 409) from None
     rendered = render_email(event.type, payload, template)
+    domain = parseaddr(get_settings().mail_from)[1].split("@")[-1] or "webmonitor.local"
     for recipient in recipients:
         delivery_id = uuid4()
         session.add(EmailDelivery(id=delivery_id, user_id=monitor.user_id,
@@ -177,7 +201,7 @@ async def enqueue_event_deliveries(session: AsyncSession, monitor: Monitor, even
             subject=rendered["subject"], html=rendered["html"], body_text=rendered["text"],
             payload={**payload, "recipient_sources": recipient["group_ids"]},
             status="queued", attempt_count=0,
-            available_at=event.created_at, message_id=f"<{delivery_id}@webmonitor.local>"))
+            available_at=event.created_at, message_id=f"<{delivery_id}@{domain}>"))
     await session.flush()
 
 
@@ -192,6 +216,14 @@ async def claim_delivery(session: AsyncSession, worker_id: str) -> EmailDelivery
         .with_for_update(skip_locked=True).limit(1).execution_options(populate_existing=True))
     if delivery is None:
         return None
+    if delivery.attempt_count >= get_settings().max_attempts:
+        # Attempts ran out before anyone could try again; stop rescheduling it.
+        delivery.status, delivery.failed_at = "failed", now
+        delivery.error_code = "delivery_attempts_exhausted"
+        delivery.error_message = "Delivery attempts exhausted"
+        delivery.lease_owner = delivery.lease_expires_at = None
+        await session.flush()
+        return None
     delivery.status = "sending"
     delivery.attempt_count += 1
     delivery.lease_owner = worker_id
@@ -203,7 +235,7 @@ async def claim_delivery(session: AsyncSession, worker_id: str) -> EmailDelivery
 async def authorized(session: AsyncSession, delivery: EmailDelivery) -> bool:
     """Only this monitor's approved, still-active sources authorize a queued mail."""
     monitor = await session.get(Monitor, delivery.monitor_id)
-    sources = set(delivery.payload["recipient_sources"])
+    sources = set((delivery.payload or {}).get("recipient_sources") or [])
     if monitor is None or not sources:
         return False
     recipients = await approved_recipients(session, monitor)
@@ -222,7 +254,7 @@ async def finish_delivery(session: AsyncSession, delivery: EmailDelivery, *, wor
     delivery.error_message = failure.message if failure else None
     if failure is None:
         delivery.status, delivery.sent_at = "sent", now
-    elif getattr(failure, "retryable", False) and delivery.attempt_count < MAX_ATTEMPTS:
+    elif getattr(failure, "retryable", False) and delivery.attempt_count < get_settings().max_attempts:
         delivery.status = "retrying"
         delivery.available_at = now + timedelta(seconds=60 if delivery.attempt_count == 1 else 300)
     else:

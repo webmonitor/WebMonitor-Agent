@@ -15,16 +15,16 @@ router = APIRouter(prefix="/api/v1/auth", tags=["auth"])
 
 class RegisterRequest(BaseModel):
     model_config = ConfigDict(extra="forbid")
-    display_name: str
-    email: str
-    password: str = Field(repr=False)
-    invitation_token: str = Field(repr=False)
+    display_name: str = Field(max_length=200)
+    email: str = Field(max_length=320)
+    password: str = Field(repr=False, max_length=128)
+    invitation_token: str = Field(repr=False, max_length=128)
 
 
 class LoginRequest(BaseModel):
     model_config = ConfigDict(extra="forbid")
-    email: str
-    password: str = Field(repr=False)
+    email: str = Field(max_length=320)
+    password: str = Field(repr=False, max_length=128)
 
 
 class CSRFResponse(BaseModel):
@@ -84,11 +84,9 @@ async def me(response: Response, session: DatabaseSession, user: AuthenticatedUs
 
 
 @router.post("/logout", status_code=204)
-async def logout(request: Request, response: Response, session: DatabaseSession,
-                 user: AuthenticatedUser):
-    token = request.cookies.get(SESSION_COOKIE)
-    if token:
-        await accounts.logout(session, token)
+async def logout(request: Request, response: Response, session: DatabaseSession):
+    """Signing out never needs a valid session: the cookies are cleared regardless."""
+    await accounts.logout(session, request.cookies.get(SESSION_COOKIE))
     response.delete_cookie(SESSION_COOKIE, path="/", secure=cookie_secure(), httponly=True, samesite="lax")
     response.delete_cookie(CSRF_COOKIE, path="/", secure=cookie_secure(), httponly=True, samesite="lax")
     response.headers["Cache-Control"] = "no-store"

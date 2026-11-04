@@ -44,7 +44,7 @@ async def collect_browser(url: str, spec: MonitorSpec | None = None, *,
                           network: bool = False) -> CollectionResult:
     network_tasks: set[asyncio.Task] = set()
     candidates: list[dict] = []
-    skipped = {'non_json': 0, 'large': 0, 'limit': 0}
+    skipped = {'non_json': 0, 'large': 0, 'limit': 0, 'timeout': 0}
     async with _browser_slots():
         started = monotonic()
         browser = context = None
@@ -176,6 +176,17 @@ async def collect_browser(url: str, spec: MonitorSpec | None = None, *,
                                     if declared != 'application/json' and not declared.endswith('+json'):
                                         skipped['non_json'] += 1
                                         return
+                                    # Read the declared size first: downloading a body
+                                    # only to discard it wastes the collection budget.
+                                    length = response.headers.get('content-length')
+                                    if length is not None:
+                                        try:
+                                            too_large = int(length) > MAX_CANDIDATE_BYTES
+                                        except ValueError:
+                                            too_large = False
+                                        if too_large:
+                                            skipped['large'] += 1
+                                            return
                                     body = await response.body()
                                 except PlaywrightError:
                                     return
@@ -211,10 +222,14 @@ async def collect_browser(url: str, spec: MonitorSpec | None = None, *,
                         if network:
                             pending = list(network_tasks)
                             if pending:
-                                with suppress(TimeoutError):
+                                try:
                                     await asyncio.wait_for(
                                         asyncio.gather(*pending, return_exceptions=True),
                                         timeout=NETWORK_DRAIN_SECONDS)
+                                except TimeoutError:
+                                    # Candidates still in flight are unknown evidence,
+                                    # so the capture cannot claim to be complete.
+                                    skipped['timeout'] += 1
                             if failure:
                                 raise failure
                             return CollectionResult(
@@ -224,7 +239,8 @@ async def collect_browser(url: str, spec: MonitorSpec | None = None, *,
                                 int((monotonic() - started) * 1000), [],
                                 {'collection_mode': 'browser',
                                  'network': {'candidates': candidates, 'skipped': skipped,
-                                             'truncated': bool(skipped['limit'])}})
+                                             'truncated': bool(skipped['limit']
+                                                               or skipped['timeout'])}})
                         snapshots = []
                         paginated = False
 
@@ -243,12 +259,8 @@ async def collect_browser(url: str, spec: MonitorSpec | None = None, *,
                                     try:
                                         await page.locator('css=' + step.selector).first.wait_for(state='attached', timeout=step.timeout_ms)
                                     except PlaywrightTimeoutError:
-                                        error = DomainError('collection_invalid', 422, details={'reason': 'selector_wait_timeout'})
-                                        html = await page.content()
-                                        if len(html.encode('utf-8')) <= MAX_HTML_BYTES:
-                                            error.collection_result = CollectionResult(page.url, html, None, {}, spec.coverage.model_dump(),
-                                                int((monotonic() - started) * 1000), ['selector_wait_timeout'], {})
-                                        raise error from None
+                                        raise DomainError('collection_invalid', 422,
+                                                          details={'reason': 'selector_wait_timeout'}) from None
                                 elif step.type == 'scroll':
                                     for _ in range(step.max_steps):
                                         await page.mouse.wheel(0, 800)
@@ -289,36 +301,32 @@ async def collect_browser(url: str, spec: MonitorSpec | None = None, *,
                             raise DomainError('collection_limit', 422, details={'limit': 'html_bytes'})
                         result = CollectionResult(final_url, evidence_html, screenshot, {}, coverage,
                                                   int((monotonic() - started) * 1000), warnings, analysis)
-                        try:
-                            if spec:
-                                for document, document_url in snapshots:
-                                    extracted = extract_fields(document, spec, final_url=document_url)
-                                    for field in spec.fields:
-                                        if field.name not in extracted:
-                                            continue
-                                        if field.type == 'list':
-                                            existing = result.fields.setdefault(field.name, [])
-                                            if spec.business_key and spec.business_key.field == field.name:
-                                                keys = spec.business_key.item_fields
-                                                seen = {tuple(str(row.get(key)) for key in keys): row for row in existing}
-                                                page_keys = set()
-                                                for row in extracted[field.name]:
-                                                    key = tuple(str(row.get(name)) for name in keys)
-                                                    if key in page_keys:
-                                                        raise DomainError('collection_invalid', 422, details={'reason': 'duplicate_business_key'})
-                                                    page_keys.add(key)
-                                                    if key in seen and seen[key] != row:
-                                                        raise DomainError('collection_invalid', 422, details={'reason': 'pagination_row_changed'})
-                                                    if key not in seen:
-                                                        existing.append(row)
-                                            else:
-                                                existing.extend(extracted[field.name])
+                        if spec:
+                            for document, document_url in snapshots:
+                                extracted = extract_fields(document, spec, final_url=document_url)
+                                for field in spec.fields:
+                                    if field.name not in extracted:
+                                        continue
+                                    if field.type == 'list':
+                                        existing = result.fields.setdefault(field.name, [])
+                                        if spec.business_key and spec.business_key.field == field.name:
+                                            keys = spec.business_key.item_fields
+                                            seen = {tuple(str(row.get(key)) for key in keys): row for row in existing}
+                                            page_keys = set()
+                                            for row in extracted[field.name]:
+                                                key = tuple(str(row.get(name)) for name in keys)
+                                                if key in page_keys:
+                                                    raise DomainError('collection_invalid', 422, details={'reason': 'duplicate_business_key'})
+                                                page_keys.add(key)
+                                                if key in seen and seen[key] != row:
+                                                    raise DomainError('collection_invalid', 422, details={'reason': 'pagination_row_changed'})
+                                                if key not in seen:
+                                                    existing.append(row)
                                         else:
-                                            result.fields[field.name] = extracted[field.name]
-                                validate_collection(spec, result.fields, coverage=coverage)
-                        except DomainError as exc:
-                            exc.collection_result = result
-                            raise
+                                            existing.extend(extracted[field.name])
+                                    else:
+                                        result.fields[field.name] = extracted[field.name]
+                            validate_collection(spec, result.fields, coverage=coverage)
                         return result
                     finally:
                         if context:

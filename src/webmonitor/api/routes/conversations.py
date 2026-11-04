@@ -13,6 +13,7 @@ from webmonitor.schemas.api import (
     ConversationSnapshot,
     ConversationView,
     CreateMonitorResult,
+    DerivedDraft,
     DraftUpdate,
     DraftView,
     JobDetail,
@@ -140,7 +141,7 @@ async def cancel_job(job_id: UUID, session: DatabaseSession, user: Authenticated
     if job is None:
         raise DomainError("not_found", 404)
     if job.user_id != user.user_id and user.role != "admin":
-        raise DomainError("forbidden", 403)
+        raise DomainError("not_found", 404)
     from webmonitor.services import jobs as job_service
     await job_service.cancel(session, job)
     result = conversations.job_view(job)
@@ -148,11 +149,11 @@ async def cancel_job(job_id: UUID, session: DatabaseSession, user: Authenticated
     return result
 
 
-@router.post("/monitors/{monitor_id}/drafts")
+@router.post("/monitors/{monitor_id}/drafts", response_model=DerivedDraft, status_code=201)
 async def derive_draft(monitor_id: UUID, session: DatabaseSession, user: AuthenticatedUser):
     conversation, draft = await drafts.draft_from_monitor(session, user, monitor_id)
-    result = {"conversation_id": str(conversation.id), "draft_id": str(draft.id),
-              "spec_revision": draft.spec_revision,
-              "settings_revision": draft.settings_revision}
+    result = DerivedDraft(conversation_id=conversation.id, draft_id=draft.id,
+                          spec_revision=draft.spec_revision,
+                          settings_revision=draft.settings_revision)
     await session.commit()
     return result

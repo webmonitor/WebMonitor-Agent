@@ -46,6 +46,22 @@ def test_non_css_or_non_element_selectors_are_rejected(selector):
         field('text', selector=selector)
 
 
+@pytest.mark.parametrize('selector', [
+    'div:contains(notice)', 'p:-soup-contains("x")', 'td:nth-last-column',
+    'div:matches(.row)', 'SPAN:CONTAINS(text)'])
+def test_soupsieve_only_pseudos_are_rejected(selector):
+    # Chromium does not understand these, so a saved selector would collect nothing.
+    with pytest.raises(ValidationError):
+        field('text', selector=selector)
+
+
+@pytest.mark.parametrize('selector', [
+    '.value', 'ul > li:nth-child(2)', 'div:has(> .title)', 'a[href^="/item"]',
+    'section:not(.hidden) .value'])
+def test_browser_supported_selectors_still_validate(selector):
+    assert field('text', selector=selector).selector == selector
+
+
 def test_unknown_code_and_scalar_list_options_rejected():
     with pytest.raises(ValidationError):
         field('text', expression='document.cookie')

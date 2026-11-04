@@ -46,10 +46,26 @@ async def test_history_rebuilds_user_and_assistant_turns_in_order(session):
                         content="请问是哪一种价格？"))
     await session.commit()
 
-    history = await _history(job.conversation_id, 30)
+    history = await _history(job.conversation_id, 30, 60_000)
     assert [item["role"] for item in history] == ["user", "assistant"]
     assert history[0]["content"] == "监控这个页面的价格"
-    assert await _history(job.conversation_id, 1) == [history[-1]]
+    assert await _history(job.conversation_id, 1, 60_000) == [history[-1]]
+
+
+@pytest.mark.asyncio
+async def test_history_stays_within_the_character_budget_and_keeps_the_latest(session):
+    user, job = await running_agent_job(session)
+    for index in range(30):
+        session.add(Message(conversation_id=job.conversation_id, role="user",
+                            content=f"turn {index} " + "x" * 4000))
+    session.add(Message(conversation_id=job.conversation_id, role="user",
+                        content="latest question " + "y" * 100))
+    await session.commit()
+
+    history = await _history(job.conversation_id, 30, 10_000)
+    assert history[-1]["content"].startswith("latest question")
+    assert sum(len(item["content"]) for item in history) <= 10_000
+    assert len(history) < 31
 
 
 @pytest.mark.asyncio

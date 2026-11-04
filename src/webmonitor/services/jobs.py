@@ -4,17 +4,21 @@ Nothing outside this module constructs a `Job`: scheduling, analysis, preview, a
 turns and production collection all enqueue and claim through these helpers.
 """
 import asyncio
+import logging
 from datetime import timedelta
 from typing import Any
 from uuid import UUID
 
-from sqlalchemy import and_, or_, select
+from sqlalchemy import and_, func, or_, select
+from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from webmonitor.config import get_settings
 from webmonitor.db import get_session_factory
 from webmonitor.errors import DomainError
 from webmonitor.models import Draft, Job, Monitor, utc_now
+
+logger = logging.getLogger(__name__)
 
 LEASE_SECONDS = 90
 TERMINAL = frozenset({"succeeded", "failed", "cancelled", "discarded"})
@@ -35,9 +39,30 @@ async def enqueue(session: AsyncSession, *, user_id: UUID, kind: str, url: str |
     job = Job(user_id=user_id, kind=kind, status="queued", url=url, spec=spec,
               conversation_id=conversation_id, draft_id=draft_id, revision=revision,
               monitor_id=monitor_id, available_at=available_at or utc_now())
-    session.add(job)
-    await session.flush()
+    # A partial unique index makes the second concurrent enqueue lose; report it
+    # as a conflict instead of a 500 from the database.
+    try:
+        async with session.begin_nested():
+            session.add(job)
+            await session.flush()
+    except IntegrityError as exc:
+        if getattr(exc.orig, "sqlstate", None) == "23505":
+            raise DomainError("job_conflict", 409) from None
+        raise
     return job
+
+
+async def enforce_hourly_quota(session: AsyncSession, *, user_id: UUID, kind: str,
+                               limit: int) -> None:
+    """Refuse new work once the user's rolling hour is full; the caller commits."""
+    count, oldest = (await session.execute(select(func.count(), func.min(Job.created_at)).where(
+        Job.user_id == user_id, Job.kind == kind,
+        Job.created_at >= utc_now() - timedelta(hours=1)))).one()
+    if (count or 0) < limit:
+        return
+    retry_after = max(1, int((oldest + timedelta(hours=1) - utc_now()).total_seconds()))
+    raise DomainError("rate_limited", 429,
+                      details={"retry_after": retry_after, "limit": limit})
 
 
 async def wait(job_id: UUID, *, timeout: float = 70.0,
@@ -50,23 +75,36 @@ async def wait(job_id: UUID, *, timeout: float = 70.0,
     lease check. Only observe a job owned by someone else, never cancel it here.
     """
     deadline = asyncio.get_running_loop().time() + timeout
-    while True:
+    try:
+        while True:
+            async with get_session_factory()() as session:
+                job = await session.get(Job, job_id)
+                if job is not None and job.status in TERMINAL:
+                    if job.status == "succeeded":
+                        return job
+                    raise DomainError(job.error_code or "job_failed", 409)
+            if asyncio.get_running_loop().time() >= deadline:
+                if cancel_on_timeout:
+                    await _cancel_in_new_session(job_id)
+                raise DomainError("job_timeout", 504)
+            await asyncio.sleep(0.25)
+    except asyncio.CancelledError:
+        # The caller gave up (its own run ended); its child must not keep a slot.
+        if cancel_on_timeout:
+            await _cancel_in_new_session(job_id)
+        raise
+
+
+async def _cancel_in_new_session(job_id: UUID) -> None:
+    try:
         async with get_session_factory()() as session:
-            job = await session.get(Job, job_id)
-            if job is not None and job.status in TERMINAL:
-                if job.status == "succeeded":
-                    return job
-                raise DomainError(job.error_code or "job_failed", 409)
-        if asyncio.get_running_loop().time() >= deadline:
-            if cancel_on_timeout:
-                async with get_session_factory()() as session:
-                    job = await session.scalar(select(Job).where(Job.id == job_id)
-                        .with_for_update().execution_options(populate_existing=True))
-                    if job is not None:
-                        await cancel(session, job)
-                    await session.commit()
-            raise DomainError("job_timeout", 504)
-        await asyncio.sleep(0.25)
+            job = await session.scalar(select(Job).where(Job.id == job_id)
+                .with_for_update().execution_options(populate_existing=True))
+            if job is not None:
+                await cancel(session, job)
+            await session.commit()
+    except Exception:
+        logger.warning("Could not cancel child job %s", job_id, exc_info=True)
 
 
 async def lock(session: AsyncSession, job_id: UUID) -> tuple[Monitor | Draft | None, Job | None]:

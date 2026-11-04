@@ -1,5 +1,7 @@
 """Consumer-visible baseline and event transition boundaries."""
 
+import json
+
 from webmonitor.collection.diff import evaluate_rules
 from webmonitor.schemas.monitors import MonitorSpec
 
@@ -137,3 +139,57 @@ def test_list_numeric_formatting_is_not_a_business_update():
     result = evaluate_rules(spec, same, changed, {})
     assert result['triggered']
     assert result['differences'][0]['items'][0]['fields'] == ['price']
+
+
+def test_persistent_transition_triggers_even_with_change_rules_present():
+    spec = make_spec([
+        {'name': 'price', 'type': 'number', 'semantic': 'Current price', 'selector': '.price',
+         'normalize': {'decimal_separator': '.'}},
+        {'name': 'title', 'type': 'text', 'semantic': 'Title', 'selector': '.title'},
+    ], [
+        {'type': 'threshold', 'field': 'price', 'operator': 'gte', 'value': '100'},
+        {'type': 'text_changed', 'field': 'title'},
+    ])
+    initial = evaluate_rules(spec, None, {'price': '90', 'title': 'A'}, {})
+    assert initial['rule_state']['persistent_aggregate'] is False
+    crossed = evaluate_rules(spec, {'price': '90', 'title': 'A'},
+                             {'price': '100', 'title': 'A'}, initial['rule_state'])
+    assert crossed['triggered'] is True
+    assert [item['type'] for item in crossed['differences']] == ['threshold']
+    assert crossed['differences'][0]['before'] == '90'
+
+
+def test_persistent_transition_under_all_mode_needs_every_rule():
+    spec = make_spec([
+        {'name': 'price', 'type': 'number', 'semantic': 'Current price', 'selector': '.price',
+         'normalize': {'decimal_separator': '.'}},
+        {'name': 'title', 'type': 'text', 'semantic': 'Title', 'selector': '.title'},
+    ], [
+        {'type': 'threshold', 'field': 'price', 'operator': 'gte', 'value': '100'},
+        {'type': 'keyword_present', 'field': 'title', 'keyword': '限时'},
+    ], mode='all')
+    initial = evaluate_rules(spec, None, {'price': '90', 'title': '常规'}, {})
+    half = evaluate_rules(spec, {'price': '90', 'title': '常规'},
+                          {'price': '120', 'title': '常规'}, initial['rule_state'])
+    assert half['triggered'] is False
+    both = evaluate_rules(spec, {'price': '120', 'title': '常规'},
+                          {'price': '120', 'title': '限时 促销'}, half['rule_state'])
+    assert both['triggered'] is True
+    assert both['rule_state']['persistent_aggregate'] is True
+
+
+def test_list_rule_payload_carries_only_the_delta():
+    rows = [{'name': 'id', 'type': 'text', 'semantic': 'ID', 'selector': '.id'}]
+    spec = make_spec([
+        {'name': 'products', 'type': 'list', 'semantic': 'Products', 'selector': '.product',
+         'item_fields': rows},
+    ], [{'type': 'list_added', 'field': 'products'}],
+       business_key={'field': 'products', 'item_fields': ['id']})
+    before = {'products': [{'id': f'row-{index}', 'payload': 'x' * 200} for index in range(500)]}
+    after = {'products': before['products'] + [{'id': 'row-new', 'payload': 'new'}]}
+    state = evaluate_rules(spec, None, before, {})
+    result = evaluate_rules(spec, before, after, state['rule_state'])
+    difference = result['differences'][0]
+    assert difference['before'] is None and difference['after'] is None
+    assert difference['items'] == [{'id': 'row-new', 'payload': 'new'}]
+    assert len(json.dumps(result, ensure_ascii=False)) < 1000

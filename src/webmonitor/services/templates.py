@@ -4,7 +4,10 @@ A template is data, never code: it is validated against the structured schema, a
 every monitor keeps the config snapshot it was approved with, so editing or deleting
 a template never rewrites an existing monitor or a queued delivery.
 """
+import asyncio
 import logging
+import time
+from collections import defaultdict, deque
 from uuid import UUID
 
 from openai import APIConnectionError, APIStatusError, AsyncOpenAI
@@ -108,18 +111,41 @@ def preview(config: EmailTemplateConfig) -> list[dict]:
 
 logger = logging.getLogger(__name__)
 
+# Generation is a paid model call; one process bounds it per user per hour.
+_template_runs: dict[UUID, deque[float]] = defaultdict(deque)
+_template_lock = asyncio.Lock()
 
-async def draft(description: str) -> Proposal:
+
+async def _reserve_generation(user_id: UUID) -> None:
+    limit = get_settings().template_generation_per_hour
+    now = time.monotonic()
+    async with _template_lock:
+        recent = _template_runs[user_id]
+        while recent and now - recent[0] > 3600:
+            recent.popleft()
+        if len(recent) >= limit:
+            retry_after = max(1, int(3600 - (now - recent[0])) + 1)
+            raise DomainError("rate_limited", 429,
+                              details={"retry_after": retry_after, "limit": limit})
+        recent.append(now)
+
+
+async def draft(description: str, *, user: CurrentUser) -> Proposal:
     """Ask the model for one design. Nothing is written; the caller reviews it."""
     settings = get_settings()
     if not settings.openai_api_key.get_secret_value() or not settings.openai_model:
         raise DomainError("model_unavailable", 503)
+    await _reserve_generation(user.user_id)
     client = AsyncOpenAI(api_key=settings.openai_api_key.get_secret_value(),
         base_url=settings.model_base_url,
         timeout=settings.agent_model_timeout_seconds, max_retries=0)
     try:
-        return await draft_template(description, client=client,
-                                    model=settings.openai_model)
+        async with asyncio.timeout(settings.agent_model_timeout_seconds * 2):
+            return await draft_template(description, client=client,
+                                        model=settings.openai_model)
+    except TimeoutError:
+        raise DomainError("template_generation_failed", 503,
+                          "Template generation timed out") from None
     except (APIConnectionError, APIStatusError) as exc:
         logger.info("Template generation model call failed: %s", type(exc).__name__)
         raise DomainError("model_unavailable", 503) from None

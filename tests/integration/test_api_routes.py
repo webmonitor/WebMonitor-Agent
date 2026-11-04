@@ -230,7 +230,7 @@ async def test_template_generation_returns_a_proposal_without_saving(client, ses
         }))
     calls: list[str] = []
 
-    async def fake_draft(description: str):
+    async def fake_draft(description: str, *, user):
         calls.append(description)
         return proposal
 
@@ -251,7 +251,7 @@ async def test_template_generation_returns_a_proposal_without_saving(client, ses
     assert blank.status_code == 422
     assert blank.json()["error"]["code"] == "validation_failed"
 
-    async def unavailable(description: str):
+    async def unavailable(description: str, *, user):
         raise DomainError("model_unavailable", 503)
 
     monkeypatch.setattr(templates_service, "draft", unavailable)
@@ -581,3 +581,126 @@ async def test_conversations_archive_restore_and_message(client, session):
     assert (await client.post(f"/api/v1/conversations/{archive_id}/restore",
                               headers=headers)).status_code == 200
     assert (await client.get("/api/v1/conversations?archived=true")).json()["items"] == []
+
+
+@pytest.mark.asyncio
+async def test_an_event_without_mail_reports_why(client, session):
+    from webmonitor.models import Event, utc_now
+
+    user = await ensure_admin(session)
+    await sign_in(client)
+    monitor, _, snapshot, job = await _seed_monitor(session, user)
+    skipped = Event(monitor_id=monitor.id, job_id=job.id, snapshot_id=snapshot.id,
+                    type="content_changed", change={},
+                    payload={"skipped": "notification_recipients_empty"})
+    session.add(skipped)
+    await session.commit()
+
+    row = (await client.get("/api/v1/events")).json()["items"][0]
+    assert row["notifications_skipped"] == "notification_recipients_empty"
+
+
+@pytest.mark.asyncio
+async def test_events_and_deliveries_filter_on_state(client, session):
+    from webmonitor.models import EmailDelivery, Event, Job, utc_now
+
+    user = await ensure_admin(session)
+    await sign_in(client)
+    monitor, _, snapshot, job = await _seed_monitor(session, user)
+    read = Event(monitor_id=monitor.id, job_id=job.id, snapshot_id=snapshot.id,
+                 type="content_changed", change={}, acknowledged_at=utc_now())
+    other_job = Job(user_id=user.id, kind="production", status="succeeded",
+                    monitor_id=monitor.id, revision=1)
+    session.add_all([read, other_job])
+    await session.flush()
+    unread = Event(monitor_id=monitor.id, job_id=other_job.id, type="content_changed", change={})
+    session.add(unread)
+    await session.flush()
+    for event, status in ((read, "sent"), (unread, "failed")):
+        session.add(EmailDelivery(user_id=user.id, monitor_id=monitor.id, event_id=event.id,
+            recipient="ops@example.com", subject="Alert", html="<p>x</p>", body_text="x",
+            payload={}, message_id="m", status=status, available_at=utc_now()))
+    await session.commit()
+
+    assert (await client.get("/api/v1/events?acknowledged=false")).json()["total"] == 1
+    assert (await client.get("/api/v1/events?acknowledged=true")).json()["total"] == 1
+    assert (await client.get("/api/v1/events?acknowledged=false&limit=1")).json()["total"] == 1
+    assert (await client.get("/api/v1/email-deliveries?status=failed")).json()["total"] == 1
+    assert (await client.get("/api/v1/email-deliveries?status=sent")).json()["total"] == 1
+    assert (await client.get(
+        f"/api/v1/email-deliveries?monitor_id={uuid4()}")).json()["total"] == 0
+
+
+@pytest.mark.asyncio
+async def test_a_failed_delivery_can_be_retried(client, session):
+    from webmonitor.models import EmailDelivery, Event, utc_now
+
+    user = await ensure_admin(session)
+    headers = await sign_in(client)
+    monitor, _, snapshot, job = await _seed_monitor(session, user)
+    event = Event(monitor_id=monitor.id, job_id=job.id, snapshot_id=snapshot.id,
+                  type="content_changed", change={})
+    session.add(event)
+    await session.flush()
+    delivery = EmailDelivery(user_id=user.id, monitor_id=monitor.id, event_id=event.id,
+        recipient="ops@example.com", subject="Alert", html="<p>x</p>", body_text="x",
+        payload={}, message_id="m", status="failed", attempt_count=3, error_code="smtp_rejected",
+        failed_at=utc_now(), available_at=utc_now())
+    session.add(delivery)
+    await session.commit()
+
+    retried = await client.post(f"/api/v1/email-deliveries/{delivery.id}/retry", headers=headers)
+    assert retried.status_code == 200, retried.text
+    body = retried.json()
+    assert body["status"] == "queued"
+    assert body["attempt_count"] == 0
+    assert body["error_code"] is None
+
+    again = await client.post(f"/api/v1/email-deliveries/{delivery.id}/retry", headers=headers)
+    assert again.status_code == 409
+    assert again.json()["error"]["code"] == "delivery_not_retryable"
+
+
+@pytest.mark.asyncio
+async def test_an_oversized_request_is_refused_before_parsing(client, session):
+    await ensure_admin(session)
+    headers = await sign_in(client)
+    oversized = "x" * 1_200_000
+    response = await client.post("/api/v1/conversations", headers=headers,
+                                 json={"title": "t", "message": {"content": oversized,
+                                                                 "client_message_id": "c"}})
+    assert response.status_code == 413
+    assert response.json()["error"]["code"] == "request_too_large"
+
+
+@pytest.mark.asyncio
+async def test_api_responses_are_never_cached(client):
+    response = await client.get("/api/v1/health/live")
+    assert response.headers["cache-control"] == "no-store"
+
+
+@pytest.mark.asyncio
+async def test_readiness_reports_a_stopped_worker(database_url, monkeypatch):
+    """Readiness is more than a database: nothing is collected if the worker died."""
+    import asyncio
+
+    monkeypatch.setenv("WORKERS_ENABLED", "true")
+    get_settings.cache_clear()
+    from webmonitor.api.app import create_app
+    app = create_app()
+    # ASGITransport never runs the lifespan, so no worker is started here.
+    app.state.worker_task = asyncio.get_running_loop().create_task(asyncio.sleep(0))
+    await asyncio.sleep(0)
+    transport = httpx.ASGITransport(app=app)
+    async with httpx.AsyncClient(transport=transport, base_url="http://testserver") as live:
+        stopped = await live.get("/api/v1/health/ready")
+    assert stopped.status_code == 503
+    assert stopped.json()["error"]["code"] == "worker_unavailable"
+
+    app.state.worker_task = asyncio.get_running_loop().create_task(asyncio.sleep(60))
+    try:
+        async with httpx.AsyncClient(transport=transport, base_url="http://testserver") as live:
+            assert (await live.get("/api/v1/health/ready")).status_code == 200
+    finally:
+        app.state.worker_task.cancel()
+        get_settings.cache_clear()
