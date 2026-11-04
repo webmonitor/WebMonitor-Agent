@@ -64,7 +64,7 @@ function StepList({ steps }: { steps: JobView["steps"] }) {
             step.status === "failed"
               ? "text-error"
               : step.status === "started"
-                ? "text-foreground"
+                ? "text-ink"
                 : "text-muted-foreground"
           }`}
         >
@@ -81,13 +81,13 @@ function StepList({ steps }: { steps: JobView["steps"] }) {
           <span className="min-w-0 flex-1 leading-5">
             {stepLabel(step.name)}
             {step.error_code && (
-              <span className="block text-[11.5px] leading-5 text-error">
+              <span className="block text-[13px] leading-5 text-error">
                 {errorText(step.error_code)}
               </span>
             )}
           </span>
           {typeof step.duration_ms === "number" && (
-            <span className="num mt-[0.05rem] shrink-0 text-[11px] text-muted-foreground/70">
+            <span className="num mt-[0.05rem] shrink-0 text-[13px] text-muted-soft">
               {formatDuration(step.duration_ms)}
             </span>
           )}
@@ -110,7 +110,7 @@ function RunCost({ jobId }: { jobId: string }) {
   if (total === null || total <= 0) return null;
   const tokens = formatTokens(total);
   return (
-    <p className="num mt-2 text-[11px] text-muted-foreground/70">
+    <p className="num mt-2 text-[13px] text-muted-soft">
       {model ? t("chat.cost.usage", { model, tokens }) : t("chat.cost.tokens", { tokens })}
     </p>
   );
@@ -132,11 +132,11 @@ function WorkLog({ job, active = false }: { job: JobView; active?: boolean }) {
   if (active) {
     const current = [...steps].reverse().find((step) => step.status === "started") ?? steps.at(-1)!;
     return (
-      <div className="text-[12.5px]">
+      <div className="text-[14px]">
         <p className="flex items-center gap-2 text-muted-foreground">
           <span aria-hidden className="size-1.5 shrink-0 animate-pulse rounded-full bg-primary" />
           <span className="min-w-0 truncate">{stepLabel(current.name)}</span>
-          <span className="num ml-auto shrink-0 text-[11px] tabular-nums">
+          <span className="num ml-auto shrink-0 text-[13px] tabular-nums">
             {done}/{steps.length}
           </span>
         </p>
@@ -147,10 +147,10 @@ function WorkLog({ job, active = false }: { job: JobView; active?: boolean }) {
 
   return (
     <details
-      className="group text-[12.5px]"
+      className="group text-[14px]"
       onToggle={(event) => setOpen(event.currentTarget.open)}
     >
-      <summary className="inline-flex cursor-pointer list-none items-center gap-1 text-muted-foreground transition-colors duration-150 select-none hover:text-foreground [&::-webkit-details-marker]:hidden">
+      <summary className="inline-flex cursor-pointer list-none items-center gap-1 text-muted-foreground transition-colors duration-150 select-none hover:text-ink [&::-webkit-details-marker]:hidden">
         <ChevronRight className="size-3.5 transition-transform duration-150 group-open:rotate-90" strokeWidth={1.5} />
         {failed > 0
           ? t("chat.worklog.incomplete", { total: steps.length, failed })
@@ -186,7 +186,7 @@ function buildTurns(messages: MessageView[]): Turn[] {
 /** Assistant prose: no bubble, no avatar — full-width text, the way it reads best. */
 function AssistantText({ content }: { content: string }) {
   return (
-    <div className="space-y-2 text-[15px] leading-7 [&_a]:text-primary [&_a]:underline [&_a]:underline-offset-2 [&_blockquote]:border-l-2 [&_blockquote]:pl-3 [&_blockquote]:text-muted-foreground [&_code]:rounded-[0.25rem] [&_code]:bg-muted [&_code]:px-1.5 [&_code]:py-0.5 [&_code]:text-[13px] [&_h1]:mt-5 [&_h1]:text-[17px] [&_h1]:font-medium [&_h2]:mt-5 [&_h2]:text-[16px] [&_h2]:font-medium [&_h3]:mt-4 [&_h3]:text-[15px] [&_h3]:font-medium [&_hr]:my-4 [&_li]:pl-0.5 [&_ol]:list-decimal [&_ol]:pl-5 [&_p]:leading-7 [&_pre]:mt-3 [&_pre]:overflow-x-auto [&_pre]:rounded-lg [&_pre]:border [&_pre]:bg-muted/50 [&_pre]:p-3 [&_pre_code]:bg-transparent [&_pre_code]:p-0 [&_table]:w-full [&_table]:text-[13px] [&_td]:border [&_td]:px-2.5 [&_td]:py-1.5 [&_th]:border [&_th]:bg-muted/50 [&_th]:px-2.5 [&_th]:py-1.5 [&_th]:text-left [&_th]:font-medium [&_ul]:list-disc [&_ul]:pl-5">
+    <div className="space-y-2.5 text-[15px] leading-[1.7] text-body [&_a]:text-primary-active [&_a]:underline [&_a]:underline-offset-2 [&_blockquote]:border-l-2 [&_blockquote]:border-primary/40 [&_blockquote]:pl-3 [&_blockquote]:text-muted-foreground [&_code]:rounded-[4px] [&_code]:bg-surface-strong [&_code]:px-1.5 [&_code]:py-0.5 [&_code]:text-[13.5px] [&_code]:text-ink [&_h1]:mt-5 [&_h1]:font-display [&_h1]:text-[24px] [&_h1]:font-normal [&_h1]:tracking-[-0.01em] [&_h2]:mt-5 [&_h2]:font-display [&_h2]:text-[20px] [&_h2]:font-normal [&_h3]:mt-4 [&_h3]:text-[16px] [&_h3]:font-medium [&_hr]:my-4 [&_li]:pl-0.5 [&_ol]:list-decimal [&_ol]:pl-5 [&_p]:leading-7 [&_pre]:mt-3 [&_pre]:overflow-x-auto [&_pre]:rounded-lg [&_pre]:border-0 [&_pre]:bg-surface-dark [&_pre]:p-4 [&_pre_code]:bg-transparent [&_pre_code]:p-0 [&_pre_code]:text-[13px] [&_pre_code]:text-on-dark [&_table]:w-full [&_table]:text-[14px] [&_td]:border [&_td]:border-hairline [&_td]:px-2.5 [&_td]:py-1.5 [&_td]:text-[13px] [&_th]:border [&_th]:border-hairline [&_th]:px-2.5 [&_th]:py-1.5 [&_th]:text-left [&_th]:text-[12px] [&_th]:font-medium [&_th]:uppercase [&_th]:tracking-[0.12em] [&_th]:text-muted-foreground [&_ul]:list-disc [&_ul]:pl-5">
       <Markdown remarkPlugins={[remarkGfm]}>{content}</Markdown>
     </div>
   );
@@ -316,9 +316,9 @@ export function ChatPanel({
 
   return (
     <section className="flex h-full min-h-0 min-w-0 flex-col overflow-hidden bg-background">
-      <header className="flex h-12 shrink-0 items-center gap-3 px-6">
+      <header className="flex h-14 shrink-0 items-center gap-3 px-6">
         <div className="mx-auto flex w-full max-w-[46rem] items-center gap-2">
-          <h2 className="truncate text-[14px] text-foreground">
+          <h2 className="truncate text-[15px] font-medium text-ink">
             {snapshot?.conversation.title?.trim() || t("chat.newConversation")}
           </h2>
           {monitorId && (
@@ -349,7 +349,7 @@ export function ChatPanel({
           >
             {conversationId && conversation.isPending && <p className="meta">{t("chat.loading")}</p>}
             {conversation.error && (
-              <p className="text-sm text-error" role="alert">
+              <p className="t-body-sm text-error" role="alert">
                 {t("chat.loadError")}
               </p>
             )}
@@ -357,8 +357,8 @@ export function ChatPanel({
             {empty && (
               <div className="space-y-6">
                 <div className="max-w-[26rem] space-y-2">
-                  <h2 className="text-[1.25rem] leading-8 font-medium">{t("chat.hero.title")}</h2>
-                  <p className="text-[13px] leading-6 text-muted-foreground">{t("chat.hero.body")}</p>
+                  <h2 className="display-sm">{t("chat.hero.title")}</h2>
+                  <p className="t-body mt-3 max-w-[30rem] text-muted-foreground">{t("chat.hero.body")}</p>
                 </div>
               </div>
             )}
@@ -368,7 +368,7 @@ export function ChatPanel({
                 if (turn.role === "user") {
                   return (
                     <li key={turn.id} className="flex justify-end">
-                      <div className="max-w-[85%] rounded-[0.875rem] bg-muted px-3.5 py-2.5 text-[15px] leading-7 break-words whitespace-pre-wrap">
+                      <div className="max-w-[85%] rounded-lg bg-card px-4 py-3 text-[15px] leading-7 break-words whitespace-pre-wrap text-ink">
                         {turn.content}
                       </div>
                     </li>
@@ -405,11 +405,11 @@ export function ChatPanel({
                 </li>
               )}
               {!running && failed && (
-                <li className="flex gap-3 rounded-[0.875rem] border border-error/25 bg-error/[0.04] px-4 py-3">
+                <li className="flex gap-3 rounded-lg border border-error/30 bg-error/[0.05] px-4 py-3">
                   <TriangleAlert className="mt-0.5 size-4 shrink-0 text-error" strokeWidth={1.5} />
                   <div className="min-w-0 flex-1">
-                    <p className="text-[13px] font-medium text-error">{t("chat.failed.title")}</p>
-                    <p className="mt-0.5 text-[13px] leading-6 text-muted-foreground">
+                    <p className="text-[14px] font-medium text-error">{t("chat.failed.title")}</p>
+                    <p className="mt-0.5 text-[14px] leading-6 text-muted-foreground">
                       {t("chat.failed.body", { reason: errorText(failed.error_code) })}
                     </p>
                     <WorkLog job={failed} />
@@ -432,7 +432,7 @@ export function ChatPanel({
               variant="outline"
               size="icon"
               aria-label={t("chat.scrollToLatest")}
-              className="pointer-events-auto size-8 rounded-full bg-card"
+              className="pointer-events-auto size-9 rounded-full border-hairline bg-canvas"
               onClick={() => setPinned(true)}
             >
               <ArrowDown className="size-4" strokeWidth={1.5} />
@@ -444,7 +444,7 @@ export function ChatPanel({
       <div className="shrink-0 px-6 pt-2 pb-4">
         <div className="mx-auto w-full max-w-[46rem]">
           {/* One field: hairline, 12px radius, the ring only while it has focus. */}
-          <div className="flex items-end gap-2 rounded-[0.75rem] border border-input bg-card p-1.5 transition-colors duration-150 focus-within:border-ring">
+          <div className="flex items-end gap-2 rounded-lg border border-input bg-canvas p-1.5 transition-colors duration-150 focus-within:border-primary focus-within:ring-[3px] focus-within:ring-primary/15">
             <textarea
               ref={composer}
               value={draft}
@@ -460,7 +460,7 @@ export function ChatPanel({
               rows={1}
               maxLength={limit}
               aria-label={t("chat.composer.label")}
-              className="max-h-[12.5rem] min-h-8 flex-1 resize-none bg-transparent px-1.5 py-1 text-[15px] leading-6 outline-none placeholder:text-muted-foreground/70"
+              className="max-h-[12.5rem] min-h-8 flex-1 resize-none bg-transparent px-1.5 py-1 text-[15px] leading-6 outline-none placeholder:text-muted-soft"
               placeholder={
                 busy ? t("chat.composer.placeholderBusy") : t("chat.composer.placeholder")
               }
@@ -468,8 +468,9 @@ export function ChatPanel({
             {busy ? (
               <Button
                 size="icon"
+                variant="outline"
                 aria-label={t("chat.composer.stop")}
-                className="size-8 shrink-0 rounded-md"
+                className="size-9 shrink-0 rounded-md"
                 onClick={() => cancel.mutate(undefined, {
                   onError: (failure) => setError({ code: failure instanceof ApiError ? failure.code : null }),
                 })}
@@ -481,7 +482,7 @@ export function ChatPanel({
               <Button
                 size="icon"
                 aria-label={t("chat.composer.send")}
-                className="size-8 shrink-0 rounded-md"
+                className="size-9 shrink-0 rounded-md"
                 onClick={() => void submit()}
                 disabled={!draft.trim() || send.isPending || start.isPending}
               >
@@ -493,7 +494,7 @@ export function ChatPanel({
               </Button>
             )}
           </div>
-          <p className="mt-2 min-h-4 text-center text-[11px] text-muted-foreground">
+          <p className="mt-2 min-h-4 t-caption text-center text-muted-soft">
             {error ? (
               <span className="text-error" role="alert">
                 {error.code ? errorText(error.code) : t("chat.sendError")}

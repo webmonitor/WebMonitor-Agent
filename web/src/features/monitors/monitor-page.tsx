@@ -161,7 +161,7 @@ export function MonitorPage({
           title={row.name}
           description={
             <a
-              className="inline-flex max-w-full items-center gap-1 truncate text-xs text-muted-foreground underline-offset-2 hover:text-foreground hover:underline"
+              className="inline-flex max-w-full items-center gap-1 truncate text-[13px] text-muted-soft underline-offset-2 hover:text-ink hover:underline"
               href={row.url}
               target="_blank"
               rel="noreferrer"
@@ -208,11 +208,11 @@ export function MonitorPage({
                   <MoreHorizontal className="size-4" strokeWidth={1.5} />
                 </Button>
                 {menuOpen && (
-                  <div className="absolute top-full right-0 z-20 mt-1 w-44 rounded-lg border bg-popover p-1 shadow-[0_8px_24px_rgba(30,27,22,0.10)]">
+                  <div className="absolute top-full right-0 z-20 mt-1 w-48 rounded-lg border border-hairline bg-popover p-1.5 shadow-pop">
                     {!archived && (
                       <button
                         type="button"
-                        className="flex w-full items-center gap-2 rounded-md px-2 py-1.5 text-left text-[13px] transition-colors duration-150 hover:bg-muted disabled:opacity-45"
+                        className="flex w-full items-center gap-2 rounded-md px-2 py-1.5 text-left text-[14px] transition-colors duration-150 hover:bg-surface-card disabled:opacity-45"
                         disabled={derive.isPending}
                         onClick={() => {
                           setMenuOpen(false);
@@ -227,7 +227,7 @@ export function MonitorPage({
                     )}
                     <button
                       type="button"
-                      className="flex w-full items-center gap-2 rounded-md px-2 py-1.5 text-left text-[13px] transition-colors duration-150 hover:bg-muted"
+                      className="flex w-full items-center gap-2 rounded-md px-2 py-1.5 text-left text-[14px] transition-colors duration-150 hover:bg-surface-card"
                       onClick={() => {
                         setMenuOpen(false);
                         setRenameName(row.name);
@@ -240,7 +240,7 @@ export function MonitorPage({
                     {!archived && (
                       <button
                         type="button"
-                        className="flex w-full items-center gap-2 rounded-md px-2 py-1.5 text-left text-[13px] text-error transition-colors duration-150 hover:bg-error/[0.06]"
+                        className="flex w-full items-center gap-2 rounded-md px-2 py-1.5 text-left text-[14px] text-error transition-colors duration-150 hover:bg-error/[0.06]"
                         onClick={() => {
                           setMenuOpen(false);
                           setArchiving(true);
@@ -273,17 +273,17 @@ export function MonitorPage({
           </p>
         )}
         {archived && (
-          <p className="mb-4 rounded-lg border bg-muted/30 px-4 py-2.5 text-[13px] text-muted-foreground">
+          <p className="mb-4 rounded-lg border border-hairline bg-surface-soft px-4 py-3 text-[14px] leading-6 text-muted-foreground">
             {t("monitors.archived.note")}
           </p>
         )}
 
         {/* Three facts on one ruled strip, not three cards. */}
-        <dl className="mb-8 grid overflow-hidden rounded-[0.875rem] border bg-card sm:grid-cols-3 sm:divide-x">
+        <dl className="mb-8 grid overflow-hidden rounded-lg border border-hairline bg-canvas sm:grid-cols-3 sm:divide-x">
           {stats.map((stat) => (
             <div key={stat.label} className="border-b px-4 py-3 last:border-b-0 sm:border-b-0">
               <dt className="label-line">{stat.label}</dt>
-              <dd className="num mt-1 truncate text-[13px]">{stat.value}</dd>
+              <dd className="num mt-1.5 truncate text-[14px] text-ink">{stat.value}</dd>
             </div>
           ))}
         </dl>
@@ -307,19 +307,19 @@ export function MonitorPage({
             <section>
               <div className="mb-2 flex items-baseline justify-between gap-2">
                 <h2 className="section-title">{t("monitors.events.title")}</h2>
-                <Link href="/app/events" className="text-[11px] text-primary underline-offset-2 hover:underline">
+                <Link href="/app/events" className="text-[12px] text-primary-active underline-offset-2 hover:underline">
                   {t("monitors.events.all")}
                 </Link>
               </div>
-              {events.error && <p role="alert" className="text-xs text-error">{t("common.listError")}</p>}
+              {events.error && <p role="alert" className="text-[13px] text-error">{t("common.listError")}</p>}
               {!events.error && monitorEvents.length === 0 ? (
                 <p className="meta">{t("monitors.events.empty")}</p>
               ) : (
                 <>
                   {/* The newest change is the record this monitor exists to produce. */}
                   {monitorEvents[0] && (
-                    <article className="surface mb-3">
-                      <header className="flex items-center justify-between gap-2 border-b px-4 py-2.5">
+                    <article className="surface mb-4">
+                      <header className="flex items-center justify-between gap-2 border-b border-hairline px-5 py-3">
                         <Badge
                           tone={
                             monitorEvents[0].type === "run_failed"
@@ -331,17 +331,17 @@ export function MonitorPage({
                         >
                           {eventLabel(monitorEvents[0].type)}
                         </Badge>
-                        <span className="num text-[11px] text-muted-foreground">
+                        <span className="num text-[13px] text-muted-soft">
                           {formatTime(monitorEvents[0].created_at)}
                         </span>
                       </header>
-                      <div className="px-4 py-2">
+                      <div className="px-5 py-3">
                         <ChangeRows change={monitorEvents[0].change} type={monitorEvents[0].type} />
                         <div className="mt-1.5 flex flex-wrap gap-x-4">
                           {monitorEvents[0].snapshot_id && (
                             <Link
                               href={`/app/monitors/${row.id}/snapshots/${monitorEvents[0].snapshot_id}`}
-                              className="text-[11px] text-muted-foreground underline-offset-2 hover:text-foreground hover:underline"
+                              className="text-[12px] text-muted-soft hover:text-ink hover:underline"
                             >
                               {t("monitors.snapshot.open")}
                             </Link>
@@ -352,19 +352,19 @@ export function MonitorPage({
                   )}
                   <ul className="divide-y border-t">
                     {monitorEvents.slice(1, 4).map((event) => (
-                      <li key={event.id} className="space-y-1.5 py-2.5">
+                      <li key={event.id} className="space-y-1.5 py-3">
                         <div className="flex items-center justify-between gap-2">
                           <Badge tone={event.type === "run_failed" ? "error" : event.type === "recovered" ? "success" : "brand"}>
                             {eventLabel(event.type)}
                           </Badge>
-                          <span className="num text-[11px] text-muted-foreground">{formatTime(event.created_at)}</span>
+                          <span className="num text-[13px] text-muted-soft">{formatTime(event.created_at)}</span>
                         </div>
                         <ChangeRows change={event.change} type={event.type} />
                         <div className="flex flex-wrap gap-x-4">
                           {event.snapshot_id && (
                             <Link
                               href={`/app/monitors/${row.id}/snapshots/${event.snapshot_id}`}
-                              className="text-[11px] text-muted-foreground underline-offset-2 hover:text-foreground hover:underline"
+                              className="text-[12px] text-muted-soft hover:text-ink hover:underline"
                             >
                               {t("monitors.snapshot.open")}
                             </Link>
@@ -390,16 +390,16 @@ export function MonitorPage({
                 {jobItems.map((job) => (
                   <li key={job.id}>
                     <button
-                      className="flex w-full items-center gap-3 border-b py-2.5 text-left transition-colors duration-150 hover:bg-muted/60"
+                      className="flex w-full items-center gap-3 border-b border-hairline py-3 text-left transition-colors duration-150 hover:bg-surface-soft/70"
                       onClick={() => setOpenJob(job.id)}
                     >
-                      <span className="num w-[4.5rem] shrink-0 text-[12px] text-muted-foreground">
+                      <span className="num min-w-[5.5rem] shrink-0 whitespace-nowrap text-[13px] text-muted-soft">
                         {formatClock(job.created_at)}
                       </span>
                       <Badge tone={job.status === "succeeded" ? "success" : job.status === "failed" ? "error" : "neutral"}>
                         {statusLabel(job.status)}
                       </Badge>
-                      <span className="min-w-0 flex-1 truncate text-xs text-muted-foreground">
+                      <span className="min-w-0 flex-1 truncate text-[13px] text-muted-soft">
                         {job.error_code
                           ? errorText(job.error_code)
                           : eventByJob.has(job.id)
@@ -409,7 +409,7 @@ export function MonitorPage({
                               : ""}
                       </span>
                       {job.attempt_count > 1 && (
-                        <span className="num shrink-0 text-[11px] text-muted-foreground">
+                        <span className="num shrink-0 text-[13px] text-muted-soft">
                           {t("monitors.job.attempts", { count: job.attempt_count })}
                         </span>
                       )}
@@ -423,7 +423,7 @@ export function MonitorPage({
             <section>
               <h2 className="section-title mb-2">{t("monitors.snapshots.title")}</h2>
               {snapshots.isPending && <p className="meta">{t("monitors.loadingShort")}</p>}
-              {snapshots.error && <p role="alert" className="text-xs text-error">{t("common.listError")}</p>}
+              {snapshots.error && <p role="alert" className="text-[13px] text-error">{t("common.listError")}</p>}
               {!snapshots.isPending && !snapshots.error
                 && (snapshots.data?.items.length ?? 0) === 0 && (
                   <EmptyState
@@ -436,20 +436,20 @@ export function MonitorPage({
                   <li key={snapshot.id}>
                     <Link
                       href={`/app/monitors/${row.id}/snapshots/${snapshot.id}`}
-                      className="flex items-center gap-3 border-b py-2.5 transition-colors duration-150 hover:bg-muted/60"
+                      className="flex items-center gap-3 border-b border-hairline py-3 transition-colors duration-150 hover:bg-surface-soft/70"
                     >
-                      <span className="num w-[4.5rem] shrink-0 text-[12px] text-muted-foreground">
+                      <span className="num min-w-[5.5rem] shrink-0 whitespace-nowrap text-[13px] text-muted-soft">
                         {formatTime(snapshot.collected_at)}
                       </span>
-                      <span className="num shrink-0 text-[11px] text-muted-foreground">
+                      <span className="num shrink-0 text-[13px] text-muted-soft">
                         {t("monitors.config.versionValue", { version: snapshot.spec_version })}
                       </span>
-                      <span className="min-w-0 flex-1 truncate text-xs text-muted-foreground">
+                      <span className="min-w-0 flex-1 truncate text-[13px] text-muted-soft">
                         {t("monitors.snapshots.coverage", {
                           coverage: coverageLabel((snapshot.coverage as { scope?: string }).scope),
                         })}
                       </span>
-                      <span className="num shrink-0 text-[11px] text-muted-foreground">
+                      <span className="num shrink-0 text-[13px] text-muted-soft">
                         {t("monitors.snapshots.evidence", { count: snapshot.evidence_refs.length })}
                       </span>
                     </Link>
@@ -463,23 +463,25 @@ export function MonitorPage({
           <aside>
             <div className="mb-2 flex items-baseline justify-between gap-2">
               <h2 className="section-title">{t("monitors.content.title")}</h2>
-              <span className="num text-[11px] text-muted-foreground">
+              <span className="num text-[13px] text-muted-soft">
                 {row.baseline ? formatTime(row.baseline.collected_at) : "—"}
               </span>
             </div>
             {row.baseline ? (
-              <FieldValues
-                values={values}
-                labels={labels}
-                types={types}
-                businessKey={spec?.business_key?.item_fields ?? []}
-                maxItems={3}
-              />
+              <div className="rounded-lg border border-hairline bg-canvas p-4">
+                <FieldValues
+                  values={values}
+                  labels={labels}
+                  types={types}
+                  businessKey={spec?.business_key?.item_fields ?? []}
+                  maxItems={3}
+                />
+              </div>
             ) : (
               <p className="meta">{t("monitors.content.empty")}</p>
             )}
             {row.baseline && (
-              <div className="mt-3 border-t pt-3">
+              <div className="mt-3 border-t border-hairline pt-3">
                 <EvidenceLinks
                   snapshotId={row.baseline.id}
                   references={row.baseline.evidence_refs}
@@ -500,12 +502,12 @@ export function MonitorPage({
       >
         <DialogContent className="max-w-xl">
           <DialogHeader>
-            <DialogTitle className="text-base">{t("monitors.dialog.title")}</DialogTitle>
+            <DialogTitle>{t("monitors.dialog.title")}</DialogTitle>
           </DialogHeader>
           {detail.isPending && <p className="meta">{t("monitors.loadingShort")}</p>}
           {detail.error && <p role="alert" className="text-sm text-error">{errorText(detail.error)}</p>}
           {detail.data && (
-            <div className="space-y-5 text-[13px]">
+            <div className="space-y-5 text-[14px]">
               <dl className="grid grid-cols-2 gap-3">
                 <div>
                   <dt className="label-line">{t("monitors.dialog.status")}</dt>
@@ -526,7 +528,7 @@ export function MonitorPage({
               </dl>
 
               {detail.data.error_code && (
-                <p className="flex items-start gap-2 border-l-2 border-error/40 pl-2.5 text-xs leading-5 text-error">
+                <p className="flex items-start gap-2 border-l-2 border-error pl-3 text-[13px] leading-5 text-error">
                   <AlertTriangle className="mt-0.5 size-3.5 shrink-0" strokeWidth={1.5} />
                   {errorText(detail.data.error_code)}
                 </p>
@@ -562,7 +564,7 @@ export function MonitorPage({
               )}
 
               {cancelJob.error && (
-                <p role="alert" className="text-xs text-error">{errorText(cancelJob.error)}</p>
+                <p role="alert" className="text-[13px] text-error">{errorText(cancelJob.error)}</p>
               )}
               {detail.data.status === "queued" || detail.data.status === "running" ? (
                 <div className="flex justify-end border-t pt-3">
@@ -592,16 +594,16 @@ export function MonitorPage({
               {detail.data.attempts.length > 1 && (
                 <div>
                   <h3 className="label-line mb-1.5">{t("monitors.dialog.attemptLog")}</h3>
-                  <ul className="divide-y border-t">
+                  <ul className="divide-y divide-hairline border-t border-hairline">
                     {detail.data.attempts.map((attempt) => (
-                      <li key={attempt.number} className="flex items-center justify-between gap-2 py-1.5 text-xs">
+                      <li key={attempt.number} className="flex items-center justify-between gap-2 py-1.5 text-[13px]">
                         <span>
                           {t("monitors.dialog.attemptRow", {
                             number: attempt.number,
                             status: statusLabel(attempt.status),
                           })}
                         </span>
-                        <span className="num text-muted-foreground">
+                        <span className="num text-muted-soft">
                           {attempt.error_code ? errorText(attempt.error_code) : formatTime(attempt.finished_at)}
                         </span>
                       </li>
@@ -626,7 +628,7 @@ export function MonitorPage({
       <Dialog open={renaming} onOpenChange={setRenaming}>
         <DialogContent className="max-w-md">
           <DialogHeader>
-            <DialogTitle className="text-base">{t("monitors.rename.title")}</DialogTitle>
+            <DialogTitle>{t("monitors.rename.title")}</DialogTitle>
           </DialogHeader>
           <div className="space-y-3">
             <div className="space-y-1.5">
@@ -660,7 +662,7 @@ export function MonitorPage({
       <Dialog open={archiving} onOpenChange={setArchiving}>
         <DialogContent className="max-w-md">
           <DialogHeader>
-            <DialogTitle className="text-base">{t("monitors.archive.title")}</DialogTitle>
+            <DialogTitle>{t("monitors.archive.title")}</DialogTitle>
           </DialogHeader>
           <div className="space-y-4">
             <p className="meta leading-5">{t("monitors.archive.body", { name: row.name })}</p>

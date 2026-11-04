@@ -46,7 +46,7 @@ function EvidenceLinks({ draftId, preview }: { draftId: string; preview: Extract
       {preview.evidence_refs.map((reference, index) => (
         <a
           key={reference.sha256}
-          className="inline-flex items-center gap-1.5 text-xs text-muted-foreground transition-colors duration-150 hover:text-foreground"
+          className="inline-flex items-center gap-1.5 text-[12px] text-muted-soft transition-colors hover:text-ink"
           href={`/api/v1/drafts/${draftId}/evidence/${index}`}
           target="_blank"
           rel="noreferrer"
@@ -56,7 +56,7 @@ function EvidenceLinks({ draftId, preview }: { draftId: string; preview: Extract
             : reference.kind === "json"
               ? t("monitors.evidence.json")
               : t("chat.evidence.archive")}
-          <span className="num text-[10px]">{formatBytes(reference.size_bytes)}</span>
+          <span className="num text-[12px]">{formatBytes(reference.size_bytes)}</span>
           <ExternalLink className="size-3.5" strokeWidth={1.5} />
         </a>
       ))}
@@ -126,7 +126,7 @@ export function CreateMonitorCard({
   const feedback = previewJob && previewJob.status !== "succeeded" ? (
     <p
       role={previewJob.status === "failed" ? "alert" : "status"}
-      className={previewJob.status === "failed" ? "text-xs text-error" : "meta"}
+      className={previewJob.status === "failed" ? "text-[13px] text-error" : "meta"}
     >
       {statusLabel(previewJob.status)}
       {previewJob.error_code ? ` · ${errorText(previewJob.error_code)}` : ""}
@@ -239,10 +239,10 @@ export function CreateMonitorCard({
     return (
       <section className="surface-pad space-y-3">
         <div className="space-y-1">
-          <h2 className="text-[14px] font-medium">
+          <h2 className="t-title">
             {editing ? t("chat.preview.editTitle") : t("chat.preview.title")}
           </h2>
-          <p className="meta leading-5">{t("chat.preview.body")}</p>
+          <p className="t-body-sm text-muted-foreground">{t("chat.preview.body")}</p>
         </div>
         <Button variant="outline" className="w-full" onClick={() => void onRepreview()} disabled={previewBusy}>
           <RefreshCw strokeWidth={1.5} />
@@ -252,7 +252,7 @@ export function CreateMonitorCard({
         {settingsOpen && settingsPanel}
         {feedback}
         {error && (
-          <p className="text-xs text-error" role="alert">
+          <p className="text-[13px] text-error" role="alert">
             {describeError(error)}
           </p>
         )}
@@ -262,7 +262,7 @@ export function CreateMonitorCard({
 
   return (
     <section className="surface">
-      <header className="space-y-2 border-b px-4 py-3">
+      <header className="space-y-2 border-b border-hairline px-5 py-4">
         <div className="flex items-baseline justify-between gap-2">
           <span className="label-line">
             {expiry ? t("chat.preview.expires", { relative: formatRelative(expiry) }) : ""}
@@ -272,47 +272,43 @@ export function CreateMonitorCard({
           </Badge>
         </div>
         <div className="space-y-0.5">
-          <h2 className="text-[14px] font-medium">
+          <h2 className="t-title">
             {editing ? t("chat.approve.editTitle") : t("chat.approve.title")}
           </h2>
-          <p className="meta leading-5">
+          <p className="t-body-sm text-muted-foreground">
             {editing ? t("chat.approve.editBody") : t("chat.approve.body")}
           </p>
         </div>
       </header>
 
-      <div className="space-y-4 px-4 py-3">
+      <div className="space-y-5 px-5 py-4">
         {extraction.source && (
           <div>
             <h3 className="label-line">{t("chat.section.source")}</h3>
-            <p className="num mt-1 text-[12px] text-muted-foreground">
-              JSON
-              {" · "}
-              {t("chat.source.steps", { count: extraction.source.steps.length })}
-              {" · "}
-              {t("chat.source.pages", { count: extraction.source.pages })}
-              {" · "}
-              {t("chat.source.assertions", { count: extraction.source.assertions.length })}
-            </p>
-            <ul className="mt-1.5 divide-y border-t">
-              {extraction.source.steps.map((step) => (
-                <li key={step.id} className="num break-all py-1.5 text-[12px]">
-                  {step.method} {step.url} → {step.status}
-                </li>
-              ))}
-            </ul>
-            {extraction.source.assertions.length > 0 && (
-              <p className="num mt-1.5 break-all text-[11px] text-muted-foreground">
-                {extraction.source.assertions
-                  .map((assertion) => `${assertion.path ?? ""} ✓`)
-                  .join(" · ")}
+            <div className="code-window mt-2 text-[12.5px]">
+              <p className="text-on-dark-soft">
+                JSON · {t("chat.source.steps", { count: extraction.source.steps.length })}
+                {" · "}{t("chat.source.pages", { count: extraction.source.pages })}
+                {" · "}{t("chat.source.assertions", { count: extraction.source.assertions.length })}
               </p>
-            )}
+              <ul className="mt-2 divide-y divide-on-dark/10">
+                {extraction.source.steps.map((step) => (
+                  <li key={step.id} className="break-all py-1.5 text-on-dark">
+                    {step.method} {step.url} → {step.status}
+                  </li>
+                ))}
+              </ul>
+              {extraction.source.assertions.length > 0 && (
+                <p className="mt-2 break-all text-on-dark-soft">
+                  {extraction.source.assertions.map((assertion) => `${assertion.path ?? ""} ✓`).join(" · ")}
+                </p>
+              )}
+            </div>
           </div>
         )}
         <div>
           <h3 className="label-line">{t("chat.section.extracted")}</h3>
-          <div className="mt-1.5">
+          <div className="mt-2 rounded-lg border border-hairline bg-canvas p-3.5">
             <FieldValues
               values={extraction.extracted_data}
               labels={labels}
@@ -326,7 +322,7 @@ export function CreateMonitorCard({
 
         <div>
           <h3 className="label-line">{t("chat.section.coverage")}</h3>
-          <p className="mt-1 text-[13px] leading-6">
+          <p className="t-body-sm mt-1 text-body">
             {coverageLabel(extraction.coverage.scope)}
             {extraction.coverage.description ? ` · ${extraction.coverage.description}` : ""}
           </p>
@@ -335,7 +331,7 @@ export function CreateMonitorCard({
         <EvidenceLinks draftId={draft.id} preview={extraction} />
 
         {warnings.length > 0 && (
-          <ul className="space-y-1 border-l-2 border-warning/40 pl-2.5 text-xs leading-5 text-warning">
+          <ul className="space-y-1.5 border-l-2 border-warning pl-3 text-[13px] leading-5 text-warning-ink">
             {warnings.map((warning) => (
               <li key={warning} className="flex items-start gap-1.5">
                 <AlertTriangle className="mt-0.5 size-3.5 shrink-0" strokeWidth={1.5} />
@@ -346,11 +342,11 @@ export function CreateMonitorCard({
         )}
 
         {activeEmail && mails.length > 0 && (
-          <details className="group border-t pt-3" open>
-            <summary className="flex cursor-pointer list-none flex-wrap items-center gap-1.5 text-xs text-muted-foreground transition-colors duration-150 hover:text-foreground [&::-webkit-details-marker]:hidden">
+          <details className="group border-t border-hairline pt-4" open>
+            <summary className="flex cursor-pointer list-none flex-wrap items-center gap-1.5 text-[13px] text-muted-foreground transition-colors duration-150 hover:text-ink [&::-webkit-details-marker]:hidden">
               <Mail className="size-3.5 shrink-0" strokeWidth={1.5} />
               <span className="shrink-0">{t("chat.mail.preview")}</span>
-              <span className="min-w-0 flex-1 truncate text-right text-[11px]">
+              <span className="min-w-0 flex-1 truncate text-right text-[13px]">
                 {activeEmail.subject}
               </span>
             </summary>
@@ -360,7 +356,7 @@ export function CreateMonitorCard({
                   key={email.event_type}
                   type="button"
                   size="sm"
-                  variant={email.event_type === activeEmail.event_type ? "default" : "outline"}
+                  variant={email.event_type === activeEmail.event_type ? "secondary" : "outline"}
                   onClick={() => setSelectedEvent(email.event_type)}
                 >
                   {eventLabel(email.event_type)}
@@ -371,28 +367,28 @@ export function CreateMonitorCard({
               key={activeEmail.event_type}
               title={t("chat.mail.title")}
               sandbox=""
-              className="mt-2 h-64 w-full rounded-lg border bg-white"
+              className="mt-3 h-72 w-full rounded-md border border-hairline bg-white"
               srcDoc={activeEmail.preview_html ?? activeEmail.html}
             />
           </details>
         )}
       </div>
 
-      <div className="space-y-2 border-t px-4 py-3">
-        <Button className="w-full" onClick={() => void onApprove()} disabled={disabled}>
+      <div className="space-y-2.5 border-t border-hairline px-5 py-4">
+        <Button className="h-10 w-full" onClick={() => void onApprove()} disabled={disabled}>
           <CheckCircle2 strokeWidth={1.5} />
           {approveLabel}
         </Button>
         {!settingsComplete && (
-          <p className="text-xs text-warning">{t("format.error.settings_incomplete")}</p>
+          <p className="text-[13px] text-warning-ink">{t("format.error.settings_incomplete")}</p>
         )}
         {settingsComplete && !deliveryCurrent && (
-          <p className="text-xs text-warning">{t("settings.preview.missing")}</p>
+          <p className="text-[13px] text-warning-ink">{t("settings.preview.missing")}</p>
         )}
         {settingsControl}
         <button
           type="button"
-          className="w-full text-[12px] text-muted-foreground transition-colors duration-150 hover:text-foreground disabled:opacity-45"
+          className="w-full text-[13px] text-muted-foreground transition-colors hover:text-ink disabled:opacity-45"
           onClick={() => void onRepreview()}
           disabled={previewBusy || approving}
         >
@@ -400,14 +396,14 @@ export function CreateMonitorCard({
         </button>
       </div>
 
-      {settingsOpen && <div className="border-t px-4 py-3">{settingsPanel}</div>}
+      {settingsOpen && <div className="border-t border-hairline bg-surface-soft px-5 py-4">{settingsPanel}</div>}
 
       {(feedback || expired || error) && (
-        <div className="space-y-1 border-t px-4 py-2.5">
+        <div className="space-y-1 border-t border-hairline px-5 py-3">
           {feedback}
-          {expired && <p className="text-xs text-warning">{t("chat.approve.expired")}</p>}
+          {expired && <p className="text-[13px] text-warning-ink">{t("chat.approve.expired")}</p>}
           {error && (
-            <p className="text-xs text-error" role="alert">
+            <p className="text-[13px] text-error" role="alert">
               {describeError(error)}
             </p>
           )}

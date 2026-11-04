@@ -70,14 +70,14 @@ export function TemplatesPage() {
         )}
 
         {disableError && (
-          <p role="alert" className="mb-2 text-xs text-error">
+          <p role="alert" className="mb-2 text-[13px] text-error">
             {disableError}
           </p>
         )}
 
         {items.length > 0 && (
           <>
-            <ul className="divide-y border-t">
+            <ul className="border-t border-hairline divide-y divide-hairline">
               {items.map((template) => {
                 const config = parseTemplateConfig(template.config);
                 const blockCount = config?.blocks?.length ?? 0;
@@ -87,14 +87,14 @@ export function TemplatesPage() {
                 return (
                   <li
                     key={template.id}
-                    className="flex flex-wrap items-start justify-between gap-3 py-3"
+                    className="flex flex-wrap items-start justify-between gap-3 py-4"
                   >
                     <div className="min-w-0 space-y-1">
-                      <p className="truncate text-[13px] font-medium">{template.name}</p>
+                      <p className="truncate text-[15px] font-medium text-ink">{template.name}</p>
                       {template.description && (
                         <p className="meta truncate leading-5">{template.description}</p>
                       )}
-                      <p className="meta flex items-center gap-1.5 text-[12px]">
+                      <p className="meta flex items-center gap-1.5 text-[13px]">
                         {style && (
                           <span aria-hidden className="flex shrink-0 gap-0.5">
                             {[style.accent, style.surface, style.page_background].map(
@@ -102,7 +102,7 @@ export function TemplatesPage() {
                                 color ? (
                                   <span
                                     key={index}
-                                    className="size-2.5 rounded-full border"
+                                    className="size-3 rounded-full border border-hairline"
                                     style={{ backgroundColor: color }}
                                   />
                                 ) : null,
@@ -118,7 +118,7 @@ export function TemplatesPage() {
                       <Button
                         variant="ghost"
                         size="sm"
-                        className="h-7 px-2 text-xs text-muted-foreground"
+                        className="h-7 px-2 text-[13px] text-muted-soft hover:text-ink"
                         onClick={() => setPreviewing(template)}
                       >
                         {t("templates.action.preview")}
@@ -128,7 +128,7 @@ export function TemplatesPage() {
                           <Button
                             variant="ghost"
                             size="sm"
-                            className="h-7 px-2 text-xs text-muted-foreground"
+                            className="h-7 px-2 text-[13px] text-muted-soft hover:text-ink"
                             onClick={() => setEditing({ template })}
                           >
                             {t("templates.action.edit")}
@@ -136,7 +136,7 @@ export function TemplatesPage() {
                           <Button
                             variant="ghost"
                             size="sm"
-                            className="h-7 px-2 text-xs text-muted-foreground"
+                            className="h-7 px-2 text-[13px] text-muted-soft hover:text-ink"
                             disabled={disable.isPending}
                             onClick={() => setConfirming(template)}
                           >
@@ -177,10 +177,10 @@ export function TemplatesPage() {
         >
           <DialogContent className="max-w-sm">
             <DialogHeader>
-              <DialogTitle className="text-base">{t("templates.action.disable")}</DialogTitle>
+              <DialogTitle>{t("templates.action.disable")}</DialogTitle>
             </DialogHeader>
             <p className="meta leading-5">{confirming?.name}</p>
-            <div className="mt-4 flex justify-end gap-2 border-t pt-4">
+            <div className="mt-4 flex justify-end gap-2 border-t border-hairline pt-4">
               <Button variant="ghost" size="sm" onClick={() => setConfirming(null)}>
                 {t("common.close")}
               </Button>

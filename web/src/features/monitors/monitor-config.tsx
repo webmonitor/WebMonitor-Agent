@@ -40,19 +40,19 @@ function FieldRow({ field, labels }: { field: SpecField; labels: Record<string, 
   return (
     <li className="py-2.5">
       <div className="flex flex-wrap items-baseline justify-between gap-x-3 gap-y-1">
-        <span className="min-w-0 text-[13px] font-medium">
+        <span className="min-w-0 text-[14px] font-medium">
           {labels[field.name] ?? field.name}
-          <span className="num ml-2 text-[11px] font-normal text-muted-foreground">{field.name}</span>
+          <span className="num ml-2 text-[13px] font-normal text-muted-foreground">{field.name}</span>
         </span>
-        <span className="num text-[11px] text-muted-foreground">
+        <span className="num text-[13px] text-muted-soft">
           {field.type}
           {" · "}
           {field.required === false ? t("monitors.config.optional") : t("monitors.config.required")}
         </span>
       </div>
-      <p className="num mt-1 break-all text-[12px] text-muted-foreground">{location}</p>
+      <p className="num mt-1 break-all text-[13px] text-muted-foreground">{location}</p>
       {normalize.length > 0 && (
-        <p className="num mt-1 break-all text-[11px] text-muted-foreground">
+        <p className="num mt-1 break-all text-[13px] text-muted-foreground">
           {t("monitors.config.normalize")} · {normalize.join(" · ")}
         </p>
       )}
@@ -60,11 +60,11 @@ function FieldRow({ field, labels }: { field: SpecField; labels: Record<string, 
         <ul className="mt-1.5 space-y-1 border-l pl-3">
           {field.item_fields.map((item) => (
             <li key={item.name} className="flex flex-wrap items-baseline justify-between gap-x-3">
-              <span className="text-[12px]">
+              <span className="text-[13px]">
                 {labels[item.name] ?? item.semantic ?? item.name}
-                <span className="num ml-2 text-[11px] text-muted-foreground">{item.name}</span>
+                <span className="num ml-2 text-[13px] text-muted-foreground">{item.name}</span>
               </span>
-              <span className="num break-all text-[11px] text-muted-foreground">
+              <span className="num break-all text-[13px] text-muted-foreground">
                 {item.path ?? item.selector ?? item.name}
                 {item.attribute ? ` [${item.attribute}]` : ""}
                 {item.required === false ? ` · ${t("monitors.config.optional")}` : ""}
@@ -151,7 +151,7 @@ export function MonitorConfig({
 
   return (
     <details className="group surface mb-8">
-      <summary className="flex cursor-pointer list-none flex-wrap items-center justify-between gap-3 px-4 py-3 select-none [&::-webkit-details-marker]:hidden">
+      <summary className="flex cursor-pointer list-none flex-wrap items-center justify-between gap-3 px-5 py-4 select-none [&::-webkit-details-marker]:hidden">
         <span className="flex min-w-0 items-center gap-2">
           <ChevronRight
             className="size-3.5 shrink-0 text-muted-foreground transition-transform duration-150 group-open:rotate-90"
@@ -181,15 +181,15 @@ export function MonitorConfig({
       </summary>
 
       {coverage?.description && (
-        <p className="meta border-t px-4 py-2 leading-5">{coverage.description}</p>
+        <p className="meta border-t border-hairline px-5 py-3">{coverage.description}</p>
       )}
 
-      <div className="grid gap-8 border-t px-4 py-4 lg:grid-cols-2">
+      <div className="grid gap-10 border-t border-hairline px-5 py-6 lg:grid-cols-2">
         <div>
           {spec?.source && (
             <div className="mb-5">
               <h3 className="label-line">{t("monitors.config.source")}</h3>
-              <p className="mt-1 text-[13px]">
+              <p className="mt-1 text-[14px]">
                 <span className="text-muted-foreground">{t("monitors.config.channel")} · </span>
                 {t("monitors.config.channelJson")}
               </p>
@@ -197,12 +197,12 @@ export function MonitorConfig({
               <ul className="mt-1 divide-y border-t">
                 {spec.source.steps.map((step) => (
                   <li key={step.id} className="py-1.5">
-                    <span className="num text-[11px] text-muted-foreground">
+                    <span className="num text-[13px] text-muted-soft">
                       {t("monitors.config.step", { id: step.id })}
                       {" · "}
                       {t("monitors.config.method")} {step.request.method ?? "GET"}
                     </span>
-                    <p className="num mt-0.5 break-all text-[12px]">
+                    <p className="num mt-0.5 break-all text-[13px]">
                       <span className="text-muted-foreground">
                         {t("monitors.config.requestUrl")}
                       </span>{" "}
@@ -217,7 +217,7 @@ export function MonitorConfig({
                   <ul className="mt-1 divide-y border-t">
                     {(spec.source.assertions ?? []).map((assertion, index) => (
                       <li key={`${assertion.type}-${index}`}
-                          className="num break-all py-1.5 text-[12px]">
+                          className="num break-all py-1.5 text-[13px]">
                         {assertion.type === "json_equals"
                           ? t("monitors.config.assertionEquals", {
                               path: assertion.path ?? "",
@@ -232,7 +232,7 @@ export function MonitorConfig({
               {spec.source.pagination && (
                 <>
                   <p className="label-line mt-3">{t("monitors.config.pagination")}</p>
-                  <p className="num mt-1 break-all text-[12px]">
+                  <p className="num mt-1 break-all text-[13px]">
                     {t("monitors.config.pageParam")} · {spec.source.pagination.page_param ?? "page"}
                     {" · "}
                     {t("monitors.config.pageSize")} · {spec.source.pagination.size ?? "—"}
@@ -270,8 +270,8 @@ export function MonitorConfig({
             </p>
             <ul className="mt-1.5 divide-y border-t">
               {(spec?.change_rules?.rules ?? []).map((rule, index) => (
-                <li key={`${rule.type ?? "rule"}-${index}`} className="flex gap-3 py-1.5 text-[13px]">
-                  <span className="num mt-0.5 w-4 shrink-0 text-[11px] text-muted-foreground">
+                <li key={`${rule.type ?? "rule"}-${index}`} className="flex gap-3 py-1.5 text-[14px]">
+                  <span className="num mt-0.5 w-4 shrink-0 text-[13px] text-muted-soft">
                     {index + 1}
                   </span>
                   <span className="min-w-0">{describeRule(rule, labels)}</span>
@@ -283,7 +283,7 @@ export function MonitorConfig({
           {spec?.business_key && (
             <div>
               <h3 className="label-line">{t("monitors.config.businessKey")}</h3>
-              <p className="num mt-1 text-[13px]">
+              <p className="num mt-1 text-[14px]">
                 {labels[spec.business_key.field] ?? spec.business_key.field}
                 {" · "}
                 {spec.business_key.item_fields.join(" + ")}
@@ -298,7 +298,7 @@ export function MonitorConfig({
             ) : (
               <ul className="mt-1 flex flex-wrap gap-x-3 gap-y-1">
                 {groupLabels.map((label) => (
-                  <li key={label} className="text-[13px]">{label}</li>
+                  <li key={label} className="text-[14px]">{label}</li>
                 ))}
               </ul>
             )}
@@ -311,7 +311,7 @@ export function MonitorConfig({
 
           <div>
             <h3 className="label-line">{t("monitors.config.schedule")}</h3>
-            <p className="num mt-1 text-[13px]">
+            <p className="num mt-1 text-[14px]">
               {formatInterval(monitor.interval_seconds)}
               {" · "}
               {formatTimezone(monitor.timezone)}
@@ -320,7 +320,7 @@ export function MonitorConfig({
 
           <div>
             <h3 className="label-line">{t("monitors.config.template")}</h3>
-            <p className="mt-1 text-[13px]">
+            <p className="mt-1 text-[14px]">
               {templateName(monitor) || t("templates.systemDefault")}
             </p>
           </div>
@@ -330,7 +330,7 @@ export function MonitorConfig({
               <h3 className="label-line">{t("monitors.config.browserSteps")}</h3>
               <ul className="mt-1.5 divide-y border-t">
                 {(spec?.browser_steps ?? []).map((step, index) => (
-                  <li key={`${step.type}-${index}`} className="num break-all py-1.5 text-[12px]">
+                  <li key={`${step.type}-${index}`} className="num break-all py-1.5 text-[13px]">
                     {stepText(step, {
                       wait: t("monitors.step.waitForSelector"),
                       scroll: t("monitors.step.scroll"),
@@ -344,29 +344,29 @@ export function MonitorConfig({
         </div>
       </div>
 
-      <details className="border-t px-4 py-3">
-        <summary className="cursor-pointer list-none text-[12px] text-muted-foreground transition-colors duration-150 select-none hover:text-foreground">
+      <details className="border-t border-hairline px-5 py-3">
+        <summary className="cursor-pointer list-none text-[13px] text-muted-foreground transition-colors duration-150 select-none hover:text-ink">
           {t("monitors.config.versions")}
         </summary>
         {versions.isPending && <p className="meta mt-2">{t("monitors.loadingShort")}</p>}
         {versions.error && <p className="meta mt-2">{t("common.listError")}</p>}
-        <ul className="mt-2 divide-y border-t">
+        <ul className="mt-2 divide-y divide-hairline border-t border-hairline">
           {(versions.data?.items ?? []).map((version) => (
-            <li key={version.draft_id} className="space-y-1.5 py-2">
+            <li key={version.draft_id} className="space-y-1.5 py-3">
               <div className="flex flex-wrap items-center justify-between gap-2">
-                <span className="flex flex-wrap items-center gap-2 text-[12px]">
+                <span className="flex flex-wrap items-center gap-2 text-[13px]">
                   {t("monitors.config.versionValue", { version: version.version })}
                   {version.current && (
                     <Badge tone="success">{t("monitors.config.versionCurrent")}</Badge>
                   )}
-                  <span className="num text-[11px] text-muted-foreground">
+                  <span className="num text-[13px] text-muted-soft">
                     {formatDateTime(version.published_at)}
                   </span>
                 </span>
                 <span className="flex items-center gap-2">
                   <button
                     type="button"
-                    className="text-[11px] text-muted-foreground underline-offset-2 hover:text-foreground hover:underline"
+                    className="text-[12px] text-muted-soft hover:text-ink hover:underline"
                     onClick={() => setOpenVersion(openVersion === version.draft_id ? null : version.draft_id)}
                   >
                     {openVersion === version.draft_id
@@ -376,7 +376,7 @@ export function MonitorConfig({
                   {!version.current && editable && (
                     <button
                       type="button"
-                      className="text-[11px] text-primary underline-offset-2 hover:underline"
+                      className="text-[12px] text-primary-active underline-offset-2 hover:underline"
                       onClick={() => onRestore(version.spec)}
                     >
                       {t("monitors.config.versionRestore")}
@@ -385,7 +385,7 @@ export function MonitorConfig({
                 </span>
               </div>
               {openVersion === version.draft_id && (
-                <pre className="max-h-64 overflow-auto rounded-lg border bg-muted/40 p-2 text-[11px] leading-relaxed">
+                <pre className="code-window mt-2 max-h-64">
                   {JSON.stringify(version.spec, null, 2)}
                 </pre>
               )}
@@ -395,14 +395,14 @@ export function MonitorConfig({
         <ListPagination query={versions} />
       </details>
 
-      <details className="border-t px-4 py-3">
-        <summary className="cursor-pointer list-none text-[12px] text-muted-foreground transition-colors duration-150 select-none hover:text-foreground">
+      <details className="border-t border-hairline px-5 py-3">
+        <summary className="cursor-pointer list-none text-[13px] text-muted-foreground transition-colors duration-150 select-none hover:text-ink">
           {t("monitors.config.raw")}
         </summary>
-        <pre className="mt-2 max-h-80 overflow-auto rounded-lg border bg-muted/40 p-3 text-[11px] leading-relaxed">
+        <pre className="code-window mt-2 max-h-80">
           {raw}
         </pre>
-        <Button variant="ghost" size="sm" className="mt-2 h-7 px-2 text-xs text-muted-foreground" onClick={() => void copy()}>
+        <Button variant="outline" size="sm" className="mt-3" onClick={() => void copy()}>
           {copied ? <Check strokeWidth={1.5} /> : <Copy strokeWidth={1.5} />}
           {copied ? t("monitors.config.copied") : t("monitors.config.copy")}
         </Button>

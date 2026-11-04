@@ -14,7 +14,7 @@ import { useI18n } from "@/lib/i18n";
  */
 function ContextPanel({ monitorId }: { monitorId: string }) {
   return (
-    <aside className="hidden h-full min-h-0 flex-col gap-6 overflow-y-auto border-l bg-card px-4 py-5 xl:flex">
+    <aside className="hidden h-full min-h-0 flex-col gap-8 overflow-y-auto border-l border-hairline bg-surface-soft px-5 py-6 xl:flex">
       <MonitorSummary monitorId={monitorId} />
       <RecentEvents monitorId={monitorId} />
     </aside>

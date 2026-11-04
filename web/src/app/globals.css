@@ -1,52 +1,116 @@
 @import "tailwindcss";
 
 /*
- * Tokens for one product: a records office. Warm paper for surfaces, ink for
- * text, one green used only where something is live, chosen or actionable.
+ * Warm-canvas editorial system (DESIGN.md at the repo root).
  *
  * Rules this file encodes:
- * - surfaces and borders come from the warm ramp, never from a hue;
- * - the hairline is ink at 10%, so nothing draws a colored edge;
- * - figures and timestamps use the mono face, everything else the UI face.
+ * - the page floor is cream, never white; depth comes from the cream/dark
+ *   surface contrast, not from shadows;
+ * - coral marks action only (primary buttons, links, focus ring, one live dot);
+ * - hairlines replace borders-with-color; machine output (code, specs, mail
+ *   bodies) sits on the dark surface;
+ * - display type is a serif at weight 400 with negative tracking; everything
+ *   else is the humanist sans; figures and timestamps are mono.
  */
 
 :root {
-  --background: #f5f2ea;
-  --foreground: #1e1b16;
-  --card: #fffdf8;
-  --card-foreground: #1e1b16;
-  --primary: #22584a;
-  --primary-foreground: #fbfaf6;
-  --primary-hover: #1b473b;
-  --secondary: #e9e4d8;
-  --secondary-foreground: #2a2620;
-  --muted: #efeade;
-  --muted-foreground: #6f6759;
-  --accent: #dfe8e1;
-  --accent-foreground: #1f4a3e;
-  --border: rgba(30, 27, 22, 0.12);
-  --input: rgba(30, 27, 22, 0.18);
-  --ring: #22584a;
-  --destructive: #9c3a2a;
-  --popover: #fffdf8;
-  --popover-foreground: #1e1b16;
-  --success: #2c6a4a;
-  --warning: #8a5a00;
-  --error: #a03a2a;
-  --radius: 0.625rem;
+  /* surfaces */
+  --canvas: #faf9f5;
+  --surface-soft: #f5f0e8;
+  --surface-card: #efe9de;
+  --surface-strong: #e8e0d2;
+  --surface-dark: #181715;
+  --surface-dark-elevated: #252320;
+  --surface-dark-soft: #1f1e1b;
+  --surface-dark-line: #2c2a26;
+
+  /* ink */
+  --ink: #141413;
+  --body-text: #3d3d3a;
+  --body-strong: #252523;
+  --muted-ink: #6c6a64;
+  --muted-soft-ink: #8e8b82;
+
+  /* accent */
+  --primary: #cc785c;
+  --primary-active: #a9583e;
+  --primary-disabled: #e6dfd8;
+  --on-primary: #ffffff;
+  --accent-teal: #5db8a6;
+  --accent-amber: #e8a55a;
+
+  /* semantic */
+  --success: #5db872;
+  --success-ink: #2f6b41;
+  --warning: #d4a017;
+  --warning-ink: #8a6410;
+  --error: #c64545;
+
+  /* lines */
+  --hairline: #e6dfd8;
+  --hairline-soft: #ebe6df;
+  --field-line: #ddd2c0;
+
+  /* text on dark surfaces */
+  --on-dark: #faf9f5;
+  --on-dark-soft: #a09d96;
+
+  /* alias layer: the vocabulary the components already speak */
+  --background: var(--canvas);
+  --foreground: var(--ink);
+  --card: var(--surface-card);
+  --card-foreground: var(--ink);
+  --primary-foreground: var(--on-primary);
+  --primary-hover: var(--primary-active);
+  --secondary: var(--surface-strong);
+  --secondary-foreground: var(--ink);
+  --muted: var(--surface-soft);
+  --muted-foreground: var(--muted-ink);
+  --accent: var(--surface-strong);
+  --accent-foreground: var(--ink);
+  --border: var(--hairline);
+  --input: var(--field-line);
+  --ring: var(--primary);
+  --destructive: var(--error);
+  --popover: var(--canvas);
+  --popover-foreground: var(--ink);
+
+  /*
+   * No webfont downloads: Copernicus/StyreneB are licensed. The display stack
+   * walks a warm old-style serif (Tiempos-like) then CJK serifs; the UI stack
+   * prefers Inter when installed, then the platform humanist sans.
+   */
+  --stack-display: "Iowan Old Style", "Palatino Linotype", Palatino, Charter,
+    Georgia, "Songti SC", "Noto Serif SC", "Source Han Serif SC", serif;
+  --stack-ui: "Inter", -apple-system, BlinkMacSystemFont, "Segoe UI",
+    "PingFang SC", "Hiragino Sans GB", "Microsoft YaHei", sans-serif;
+  --stack-code: "JetBrains Mono", ui-monospace, SFMono-Regular, "SF Mono",
+    Menlo, Consolas, monospace;
+
   --ease: cubic-bezier(0.22, 1, 0.36, 1);
-  --stack-sans: -apple-system, BlinkMacSystemFont, "Segoe UI", "PingFang SC",
-    "Hiragino Sans GB", "Microsoft YaHei", sans-serif;
-  --stack-mono: ui-monospace, SFMono-Regular, "SF Mono", Menlo, Consolas, monospace;
 }
 
 @theme inline {
   --color-background: var(--background);
   --color-foreground: var(--foreground);
+  --color-canvas: var(--canvas);
   --color-card: var(--card);
   --color-card-foreground: var(--card-foreground);
+  --color-surface-soft: var(--surface-soft);
+  --color-surface-card: var(--surface-card);
+  --color-surface-strong: var(--surface-strong);
+  --color-surface-dark: var(--surface-dark);
+  --color-surface-dark-elevated: var(--surface-dark-elevated);
+  --color-surface-dark-soft: var(--surface-dark-soft);
+  --color-dark-line: var(--surface-dark-line);
+  --color-ink: var(--ink);
+  --color-body: var(--body-text);
+  --color-body-strong: var(--body-strong);
+  --color-muted-soft: var(--muted-soft-ink);
   --color-primary: var(--primary);
   --color-primary-foreground: var(--primary-foreground);
+  --color-primary-active: var(--primary-active);
+  --color-primary-disabled: var(--primary-disabled);
   --color-secondary: var(--secondary);
   --color-secondary-foreground: var(--secondary-foreground);
   --color-muted: var(--muted);
@@ -55,19 +119,30 @@
   --color-accent-foreground: var(--accent-foreground);
   --color-border: var(--border);
   --color-input: var(--input);
+  --color-hairline: var(--hairline);
+  --color-hairline-soft: var(--hairline-soft);
   --color-ring: var(--ring);
   --color-destructive: var(--destructive);
   --color-popover: var(--popover);
   --color-popover-foreground: var(--popover-foreground);
   --color-success: var(--success);
+  --color-success-ink: var(--success-ink);
   --color-warning: var(--warning);
+  --color-warning-ink: var(--warning-ink);
   --color-error: var(--error);
-  --radius-sm: 0.25rem;
-  --radius-md: 0.5rem;
-  --radius-lg: 0.625rem;
-  --radius-xl: 0.75rem;
-  --font-sans: var(--stack-sans);
-  --font-mono: var(--stack-mono);
+  --color-on-dark: var(--on-dark);
+  --color-on-dark-soft: var(--on-dark-soft);
+  --color-accent-teal: var(--accent-teal);
+  --color-accent-amber: var(--accent-amber);
+  --radius-sm: 6px;
+  --radius-md: 8px;
+  --radius-lg: 12px;
+  --radius-xl: 16px;
+  --font-sans: var(--stack-ui);
+  --font-display: var(--stack-display);
+  --font-mono: var(--stack-code);
+  --shadow-soft: 0 24px 60px rgba(20, 20, 19, 0.12);
+  --shadow-pop: 0 12px 32px rgba(20, 20, 19, 0.12);
 }
 
 @layer base {
@@ -81,10 +156,10 @@
   }
   body {
     margin: 0;
-    background: var(--background);
-    color: var(--foreground);
-    font-family: var(--stack-sans);
-    font-size: 14px;
+    background: var(--canvas);
+    color: var(--body-text);
+    font-family: var(--stack-ui);
+    font-size: 15px;
     line-height: 1.6;
     -webkit-font-smoothing: antialiased;
     text-rendering: optimizeLegibility;
@@ -97,9 +172,12 @@
     font-weight: 500;
     line-height: 1.3;
   }
-  /* Display sizes may tighten; anything under 20px keeps normal tracking. */
+  /* Only h1 claims the display face by default; panel headings stay sans. */
   h1 {
-    letter-spacing: -0.015em;
+    font-family: var(--stack-display);
+    font-weight: 400;
+    line-height: 1.15;
+    letter-spacing: -0.02em;
   }
   p {
     margin: 0;
@@ -113,7 +191,7 @@
     cursor: pointer;
   }
   :focus-visible {
-    outline: 2px solid var(--ring);
+    outline: 2px solid var(--primary);
     outline-offset: 2px;
   }
   textarea,
@@ -123,12 +201,12 @@
   pre {
     white-space: pre-wrap;
     overflow-wrap: anywhere;
-    font-size: 12px;
-    font-family: var(--stack-mono);
+    font-size: 13px;
+    font-family: var(--stack-code);
     line-height: 1.7;
   }
   code {
-    font-family: var(--stack-mono);
+    font-family: var(--stack-code);
   }
   svg {
     flex-shrink: 0;
@@ -136,35 +214,94 @@
   table {
     border-collapse: collapse;
   }
+  ::selection {
+    background: rgba(204, 120, 92, 0.25);
+  }
 }
 
 @layer components {
-  /* One raised surface: card color, hairline, 14px radius, 20px padding. */
+  /* A cream content card: one step darker than canvas, hairline, 12px radius. */
   .surface {
-    @apply rounded-[0.875rem] border bg-card;
+    @apply rounded-lg border bg-card;
   }
   .surface-pad {
-    @apply rounded-[0.875rem] border bg-card p-5;
+    @apply rounded-lg border bg-card p-6;
   }
-  /* Quiet secondary line under a title. */
   .meta {
-    @apply text-xs text-muted-foreground;
+    @apply text-[13px] leading-5 text-muted-foreground;
   }
-  /* A field label in a report: 12px, muted, no tracking. */
+  /* A field label or section kicker: small caps voice, 1.5px tracking. */
   .label-line {
-    @apply text-[12px] leading-4 text-muted-foreground;
+    @apply text-[12px] font-medium uppercase leading-4 tracking-[0.12em] text-muted-foreground;
   }
-  /* Figures and timestamps: one tabular mono voice across the product. */
+  .eyebrow {
+    @apply text-[12px] font-medium uppercase leading-4 tracking-[0.12em] text-muted-foreground;
+  }
+  /* Figures, timestamps, selectors and specs: one mono voice. */
   .num {
     @apply font-mono tabular-nums;
     font-variant-numeric: tabular-nums;
   }
   .page-title {
-    @apply text-[1.375rem] font-medium;
+    font-family: var(--stack-display);
+    font-weight: 400;
+    font-size: 28px;
+    line-height: 1.2;
     letter-spacing: -0.015em;
+    color: var(--ink);
   }
   .section-title {
-    @apply text-[13px] font-medium;
+    @apply text-[18px] font-medium leading-[1.4] text-ink;
+  }
+  .t-title {
+    @apply text-[18px] font-medium leading-[1.4] text-ink;
+  }
+  .t-body {
+    @apply text-[15px] leading-[1.6];
+  }
+  .t-body-sm {
+    @apply text-[14px] leading-[1.55];
+  }
+  .t-caption {
+    @apply text-[13px] leading-[1.45];
+  }
+  .display-xl {
+    font-family: var(--stack-display);
+    font-weight: 400;
+    /* Capped so the widest English headline line fits one column beside the
+       sample record; the grid below uses the same 26rem figure width. */
+    font-size: clamp(2.5rem, 4.2vw, 3.5rem);
+    line-height: 1.05;
+    letter-spacing: -0.025em;
+    color: var(--ink);
+  }
+  .display-lg {
+    font-family: var(--stack-display);
+    font-weight: 400;
+    font-size: clamp(2rem, 4vw, 3rem);
+    line-height: 1.1;
+    letter-spacing: -0.02em;
+    color: var(--ink);
+  }
+  .display-md {
+    font-family: var(--stack-display);
+    font-weight: 400;
+    font-size: clamp(1.75rem, 3.2vw, 2.25rem);
+    line-height: 1.15;
+    letter-spacing: -0.02em;
+    color: var(--ink);
+  }
+  .display-sm {
+    font-family: var(--stack-display);
+    font-weight: 400;
+    font-size: 1.75rem;
+    line-height: 1.2;
+    letter-spacing: -0.015em;
+    color: var(--ink);
+  }
+  /* Machine output: code, specs, raw JSON, mail bodies. */
+  .code-window {
+    @apply overflow-auto rounded-lg border border-dark-line bg-surface-dark p-4 font-mono text-[13px] leading-[1.7] text-on-dark;
   }
 }
 

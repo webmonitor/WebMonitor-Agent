@@ -209,13 +209,13 @@ export function MonitorEditor({
     <Dialog open={open} onOpenChange={onOpenChange}>
       <DialogContent className="max-w-3xl">
         <DialogHeader>
-          <DialogTitle className="pr-6 text-base">{t("monitors.editor.title")}</DialogTitle>
+          <DialogTitle className="pr-6">{t("monitors.editor.title")}</DialogTitle>
         </DialogHeader>
 
         {stage === "edit" ? (
           <div className="space-y-3">
-            <p className="meta leading-5">{t("monitors.editor.description")}</p>
-            <p className="meta leading-5">{t("monitors.editor.specOnly")}</p>
+            <p className="t-body-sm text-muted-foreground">{t("monitors.editor.description")}</p>
+            <p className="t-body-sm text-muted-foreground">{t("monitors.editor.specOnly")}</p>
 
             {preparing && <p className="meta">{t("monitors.editor.preparing")}</p>}
 
@@ -233,10 +233,10 @@ export function MonitorEditor({
               <div role="alert" className="space-y-1 text-sm text-error">
                 <p>{errorText(error.code)}</p>
                 {error.code === "stale_revision" && (
-                  <p className="text-xs text-muted-foreground">{t("monitors.editor.reopen")}</p>
+                  <p className="text-[13px] text-muted-soft">{t("monitors.editor.reopen")}</p>
                 )}
                 {error.code === "draft_not_editable" && (
-                  <p className="text-xs text-muted-foreground">{t("monitors.editor.reopen")}</p>
+                  <p className="text-[13px] text-muted-soft">{t("monitors.editor.reopen")}</p>
                 )}
               </div>
             )}
@@ -250,7 +250,7 @@ export function MonitorEditor({
               spellCheck={false}
               rows={18}
               aria-label={t("monitors.editor.title")}
-              className="w-full resize-y rounded-lg border bg-muted/30 p-3 font-mono text-[12px] leading-relaxed outline-none focus-visible:ring-2 focus-visible:ring-ring"
+              className="code-window max-h-[26rem] w-full resize-y focus-visible:ring-[3px] focus-visible:ring-primary/25"
             />
 
             <div className="flex flex-wrap items-center justify-between gap-2">
@@ -259,7 +259,7 @@ export function MonitorEditor({
                 {session && (
                   <Link
                     href={`/app?conversation=${session.conversationId}`}
-                    className="inline-flex items-center gap-1 text-[12px] text-muted-foreground underline-offset-2 hover:text-foreground hover:underline"
+                    className="inline-flex items-center gap-1 text-[12px] text-muted-soft underline-offset-2 hover:text-ink hover:underline"
                   >
                     {t("monitors.editor.openConversation")}
                     <ExternalLink className="size-3.5" strokeWidth={1.5} />
@@ -278,7 +278,7 @@ export function MonitorEditor({
               <Button
                 variant="outline"
                 size="sm"
-                className="h-7 px-2 text-xs"
+                className="h-7 px-2 text-[13px]"
                 onClick={() => {
                   attemptedRef.current = false;
                   prepareRef.current();
@@ -292,8 +292,8 @@ export function MonitorEditor({
         ) : (
           <div className="space-y-3">
             <div className="space-y-1">
-              <h3 className="text-[14px] font-medium">{t("monitors.editor.review")}</h3>
-              <p className="meta leading-5">{t("monitors.editor.reviewDescription")}</p>
+              <h3 className="t-title">{t("monitors.editor.review")}</h3>
+              <p className="t-body-sm text-muted-foreground">{t("monitors.editor.reviewDescription")}</p>
             </div>
 
             {conversation.error && (
@@ -315,7 +315,7 @@ export function MonitorEditor({
               {session && (
                 <Link
                   href={`/app?conversation=${session.conversationId}`}
-                  className="inline-flex items-center gap-1 text-[12px] text-muted-foreground underline-offset-2 hover:text-foreground hover:underline"
+                  className="inline-flex items-center gap-1 text-[12px] text-muted-soft underline-offset-2 hover:text-ink hover:underline"
                 >
                   {t("monitors.editor.openConversation")}
                   <ExternalLink className="size-3.5" strokeWidth={1.5} />

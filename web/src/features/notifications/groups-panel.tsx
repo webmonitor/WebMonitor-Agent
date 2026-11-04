@@ -103,7 +103,7 @@ export function GroupsPanel() {
       </header>
 
       {groups.isPending && <p className="meta">{t("activity.groups.loading")}</p>}
-      {remove.error && <p role="alert" className="text-xs text-error">{errorText(remove.error)}</p>}
+      {remove.error && <p role="alert" className="text-[13px] text-error">{errorText(remove.error)}</p>}
 
       {!groups.isPending && !groups.error && items.length === 0 && (
         <EmptyState
@@ -114,13 +114,13 @@ export function GroupsPanel() {
         />
       )}
 
-      <ul className="divide-y border-t">
+      <ul className="border-t border-hairline divide-y divide-hairline">
         {items.map((group) => (
-          <li key={group.id} className="space-y-2 py-3">
+          <li key={group.id} className="space-y-2 py-4">
             <div className="flex items-start justify-between gap-2">
               <div className="flex min-w-0 items-center gap-2">
                 <Users className="size-4 shrink-0 text-muted-foreground" strokeWidth={1.5} />
-                <span className="truncate text-[13px] font-medium">{group.name}</span>
+                <span className="truncate text-[14px] font-medium text-ink">{group.name}</span>
                 {!group.enabled && <Badge tone="neutral">{t("activity.groups.disabled")}</Badge>}
               </div>
               {admin && (
@@ -128,7 +128,7 @@ export function GroupsPanel() {
                   <Button
                     variant="ghost"
                     size="sm"
-                    className="h-7 px-2 text-xs text-muted-foreground"
+                    className="h-7 px-2 text-[13px] text-muted-soft hover:text-ink"
                     onClick={() => openForm(group)}
                   >
                     {t("activity.groups.edit")}
@@ -136,7 +136,7 @@ export function GroupsPanel() {
                   <Button
                     variant="ghost"
                     size="sm"
-                    className="h-7 px-2 text-xs text-muted-foreground"
+                    className="h-7 px-2 text-[13px] text-muted-soft hover:text-ink"
                     disabled={remove.isPending || !group.enabled}
                     onClick={() => setPendingDelete(group)}
                   >
@@ -150,7 +150,7 @@ export function GroupsPanel() {
             ) : admin ? (
               <ul className="flex flex-wrap gap-x-3 gap-y-1">
                 {group.members.map((member) => (
-                  <li key={member.email} className="num truncate text-[12px] text-muted-foreground">
+                  <li key={member.email} className="num truncate text-[13px] text-muted-soft">
                     {member.email}
                     {!member.active && ` (${t("activity.groups.disabled")})`}
                   </li>
@@ -170,7 +170,7 @@ export function GroupsPanel() {
       <Dialog open={editing !== null} onOpenChange={(value) => !value && setEditing(null)}>
         <DialogContent className="max-w-md">
           <DialogHeader>
-            <DialogTitle className="text-base">
+            <DialogTitle>
               {editing === "new"
                 ? t("activity.groups.form.newTitle")
                 : t("activity.groups.form.editTitle")}
@@ -194,17 +194,17 @@ export function GroupsPanel() {
                 value={emails}
                 rows={4}
                 onChange={(event) => setEmails(event.target.value)}
-                className="w-full rounded-lg border border-input bg-card px-3 py-2 font-mono text-[12px] leading-6 outline-none transition-colors duration-150 focus-visible:border-ring"
+                className="w-full rounded-md border border-input bg-canvas px-3 py-2 font-mono text-[13px] leading-6 outline-none transition-colors focus-visible:border-primary focus-visible:ring-[3px] focus-visible:ring-primary/15"
                 placeholder={t("activity.groups.form.recipientsPlaceholder")}
               />
               <p className="meta leading-5">{t("activity.groups.form.recipientsHint")}</p>
             </div>
             {error && (
-              <p className="text-xs text-error" role="alert">
+              <p className="text-[13px] text-error" role="alert">
                 {error.code ? errorText(error.code) : t("activity.groups.saveFailed")}
               </p>
             )}
-            <div className="flex justify-end gap-2 border-t pt-4">
+            <div className="flex justify-end gap-2 border-t border-hairline pt-4">
               <Button variant="ghost" size="sm" onClick={() => setEditing(null)}>
                 {t("activity.groups.form.cancel")}
               </Button>
@@ -219,15 +219,15 @@ export function GroupsPanel() {
       <Dialog open={pendingDelete !== null} onOpenChange={(value) => !value && setPendingDelete(null)}>
         <DialogContent className="max-w-md">
           <DialogHeader>
-            <DialogTitle className="text-base">{t("activity.groups.deleteTitle")}</DialogTitle>
+            <DialogTitle>{t("activity.groups.deleteTitle")}</DialogTitle>
           </DialogHeader>
           <p className="meta leading-5">{t("activity.groups.deleteBody")}</p>
           {remove.error && (
-            <p className="mt-3 text-xs text-error" role="alert">
+            <p className="mt-3 text-[13px] text-error" role="alert">
               {errorText(remove.error)}
             </p>
           )}
-          <div className="mt-4 flex justify-end gap-2 border-t pt-4">
+          <div className="mt-4 flex justify-end gap-2 border-t border-hairline pt-4">
             <Button variant="ghost" size="sm" onClick={() => setPendingDelete(null)}>
               {t("activity.groups.form.cancel")}
             </Button>

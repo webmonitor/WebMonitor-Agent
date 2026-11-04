@@ -25,7 +25,7 @@ import { ListPagination } from "@/components/list-pagination";
 const CONVERSATION_PREVIEW = 8;
 
 /* One row height for every navigation item, so the sidebar reads as a column. */
-const ROW = "flex h-8 items-center gap-2 rounded-md px-2 text-[13px] transition-colors duration-150";
+const ROW = "flex h-9 items-center gap-2.5 rounded-md px-2.5 text-[14px] transition-colors duration-150";
 
 function ConversationList({ onNavigate }: { onNavigate: () => void }) {
   const { t } = useI18n();
@@ -40,11 +40,11 @@ function ConversationList({ onNavigate }: { onNavigate: () => void }) {
   const [expanded, setExpanded] = useState(false);
 
   if (conversations.isPending) {
-    return <p className="px-2 py-1 text-xs text-muted-foreground">{t("common.loading")}</p>;
+    return <p className="px-2.5 py-1 text-[13px] text-muted-soft">{t("common.loading")}</p>;
   }
   if (conversations.error && items.length === 0) return <ListPagination query={conversations} />;
   if (items.length === 0) {
-    return <p className="px-2 py-1 text-xs text-muted-foreground">{t("common.noConversations")}</p>;
+    return <p className="px-2.5 py-1 text-[13px] text-muted-soft">{t("common.noConversations")}</p>;
   }
 
   // Keep the open conversation visible: show the newest few and keep the current one in view.
@@ -70,7 +70,7 @@ function ConversationList({ onNavigate }: { onNavigate: () => void }) {
       {groups.map((group) => (
         <div key={group.day} className="mt-2 first:mt-0">
           {/* Day captions sit closer to their own rows than to the group above. */}
-          <p className="num px-2 pb-1 text-[11px] leading-4 text-muted-foreground">{group.day}</p>
+          <p className="num px-2.5 pb-1 text-[12px] leading-4 text-muted-soft">{group.day}</p>
           <ul>
             {group.items.map((conversation) => {
               const isCurrent = conversation.id === active;
@@ -82,14 +82,14 @@ function ConversationList({ onNavigate }: { onNavigate: () => void }) {
                     aria-current={isCurrent ? "page" : undefined}
                     className={`${ROW} pr-8 ${
                       isCurrent
-                        ? "bg-secondary text-foreground"
-                        : "text-muted-foreground hover:bg-muted hover:text-foreground"
+                        ? "bg-canvas font-medium text-ink"
+                        : "text-body hover:bg-surface-strong/60 hover:text-ink"
                     }`}
                   >
                     <span className="min-w-0 flex-1 truncate">
                       {conversation.title?.trim() || t("common.untitledConversation")}
                     </span>
-                    <span className="num shrink-0 text-[11px] text-muted-foreground">
+                    <span className="num shrink-0 text-[12px] text-muted-soft">
                       {formatRelative(conversation.updated_at)}
                     </span>
                   </Link>
@@ -97,7 +97,7 @@ function ConversationList({ onNavigate }: { onNavigate: () => void }) {
                     type="button"
                     aria-label={t("chat.archive.action")}
                     disabled={archive.isPending}
-                    className="absolute top-1/2 right-1 grid size-6 -translate-y-1/2 place-items-center rounded-md text-muted-foreground transition-[color,opacity] duration-150 hover:text-foreground disabled:opacity-45 sm:opacity-0 sm:group-hover:opacity-100 sm:group-focus-within:opacity-100"
+                    className="absolute top-1/2 right-1 grid size-6 -translate-y-1/2 place-items-center rounded-md text-muted-soft transition-[color,opacity] duration-150 hover:text-ink disabled:opacity-45 sm:opacity-0 sm:group-hover:opacity-100 sm:group-focus-within:opacity-100"
                     onClick={() => archive.mutate(conversation.id, {
                       onSuccess: () => {
                         if (isCurrent) router.replace("/app");
@@ -114,11 +114,11 @@ function ConversationList({ onNavigate }: { onNavigate: () => void }) {
         </div>
       ))}
       {archive.error && (
-        <p role="alert" className="px-2 pt-1 text-[11px] text-error">{errorText(archive.error)}</p>
+        <p role="alert" className="px-2.5 pt-1 text-[13px] text-error">{errorText(archive.error)}</p>
       )}
       {items.length > CONVERSATION_PREVIEW && (
         <button
-          className="mt-1 h-7 px-2 text-left text-[11px] text-muted-foreground transition-colors duration-150 hover:text-foreground"
+          className="mt-1 h-7 px-2.5 text-left text-[13px] text-muted-soft transition-colors duration-150 hover:text-ink"
           onClick={() => setExpanded((value) => !value)}
         >
           {expanded ? t("common.collapse") : t("common.allConversations", { count: items.length })}
@@ -137,11 +137,11 @@ function MonitorList({ onNavigate }: { onNavigate: () => void }) {
   const items = monitors.data?.items ?? [];
 
   if (monitors.isPending) {
-    return <p className="px-2 py-1 text-xs text-muted-foreground">{t("common.loading")}</p>;
+    return <p className="px-2.5 py-1 text-[13px] text-muted-soft">{t("common.loading")}</p>;
   }
   if (monitors.error && items.length === 0) return <ListPagination query={monitors} />;
   if (items.length === 0) {
-    return <p className="px-2 py-1 text-xs text-muted-foreground">{t("common.noMonitors")}</p>;
+    return <p className="px-2.5 py-1 text-[13px] text-muted-soft">{t("common.noMonitors")}</p>;
   }
   return (
     <>
@@ -157,8 +157,8 @@ function MonitorList({ onNavigate }: { onNavigate: () => void }) {
                 aria-current={active ? "page" : undefined}
                 className={`${ROW} pr-2 ${
                   active
-                    ? "bg-secondary text-foreground"
-                    : "text-muted-foreground hover:bg-muted hover:text-foreground"
+                    ? "bg-canvas font-medium text-ink"
+                    : "text-body hover:bg-surface-strong/60 hover:text-ink"
                 }`}
               >
                 {/* The signature: one dot that is green only while the monitor is live. */}
@@ -166,8 +166,8 @@ function MonitorList({ onNavigate }: { onNavigate: () => void }) {
                   aria-hidden
                   className={`size-1.5 shrink-0 rounded-full ${live ? "bg-success" : "bg-muted-foreground/40"}`}
                 />
-                <span className="min-w-0 flex-1 truncate text-foreground">{monitor.name}</span>
-                <span className="num shrink-0 text-[11px] text-muted-foreground">
+                <span className="min-w-0 flex-1 truncate text-ink">{monitor.name}</span>
+                <span className="num shrink-0 text-[12px] text-muted-soft">
                   {live ? formatInterval(monitor.interval_seconds) : t("common.paused")}
                 </span>
               </Link>
@@ -188,8 +188,8 @@ function SectionLabel({
   action?: ReactNode;
 }) {
   return (
-    <div className="mt-6 flex items-baseline justify-between gap-2 px-2 pb-1 first:mt-0">
-      <span className="text-[11px] leading-4 font-medium text-foreground/70">{children}</span>
+    <div className="mt-6 flex items-baseline justify-between gap-2 px-2.5 pb-1 first:mt-0">
+      <span className="eyebrow">{children}</span>
       {action}
     </div>
   );
@@ -231,7 +231,7 @@ export function WorkspaceShell({ children }: { children: ReactNode }) {
 
   if (isPending) {
     return (
-      <main className="grid min-h-dvh place-items-center text-sm text-muted-foreground" role="status">
+      <main className="grid min-h-dvh place-items-center t-body-sm text-muted-foreground" role="status">
         {t("common.opening")}
       </main>
     );
@@ -241,14 +241,14 @@ export function WorkspaceShell({ children }: { children: ReactNode }) {
       <main className="grid min-h-dvh place-items-center p-6 text-center">
         {error ? (
           <div className="space-y-3">
-            <h1 className="text-lg font-medium">{t("common.unavailable")}</h1>
-            <p className="text-sm text-error" role="alert">
+            <h1 className="display-sm">{t("common.unavailable")}</h1>
+            <p className="t-body-sm text-error" role="alert">
               {t("common.connectionError")}
             </p>
             <Button onClick={() => void refresh()}>{t("common.reconnect")}</Button>
           </div>
         ) : (
-          <p role="status" className="text-sm text-muted-foreground">
+          <p role="status" className="t-body-sm text-muted-foreground">
             {t("common.redirecting")}
           </p>
         )}
@@ -277,7 +277,7 @@ export function WorkspaceShell({ children }: { children: ReactNode }) {
     <div className="flex h-dvh overflow-hidden bg-background">
       {open && (
         <button
-          className="fixed inset-0 z-30 bg-[rgba(30,27,22,0.28)] md:hidden"
+          className="fixed inset-0 z-30 bg-[rgba(20,20,19,0.32)] md:hidden"
           aria-label={t("common.closeNavigation")}
           onClick={() => setOpen(false)}
         />
@@ -287,16 +287,18 @@ export function WorkspaceShell({ children }: { children: ReactNode }) {
           open ? "translate-x-0" : "-translate-x-full"
         }`}
       >
-        <div className="flex h-14 items-center gap-2 px-3">
-          <Link href="/app" className="flex min-w-0 items-center gap-2 text-[15px] font-medium">
-            <Radar className="size-4 text-primary" strokeWidth={1.5} />
+        <div className="flex h-16 items-center gap-2 px-3">
+          <Link href="/app" className="flex min-w-0 items-center gap-2.5 font-display text-[20px] leading-none tracking-[-0.02em] text-ink">
+            <Radar className="size-[18px] text-primary" strokeWidth={1.5} />
             <span className="truncate">WebMonitor</span>
           </Link>
-          <LanguageSwitcher className="ml-auto" />
+          <span className="ml-auto hidden md:block">
+            <LanguageSwitcher />
+          </span>
           <Button
             variant="ghost"
             size="icon"
-            className="size-7 md:hidden"
+            className="ml-auto size-7 md:hidden"
             aria-label={t("common.closeNavigation")}
             onClick={() => setOpen(false)}
           >
@@ -307,7 +309,7 @@ export function WorkspaceShell({ children }: { children: ReactNode }) {
         <nav className="space-y-0.5 px-2 pb-2">
           <button
             onClick={() => void startConversation()}
-            className={`${ROW} w-full text-left text-muted-foreground hover:bg-muted hover:text-foreground`}
+            className={`${ROW} w-full text-left text-body hover:bg-surface-strong/60 hover:text-ink`}
           >
             <Plus className="size-4" strokeWidth={1.5} />
             {t("common.newConversation")}
@@ -321,8 +323,8 @@ export function WorkspaceShell({ children }: { children: ReactNode }) {
                 aria-current={current ? "page" : undefined}
                 className={`${ROW} ${
                   current
-                    ? "bg-secondary font-medium text-foreground"
-                    : "text-muted-foreground hover:bg-muted hover:text-foreground"
+                    ? "bg-canvas font-medium text-ink"
+                    : "text-body hover:bg-surface-strong/60 hover:text-ink"
                 }`}
               >
                 <Icon className="size-4" strokeWidth={1.5} />
@@ -337,7 +339,7 @@ export function WorkspaceShell({ children }: { children: ReactNode }) {
             action={
               <Link
                 href="/app/archived"
-                className="text-[11px] text-muted-foreground underline-offset-2 hover:text-foreground hover:underline"
+                className="text-[12px] text-muted-soft underline-offset-2 hover:text-ink hover:underline"
               >
                 {t("common.archived")}
               </Link>
@@ -350,7 +352,7 @@ export function WorkspaceShell({ children }: { children: ReactNode }) {
             action={
               <Link
                 href="/app/archived-conversations"
-                className="text-[11px] text-muted-foreground underline-offset-2 hover:text-foreground hover:underline"
+                className="text-[12px] text-muted-soft underline-offset-2 hover:text-ink hover:underline"
               >
                 {t("common.archived")}
               </Link>
@@ -363,42 +365,42 @@ export function WorkspaceShell({ children }: { children: ReactNode }) {
           </Suspense>
         </div>
 
-        <div className="flex h-14 items-center gap-2 border-t px-3">
+        <div className="flex h-16 items-center gap-2 border-t px-3">
           <span
             aria-hidden
-            className="grid size-7 shrink-0 place-items-center rounded-full border text-[11px] font-medium text-muted-foreground"
+            className="grid size-8 shrink-0 place-items-center rounded-full border border-hairline bg-canvas text-[12px] font-medium text-ink"
           >
             {initial}
           </span>
           <div className="min-w-0 flex-1 leading-tight">
-            <p className="truncate text-[12px] font-medium">{user.display_name}</p>
-            <p className="truncate text-[11px] text-muted-foreground">
+            <p className="truncate text-[13px] font-medium text-ink">{user.display_name}</p>
+            <p className="truncate text-[12px] text-muted-soft">
               {user.role === "admin" ? t("common.admin") : t("common.member")}
             </p>
           </div>
           <Button
             variant="ghost"
             size="icon"
-            className="size-7 text-muted-foreground"
+            className="size-7 text-muted-soft hover:text-ink"
             aria-label={t("common.logout")}
             onClick={() => { setLogoutError(null); void logout().catch(setLogoutError); }}
           >
             <LogOut className="size-4" strokeWidth={1.5} />
           </Button>
         </div>
-        {logoutError && <p role="alert" className="px-3 pb-2 text-xs text-error">{errorText(logoutError)}</p>}
+        {logoutError && <p role="alert" className="px-3 pb-2 text-[13px] text-error">{errorText(logoutError)}</p>}
       </aside>
 
       <div className="flex min-w-0 flex-1 flex-col">
-        <header className="flex h-14 items-center gap-3 border-b bg-card px-4 md:hidden">
+        <header className="flex h-16 items-center gap-3 border-b border-hairline bg-canvas px-4 md:hidden">
           <Button variant="ghost" size="icon" className="size-8" aria-label={t("common.openNavigation")} onClick={() => setOpen(true)}>
             <Menu className="size-4" strokeWidth={1.5} />
           </Button>
-          <span className="flex items-center gap-1.5 text-sm font-medium">
-            <Radar className="size-4 text-primary" strokeWidth={1.5} />
+          <span className="flex items-center gap-2.5 font-display text-[20px] leading-none tracking-[-0.02em] text-ink">
+            <Radar className="size-[18px] text-primary" strokeWidth={1.5} />
             WebMonitor
           </span>
-          <span className="truncate text-[13px] text-muted-foreground">
+          <span className="truncate text-[14px] text-muted-soft">
             {section}
           </span>
           <LanguageSwitcher className="ml-auto" />

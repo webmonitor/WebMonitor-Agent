@@ -73,7 +73,7 @@ function RecordRow({
 }) {
   const { formatValue } = useFormat();
   if (item === null || typeof item !== "object" || Array.isArray(item)) {
-    return <span className="num text-[13px] break-words">{formatValue(item)}</span>;
+    return <span className="num text-[14px] break-words">{formatValue(item)}</span>;
   }
   const entries = Object.entries(item as Record<string, unknown>);
   const primary = primaryIndex(entries, businessKey);
@@ -82,15 +82,15 @@ function RecordRow({
   return (
     <div className="min-w-0 space-y-0.5">
       {title && (
-        <p className="text-[13px] leading-5 break-words">{formatValue(title[1], types?.[title[0]])}</p>
+        <p className="text-[14px] leading-5 break-words">{formatValue(title[1], types?.[title[0]])}</p>
       )}
       {rest.length > 0 && (
-        <p className="flex flex-wrap items-baseline gap-x-3 gap-y-0.5 text-[11px] leading-4 text-muted-foreground">
+        <p className="flex flex-wrap items-baseline gap-x-3 gap-y-0.5 text-[12px] leading-4 text-muted-soft">
           {rest.map(([key, value]) => (
             <span key={key} className="inline-flex min-w-0 items-baseline gap-1">
               {isHttpUrl(value) ? (
                 <a
-                  className="inline-flex min-w-0 items-center gap-1 text-primary underline-offset-2 hover:underline"
+                  className="inline-flex min-w-0 items-center gap-1 text-primary-active underline-offset-2 hover:underline"
                   href={value}
                   target="_blank"
                   rel="noreferrer"
@@ -103,7 +103,7 @@ function RecordRow({
               ) : (
                 <>
                   <span>{labels[key] ?? key}</span>
-                  <span className="num text-foreground">{formatValue(value, types?.[key])}</span>
+                  <span className="num text-ink">{formatValue(value, types?.[key])}</span>
                 </>
               )}
             </span>
@@ -153,13 +153,13 @@ export function FieldValues({
         return (
           <div key={name} className="py-2">
             <div className="flex items-baseline justify-between gap-3">
-              <dt className="min-w-0 text-[12px] text-muted-foreground">{labels[name] ?? name}</dt>
+              <dt className="min-w-0 text-[13px] text-muted-foreground">{labels[name] ?? name}</dt>
               {items ? (
-                <dd className="num shrink-0 text-[11px] text-muted-foreground">
+                <dd className="num shrink-0 text-[13px] text-muted-foreground">
                   {t("monitors.content.itemsCount", { count: items.length })}
                 </dd>
               ) : (
-                <dd className="num min-w-0 max-w-[65%] text-right text-[13px] break-words">
+                <dd className="num min-w-0 max-w-[65%] text-right text-[14px] break-words text-ink">
                   {formatValue(value, types?.[name])}
                 </dd>
               )}
@@ -171,7 +171,7 @@ export function FieldValues({
                 ) : (
                   <ul className={mode === "full" ? "divide-y border-t" : "space-y-1.5"}>
                     {shown.map((item, index) => (
-                      <li key={index} className={mode === "full" ? "py-1.5 text-[12px]" : "text-[12px]"}>
+                      <li key={index} className={mode === "full" ? "py-1.5 text-[13px]" : "text-[13px]"}>
                         <RecordRow item={item} labels={labels} types={types} businessKey={businessKey} />
                       </li>
                     ))}
@@ -180,7 +180,7 @@ export function FieldValues({
                 {items.length > shown.length && mode === "full" && (
                   <button
                     type="button"
-                    className="mt-1.5 text-[11px] text-muted-foreground underline-offset-2 transition-colors duration-150 hover:text-foreground hover:underline"
+                    className="mt-1.5 text-[13px] text-primary-active underline-offset-2 hover:underline"
                     onClick={() => setExpanded((open) => !open)}
                   >
                     {expanded
@@ -189,7 +189,7 @@ export function FieldValues({
                   </button>
                 )}
                 {items.length > shown.length && mode === "compact" && (
-                  <p className="mt-1 text-[11px] text-muted-foreground">
+                  <p className="mt-1 text-[13px] text-muted-foreground">
                     {t("monitors.content.moreItems", { count: items.length - shown.length })}
                   </p>
                 )}

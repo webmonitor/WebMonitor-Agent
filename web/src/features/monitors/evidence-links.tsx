@@ -21,7 +21,7 @@ export function EvidenceLinks({
       {references.map((reference, index) => (
         <a
           key={reference.sha256}
-          className="inline-flex items-center gap-1.5 text-[11px] text-muted-foreground transition-colors duration-150 hover:text-foreground"
+          className="inline-flex items-center gap-1.5 text-[12px] text-muted-soft transition-colors hover:text-ink"
           href={`/api/v1/snapshots/${snapshotId}/evidence/${index}`}
           target="_blank"
           rel="noreferrer"
@@ -33,7 +33,7 @@ export function EvidenceLinks({
             : reference.kind === "json"
               ? t("monitors.evidence.json")
               : t("monitors.evidence.archive")}
-          <span className="num">{formatBytes(reference.size_bytes)}</span>
+          <span className="num text-[12px]">{formatBytes(reference.size_bytes)}</span>
         </a>
       ))}
     </div>

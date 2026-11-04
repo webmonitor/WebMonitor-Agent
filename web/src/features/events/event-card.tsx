@@ -54,7 +54,7 @@ function ItemFields({ item, labels }: { item: unknown; labels: Record<string, st
     <span className="flex flex-wrap gap-x-3 gap-y-0.5">
       {Object.entries(item as Record<string, unknown>).map(([key, value]) => (
         <span key={key} className="inline-flex items-baseline gap-1">
-          <span className="text-[11px] text-muted-foreground">{labels[key] ?? key}</span>
+          <span className="text-[13px] text-muted-foreground">{labels[key] ?? key}</span>
           <span className="num break-words">{formatValue(value)}</span>
         </span>
       ))}
@@ -74,12 +74,12 @@ function UpdatedFields({ item, labels }: { item: unknown; labels: Record<string,
     <ul className="space-y-0.5">
       {(record.fields ?? []).map((name) => (
         <li key={name} className="flex flex-wrap items-baseline gap-x-2">
-          <span className="text-[11px] text-muted-foreground">{labels[name] ?? name}</span>
-          <span className="num text-[11px] text-muted-foreground line-through decoration-muted-foreground/40">
+          <span className="text-[13px] text-muted-foreground">{labels[name] ?? name}</span>
+          <span className="num text-[13px] text-muted-soft line-through decoration-muted-soft/50">
             {formatValue(record.before?.[name])}
           </span>
-          <span aria-hidden className="text-[10px] text-muted-foreground/60">→</span>
-          <span className="num text-[12px]">{formatValue(record.after?.[name])}</span>
+          <span aria-hidden className="text-[12px] text-muted-soft">→</span>
+          <span className="num text-[13px] text-ink">{formatValue(record.after?.[name])}</span>
         </li>
       ))}
     </ul>
@@ -101,15 +101,15 @@ export function ChangeRows({
   const { t } = useI18n();
   const { fieldLabel, formatValue } = useFormat();
   if (type === "run_failed") {
-    return <p className="text-[13px] leading-6 text-muted-foreground">{t("activity.eventCard.failedNote")}</p>;
+    return <p className="text-[14px] leading-6 text-muted-foreground">{t("activity.eventCard.failedNote")}</p>;
   }
   if (type === "recovered") {
-    return <p className="text-[13px] leading-6 text-muted-foreground">{t("activity.eventCard.recoveredNote")}</p>;
+    return <p className="text-[14px] leading-6 text-muted-foreground">{t("activity.eventCard.recoveredNote")}</p>;
   }
   const labels = (change.labels ?? {}) as Record<string, string>;
   const rows = differencesOf(change);
   if (rows.length === 0) {
-    return <p className="text-[13px] leading-6 text-muted-foreground">{t("activity.eventCard.noFields")}</p>;
+    return <p className="text-[14px] leading-6 text-muted-foreground">{t("activity.eventCard.noFields")}</p>;
   }
   return (
     <dl className="divide-y">
@@ -125,34 +125,34 @@ export function ChangeRows({
         return (
           <div key={`${row.field ?? index}-${index}`} className="space-y-1 py-1.5">
             <div className="flex items-baseline justify-between gap-3">
-              <dt className="shrink-0 text-[12px] text-muted-foreground">
+              <dt className="shrink-0 text-[13px] text-muted-foreground">
                 {fieldLabel({ name: row.field ?? "", semantic: labels[row.field ?? ""] })}
               </dt>
               {items.length > 0 ? (
-                <dd className="num shrink-0 text-[11px] text-muted-foreground">
+                <dd className="num shrink-0 text-[13px] text-muted-foreground">
                   {t("activity.eventCard.itemCount", { count: items.length })}
                 </dd>
               ) : metrics.length === 0 ? (
                 <dd className="flex min-w-0 flex-wrap items-baseline justify-end gap-x-2 gap-y-0.5 text-right">
-                  <span className="num text-[12px] text-muted-foreground line-through decoration-muted-foreground/40">
+                  <span className="num text-[13px] text-muted-soft line-through decoration-muted-soft/50">
                     {formatValue(row.before)}
                   </span>
-                  <span aria-hidden className="text-[11px] text-muted-foreground/60">→</span>
-                  <span className="num text-[13px] font-medium text-foreground">
+                  <span aria-hidden className="text-[13px] text-muted-foreground/60">→</span>
+                  <span className="num text-[14px] font-medium text-ink">
                     {formatValue(row.after)}
                   </span>
                 </dd>
               ) : (
-                <dd className="num shrink-0 text-[11px] text-muted-foreground">
+                <dd className="num shrink-0 text-[13px] text-muted-foreground">
                   {metrics.join(" · ")}
                 </dd>
               )}
             </div>
             {items.length > 0 && (
               <dd>
-                <ul className="space-y-1 border-l pl-2.5">
+                <ul className="space-y-1 border-l border-hairline pl-2.5">
                   {items.map((item, itemIndex) => (
-                    <li key={itemIndex} className="text-[12px]">
+                    <li key={itemIndex} className="text-[13px]">
                       {row.type === "list_updated" ? (
                         <UpdatedFields item={item} labels={labels} />
                       ) : (
@@ -160,7 +160,7 @@ export function ChangeRows({
                           <span
                             aria-hidden
                             className={`shrink-0 ${
-                              row.type === "list_removed" ? "text-error" : "text-success"
+                              row.type === "list_removed" ? "text-error" : "text-success-ink"
                             }`}
                           >
                             {row.type === "list_removed" ? "−" : "+"}
@@ -200,21 +200,21 @@ export function EventCard({
             <Badge tone={TONES[event.type] ?? "neutral"}>{eventLabel(event.type)}</Badge>
             <Link
               href={`/app/monitors/${event.monitor_id}`}
-              className="truncate text-[13px] font-medium underline-offset-2 hover:underline"
+              className="truncate text-[15px] font-medium text-ink underline-offset-2 hover:underline"
             >
               {event.monitor_name}
             </Link>
             {/* Unread is a dot in the same column as the live monitors, not a stripe. */}
-            {unread && <span aria-hidden className="size-1.5 rounded-full bg-foreground" />}
+            {unread && <span aria-hidden className="size-1.5 rounded-full bg-primary" />}
           </div>
-          <p className="num text-[11px] text-muted-foreground">{formatTime(event.created_at)}</p>
+          <p className="num text-[12px] text-muted-soft">{formatTime(event.created_at)}</p>
         </div>
         {onAcknowledge &&
           (unread ? (
             <Button
               variant="ghost"
               size="sm"
-              className="h-7 shrink-0 px-2 text-xs text-muted-foreground"
+              className="h-7 shrink-0 px-2 text-[13px] text-muted-soft hover:text-ink"
               onClick={() => onAcknowledge(event.id)}
               disabled={acknowledging}
             >
@@ -222,7 +222,7 @@ export function EventCard({
               {t("activity.eventCard.acknowledge")}
             </Button>
           ) : (
-            <span className="flex shrink-0 items-center gap-1 text-[11px] text-muted-foreground">
+            <span className="flex shrink-0 items-center gap-1 text-[13px] text-muted-soft">
               <CheckCheck className="size-3.5" strokeWidth={1.5} />
               {t("activity.eventCard.read")}
             </span>
@@ -232,7 +232,7 @@ export function EventCard({
         <ChangeRows change={event.change} type={event.type} />
       </div>
       {event.notifications_skipped && (
-        <p role="status" className="mt-2 text-[11px] leading-5 text-warning">
+        <p role="status" className="mt-2 text-[13px] leading-5 text-warning-ink">
           {t("activity.eventCard.notificationsSkipped")}{" "}
           {errorText(event.notifications_skipped)}
         </p>
@@ -241,14 +241,14 @@ export function EventCard({
         {event.snapshot_id && (
           <Link
             href={`/app/monitors/${event.monitor_id}/snapshots/${event.snapshot_id}`}
-            className="text-[11px] text-muted-foreground underline-offset-2 hover:text-foreground hover:underline"
+            className="text-[13px] text-muted-soft hover:text-ink hover:underline"
           >
             {t("monitors.snapshot.open")}
           </Link>
         )}
         <Link
           href={`/app/monitors/${event.monitor_id}?job=${event.job_id}`}
-          className="text-[11px] text-muted-foreground underline-offset-2 hover:text-foreground hover:underline"
+          className="text-[13px] text-muted-soft hover:text-ink hover:underline"
         >
           {t("monitors.dialog.open")}
         </Link>

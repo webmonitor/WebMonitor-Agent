@@ -4,26 +4,26 @@ import { cva, type VariantProps } from "class-variance-authority";
 import { cn } from "@/lib/utils";
 
 /*
- * Buttons carry the accent only when they are the one action on the screen.
- * Everything else is a hairline surface or plain text; nothing changes size or
- * lift on hover, only color.
+ * Buttons carry the accent only when they are the one action on the screen;
+ * selection is a cream fill, never coral. Nothing changes size or lift on
+ * hover, only color.
  */
 const buttonVariants = cva(
-  "inline-flex items-center justify-center gap-2 rounded-lg text-[13px] font-medium transition-colors duration-150 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring disabled:pointer-events-none disabled:opacity-45 [&_svg]:size-4",
+  "inline-flex items-center justify-center gap-2 rounded-md text-[14px] font-medium transition-colors duration-150 focus-visible:outline-none focus-visible:ring-[3px] focus-visible:ring-primary/15 disabled:pointer-events-none disabled:opacity-45 [&_svg]:size-4",
   {
     variants: {
       variant: {
-        default: "bg-primary text-primary-foreground hover:bg-[var(--primary-hover)]",
-        outline: "border border-input bg-card text-foreground hover:bg-muted",
-        ghost: "text-foreground hover:bg-muted",
-        destructive: "bg-destructive text-white hover:bg-[#8a3123]",
-        secondary: "bg-secondary text-secondary-foreground hover:bg-[#e0dacb]",
-        link: "text-primary underline-offset-4 hover:underline",
+        default: "bg-primary text-primary-foreground hover:bg-primary-active",
+        outline: "border border-input bg-canvas text-ink hover:bg-surface-card",
+        ghost: "text-body hover:bg-surface-soft hover:text-ink",
+        destructive: "bg-error text-white hover:bg-[#a83a3a]",
+        secondary: "bg-secondary text-secondary-foreground hover:bg-[#ded4c0]",
+        link: "text-primary-active underline-offset-4 hover:underline",
       },
       size: {
-        default: "h-9 px-3.5",
-        sm: "h-8 px-3 text-xs",
-        lg: "h-11 px-5 text-sm",
+        default: "h-10 px-5",
+        sm: "h-8 px-3 text-[13px]",
+        lg: "h-11 px-6",
         icon: "size-9",
       },
     },

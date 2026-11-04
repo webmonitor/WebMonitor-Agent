@@ -50,7 +50,7 @@ export function DeliveriesPanel() {
           ]}
         />
       </header>
-      {retry.error && <p role="alert" className="text-xs text-error">{errorText(retry.error)}</p>}
+      {retry.error && <p role="alert" className="text-[13px] text-error">{errorText(retry.error)}</p>}
 
       {deliveries.isPending && <p className="meta">{t("activity.deliveries.loading")}</p>}
 
@@ -61,24 +61,24 @@ export function DeliveriesPanel() {
         />
       )}
 
-      <ul className="divide-y border-t">
+      <ul className="border-t border-hairline divide-y divide-hairline">
         {items.map((delivery) => (
           <li key={delivery.id}>
             <button
-              className="flex w-full items-start gap-3 py-3 text-left transition-colors duration-150 hover:bg-muted/50"
+              className="flex w-full items-start gap-3 py-4 text-left transition-colors duration-150 hover:bg-surface-soft/70"
               onClick={() => setOpenId(delivery.id)}
             >
               <Mail className="mt-0.5 size-4 shrink-0 text-muted-foreground" strokeWidth={1.5} />
               <span className="min-w-0 flex-1">
                 <span className="flex items-start justify-between gap-2">
-                  <span className="truncate text-[13px] font-medium">{delivery.subject}</span>
+                  <span className="truncate text-[15px] font-medium text-ink">{delivery.subject}</span>
                   <Badge tone={tone(delivery.status)}>{statusLabel(delivery.status)}</Badge>
                 </span>
-                <span className="num mt-1 block truncate text-[11px] text-muted-foreground">
+                <span className="num mt-1 block truncate text-[12px] text-muted-soft">
                   {delivery.monitor_name} · {delivery.recipient} · {formatTime(delivery.created_at)}
                 </span>
                 {delivery.error_code && (
-                  <span className="mt-1 block text-[11px] text-error">{errorText(delivery.error_code)}</span>
+                  <span className="mt-1 block text-[13px] text-error">{errorText(delivery.error_code)}</span>
                 )}
               </span>
             </button>
@@ -90,11 +90,11 @@ export function DeliveriesPanel() {
       <Dialog open={Boolean(open)} onOpenChange={(value) => !value && setOpenId(null)}>
         <DialogContent>
           <DialogHeader>
-            <DialogTitle className="pr-6 text-base">{open?.subject}</DialogTitle>
+            <DialogTitle className="pr-6">{open?.subject}</DialogTitle>
           </DialogHeader>
           {open && (
             <div className="space-y-4">
-              <dl className="grid grid-cols-2 gap-3 text-[13px]">
+              <dl className="grid grid-cols-2 gap-3 text-[14px]">
                 <div>
                   <dt className="label-line">{t("activity.deliveries.recipient")}</dt>
                   <dd className="num truncate">{open.recipient}</dd>
@@ -118,7 +118,7 @@ export function DeliveriesPanel() {
                 </div>
               </dl>
               {open.error_code && (
-                <p className="border-l-2 border-error/40 pl-2.5 text-xs leading-5 text-error">
+                <p className="border-l-2 border-error pl-3 text-[13px] leading-5 text-error">
                   {open.error_message
                     ? t("activity.deliveries.errorDetail", {
                         code: errorText(open.error_code),
@@ -131,7 +131,6 @@ export function DeliveriesPanel() {
                 <Button
                   variant="outline"
                   size="sm"
-                  className="h-8 px-2 text-xs"
                   disabled={retry.isPending}
                   onClick={() => retry.mutate(open.id)}
                 >
@@ -141,7 +140,7 @@ export function DeliveriesPanel() {
               )}
               <div>
                 <h3 className="label-line mb-1.5">{t("activity.deliveries.body")}</h3>
-                <pre className="max-h-72 overflow-auto rounded-lg border bg-muted/40 p-3 text-[12px] leading-relaxed text-foreground">
+                <pre className="code-window max-h-72">
                   {open.body_text}
                 </pre>
               </div>

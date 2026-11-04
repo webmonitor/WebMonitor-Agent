@@ -13,7 +13,7 @@ export function NotificationsPage() {
           title={t("activity.notifications.title")}
           description={t("activity.notifications.description")}
         />
-        <div className="grid items-start gap-10 lg:grid-cols-2 lg:gap-14">
+        <div className="grid items-start gap-12 lg:grid-cols-2 lg:gap-16">
           <GroupsPanel />
           <DeliveriesPanel />
         </div>

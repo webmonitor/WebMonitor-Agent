@@ -120,10 +120,10 @@ export function DraftSettingsPanel({
   const delivery = draft.delivery_preview;
 
   return (
-    <section className="surface-pad space-y-5">
+    <section className="space-y-6 rounded-lg border border-hairline bg-canvas p-5">
       <div className="space-y-1">
-        <h2 className="text-[14px] font-medium">{t("settings.title")}</h2>
-        <p className="meta leading-5">{t("settings.subtitle")}</p>
+        <h2 className="t-title">{t("settings.title")}</h2>
+        <p className="t-body-sm text-muted-foreground">{t("settings.subtitle")}</p>
       </div>
 
       <div className="space-y-2">
@@ -135,7 +135,7 @@ export function DraftSettingsPanel({
           {user?.role === "admin" && (
             <Link
               href="/app/notifications"
-              className="text-[11px] text-muted-foreground underline-offset-2 hover:text-foreground hover:underline"
+              className="text-[12px] text-primary-active underline-offset-2 hover:underline"
             >
               {t("settings.groups.manage")}
             </Link>
@@ -148,16 +148,16 @@ export function DraftSettingsPanel({
         ) : (
           <ul className="space-y-1.5">
             {missing.map((id) => (
-              <li key={id} className="flex items-start gap-2 text-[13px]">
+              <li key={id} className="flex items-start gap-2 text-[14px]">
                 <span className="min-w-0 flex-1">
-                  <span className="block text-warning">{t("settings.groups.missing")}</span>
-                  <span className="num block truncate text-[11px] text-muted-foreground">{id}</span>
+                  <span className="block text-warning-ink">{t("settings.groups.missing")}</span>
+                  <span className="num block truncate text-[13px] text-muted-foreground">{id}</span>
                 </span>
                 <Button
                   type="button"
                   variant="ghost"
                   size="sm"
-                  className="h-7 shrink-0 px-2 text-xs text-muted-foreground"
+                  className="h-7 shrink-0 px-2 text-[13px] text-muted-foreground"
                   onClick={() => toggleGroup(id)}
                 >
                   {t("settings.groups.remove")}
@@ -168,7 +168,7 @@ export function DraftSettingsPanel({
               const checked = selectedGroups.includes(group.id);
               return (
                 <li key={group.id}>
-                  <label className="flex items-start gap-2 text-[13px]">
+                  <label className="flex items-start gap-2 text-[14px]">
                     <input
                       type="checkbox"
                       className="mt-1 size-3.5 accent-[var(--primary)]"
@@ -179,7 +179,7 @@ export function DraftSettingsPanel({
                     />
                     <span className="min-w-0 flex-1">
                       <span className="block truncate">{group.name}</span>
-                      <span className="num block text-[11px] text-muted-foreground">
+                      <span className="num block text-[13px] text-muted-foreground">
                         {t("activity.groups.activeCount", { count: group.member_count })}
                       </span>
                     </span>
@@ -190,7 +190,7 @@ export function DraftSettingsPanel({
           </ul>
         )}
         {selectedGroups.length === 0 && (
-          <p className="text-xs text-warning">{t("settings.groups.required")}</p>
+          <p className="text-[13px] text-warning-ink">{t("settings.groups.required")}</p>
         )}
       </div>
 
@@ -202,7 +202,7 @@ export function DraftSettingsPanel({
               key={preset}
               type="button"
               size="sm"
-              variant={interval === preset ? "default" : "outline"}
+              variant={interval === preset ? "secondary" : "outline"}
               onClick={() => {
                 setSavedAt(null);
                 setInterval(preset);
@@ -212,7 +212,7 @@ export function DraftSettingsPanel({
             </Button>
           ))}
         </div>
-        <Label htmlFor="settings-interval" className="block pt-1 text-xs text-muted-foreground">
+        <Label htmlFor="settings-interval" className="block pt-1 text-[13px] text-muted-foreground">
           {t("settings.schedule.custom")}
         </Label>
         <Input
@@ -230,9 +230,9 @@ export function DraftSettingsPanel({
         />
         <p className="meta">{t("settings.schedule.seconds")}</p>
         {!intervalValid && (
-          <p className="text-xs text-warning">{t("settings.schedule.required")}</p>
+          <p className="text-[13px] text-warning-ink">{t("settings.schedule.required")}</p>
         )}
-        <Label htmlFor="settings-timezone" className="block pt-1 text-xs text-muted-foreground">
+        <Label htmlFor="settings-timezone" className="block pt-1 text-[13px] text-muted-foreground">
           {t("settings.schedule.timezone")}
         </Label>
         <Input
@@ -254,7 +254,7 @@ export function DraftSettingsPanel({
           </h3>
           <Link
             href="/app/templates"
-            className="text-[11px] text-muted-foreground underline-offset-2 hover:text-foreground hover:underline"
+            className="text-[12px] text-primary-active underline-offset-2 hover:underline"
           >
             {t("settings.template.manage")}
           </Link>
@@ -276,7 +276,7 @@ export function DraftSettingsPanel({
         <p className="meta">{t("templates.systemDefault.body")}</p>
       </div>
 
-      <div className="space-y-2 border-t pt-3">
+      <div className="space-y-2 border-t border-hairline pt-3">
         <Button
           className="w-full"
           onClick={() => void save()}
@@ -287,7 +287,7 @@ export function DraftSettingsPanel({
         </Button>
         {dirty && <p className="meta text-center">{t("settings.dirty")}</p>}
         {savedAt !== null && !dirty && (
-          <p role="status" className="meta text-center text-success">
+          <p role="status" className="meta text-center text-success-ink">
             {t("settings.saved")}
           </p>
         )}
@@ -297,7 +297,7 @@ export function DraftSettingsPanel({
           <p className="meta text-center">{t("settings.preview.missing")}</p>
         )}
         {error && (
-          <p role="alert" className="text-xs text-error">
+          <p role="alert" className="text-[13px] text-error">
             {error}
           </p>
         )}

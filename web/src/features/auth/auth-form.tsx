@@ -96,23 +96,23 @@ export function AuthForm({ register = false }: { register?: boolean }) {
   return (
     <div className="flex min-h-dvh flex-col bg-background">
       <header className="mx-auto flex h-16 w-full max-w-[76rem] items-center gap-4 px-6 sm:px-10">
-        <Link className="flex items-center gap-2 text-[15px] font-medium" href="/">
-          <Radar className="size-4 text-primary" strokeWidth={1.5} />
+        <Link className="flex items-center gap-2.5 font-display text-[20px] leading-none tracking-[-0.02em] text-ink" href="/">
+          <Radar className="size-[18px] text-primary" strokeWidth={1.5} />
           WebMonitor
         </Link>
         <LanguageSwitcher className="ml-auto" />
       </header>
 
       <main className="flex flex-1 items-center justify-center px-6 py-12">
-        <div className="w-full max-w-[21rem]">
-          <h1 className="text-[1.375rem] font-medium">
+        <div className="w-full max-w-[24rem]">
+          <h1 className="display-md">
             {t(register ? "public.auth.register.title" : "public.auth.login.title")}
           </h1>
-          <p className="mt-1.5 text-[13px] leading-5 text-muted-foreground">
+          <p className="t-body-sm mt-2 text-muted-foreground">
             {t(register ? "public.auth.register.description" : "public.auth.login.description")}
           </p>
 
-          <form onSubmit={submit} className="mt-7 flex flex-col gap-4">
+          <form onSubmit={submit} className="mt-8 flex flex-col gap-4">
             {register && (
               <div>
                 <Label htmlFor="display_name">{t("public.auth.field.displayName")}</Label>
@@ -134,19 +134,19 @@ export function AuthForm({ register = false }: { register?: boolean }) {
                 maxLength={128}
                 required
               />
-              {register && <p className="meta mt-1.5 leading-5">{t("public.auth.passwordHint")}</p>}
+              {register && <p className="meta mt-1.5">{t("public.auth.passwordHint")}</p>}
             </div>
             {register && !invitation && (
-              <p className="rounded-md border border-warning/30 bg-warning/[0.06] px-3 py-2 text-xs leading-5 text-warning">
+              <p className="rounded-md border border-warning/30 bg-warning/[0.06] px-3 py-2 text-[13px] leading-5 text-warning-ink">
                 {t("public.auth.missingInvitation")}
               </p>
             )}
             {errorText && (
-              <p className="text-[13px] text-error" role="alert">
+              <p className="text-[14px] text-error" role="alert">
                 {errorText}
               </p>
             )}
-            <Button type="submit" size="lg" className="mt-1 w-full" disabled={pending || (register && !invitation)}>
+            <Button type="submit" size="lg" className="mt-2 w-full" disabled={pending || (register && !invitation)}>
               {pending
                 ? t("public.auth.submitting")
                 : t(register ? "public.auth.submitRegister" : "public.auth.submit")}
@@ -154,9 +154,9 @@ export function AuthForm({ register = false }: { register?: boolean }) {
             </Button>
           </form>
 
-          <p className="mt-6 border-t pt-4 text-xs leading-5 text-muted-foreground">
+          <p className="t-caption mt-8 border-t border-hairline pt-5">
             {register ? (
-              <Link className="text-primary underline-offset-4 hover:underline" href="/login">
+              <Link className="text-primary-active underline-offset-4 hover:underline" href="/login">
                 {t("public.auth.hasAccount")}
               </Link>
             ) : (

@@ -24,8 +24,8 @@ type SelectProps = {
 };
 
 const TRIGGER_SIZE = {
-  sm: "h-8 pl-2.5 pr-7 text-xs",
-  md: "h-10 pl-3 pr-9 text-sm",
+  sm: "h-8 pl-2.5 pr-7 text-[13px]",
+  md: "h-10 pl-3 pr-9 text-[14px]",
 } as const;
 const CHEVRON_SIZE = { sm: "right-2 size-3.5", md: "right-3 size-4" } as const;
 
@@ -146,9 +146,9 @@ export function Select({
         onClick={() => (open ? close() : openMenu())}
         onKeyDown={onTriggerKeyDown}
         className={cn(
-          "flex w-full items-center gap-2 rounded-md border border-input bg-card text-left text-foreground",
-          "transition-colors duration-150 hover:bg-muted",
-          "focus-visible:border-ring focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/25",
+          "flex w-full items-center gap-2 rounded-md border border-input bg-canvas text-left text-ink",
+          "transition-colors duration-150 hover:bg-surface-soft",
+          "focus-visible:border-primary focus-visible:outline-none focus-visible:ring-[3px] focus-visible:ring-primary/15",
           "disabled:pointer-events-none disabled:opacity-50",
           TRIGGER_SIZE[size],
         )}
@@ -175,8 +175,7 @@ export function Select({
           onKeyDown={onListKeyDown}
           className={cn(
             "absolute left-0 z-50 mt-1 max-h-64 w-max min-w-full max-w-[22rem] overflow-y-auto",
-            "rounded-md border bg-card py-1 text-[13px] outline-none",
-            "shadow-[0_10px_30px_rgba(30,27,22,0.12)]",
+            "rounded-lg border border-hairline bg-popover py-1 text-[14px] outline-none shadow-pop",
             menuClassName,
           )}
         >
@@ -193,8 +192,8 @@ export function Select({
                 onPointerMove={() => setActive(index)}
                 className={cn(
                   "flex cursor-pointer items-center gap-2 px-2.5 py-1.5",
-                  "text-foreground transition-colors duration-100",
-                  index === active && "bg-muted",
+                  "text-ink transition-colors duration-100",
+                  index === active && "bg-surface-card",
                   option.disabled && "pointer-events-none opacity-45",
                   isSelected && "font-medium",
                 )}

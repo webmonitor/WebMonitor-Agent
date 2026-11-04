@@ -14,7 +14,7 @@ export function LanguageSwitcher({ className = "" }: { className?: string }) {
     <div
       role="group"
       aria-label={t("common.language")}
-      className={`inline-flex shrink-0 items-center gap-0.5 rounded-md border border-transparent ${className}`}
+      className={`inline-flex shrink-0 items-center gap-0.5 rounded-full border border-hairline bg-canvas p-0.5 ${className}`}
     >
       {OPTIONS.map((option) => {
         const active = locale === option.value;
@@ -24,10 +24,10 @@ export function LanguageSwitcher({ className = "" }: { className?: string }) {
             type="button"
             aria-pressed={active}
             onClick={() => setLocale(option.value)}
-            className={`rounded px-1.5 py-0.5 text-[11px] leading-4 transition-colors duration-150 ${
+            className={`rounded-full px-2.5 py-0.5 text-[12px] leading-4 transition-colors duration-150 ${
               active
-                ? "bg-secondary font-medium text-foreground"
-                : "text-muted-foreground hover:text-foreground"
+                ? "bg-surface-card font-medium text-ink"
+                : "text-muted-foreground hover:text-ink"
             }`}
           >
             <span aria-hidden>{option.short}</span>

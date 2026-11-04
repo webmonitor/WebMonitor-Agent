@@ -23,7 +23,7 @@ import { useFormat } from "@/lib/format";
 import { useI18n } from "@/lib/i18n";
 
 const TEXTAREA_CLASS =
-  "w-full rounded-lg border border-input bg-card px-3 py-2 text-sm text-foreground placeholder:text-muted-foreground/70 outline-none transition-colors duration-150 focus-visible:border-ring focus-visible:ring-2 focus-visible:ring-ring/25";
+  "w-full rounded-md border border-input bg-canvas px-3.5 py-2.5 text-[14px] text-ink placeholder:text-muted-soft outline-none transition-colors duration-150 focus-visible:border-primary focus-visible:ring-[3px] focus-visible:ring-primary/15";
 
 type ApiBlock = NonNullable<EmailTemplateConfig["blocks"]>[number];
 
@@ -184,7 +184,7 @@ export function TemplateEditor({
     >
       <DialogContent className="max-w-3xl">
         <DialogHeader>
-          <DialogTitle className="text-base">
+          <DialogTitle>
             {template ? t("templates.editor.editTitle") : t("templates.editor.createTitle")}
           </DialogTitle>
         </DialogHeader>
@@ -253,19 +253,19 @@ export function TemplateEditor({
               />
             </div>
           </div>
-          <p className="meta leading-5">{t("templates.editor.subjectHint")}</p>
+          <p className="meta">{t("templates.editor.subjectHint")}</p>
 
           {rendered.length > 0 && <EmailPreview emails={rendered} />}
           {previewMail.isPending && <p className="meta">{t("templates.editor.previewing")}</p>}
 
           {error && (
-            <p role="alert" className="text-xs text-error">
+            <p role="alert" className="text-[13px] text-error">
               {error}
             </p>
           )}
 
-          <div className="flex flex-wrap items-center justify-between gap-2 border-t pt-4">
-            <p className="meta max-w-sm leading-5">{t("templates.editor.proposalHint")}</p>
+          <div className="flex flex-wrap items-center justify-between gap-2 border-t border-hairline pt-4">
+            <p className="meta max-w-sm">{t("templates.editor.proposalHint")}</p>
             <div className="flex shrink-0 gap-2">
               <Button type="button" variant="ghost" size="sm" onClick={onClose}>
                 {t("common.close")}
@@ -306,14 +306,14 @@ function EmailPreview({ emails }: { emails: RenderedEmailView[] }) {
             type="button"
             size="sm"
             variant={email.event_type === selected.event_type ? "secondary" : "ghost"}
-            className="h-7 px-2 text-[11px]"
+            className="h-7 px-2 text-[13px]"
             onClick={() => setSelectedType(email.event_type)}
           >
             {eventLabel(email.event_type)}
           </Button>
         ))}
       </div>
-      <p className="num truncate text-[12px] text-muted-foreground">{selected.subject}</p>
+      <p className="num truncate text-[13px] text-muted-soft">{selected.subject}</p>
       <iframe
         sandbox=""
         title={t("templates.editor.previewTitle")}
@@ -348,11 +348,11 @@ export function TemplatePreviewDialog({
     >
       <DialogContent className="max-w-3xl">
         <DialogHeader>
-          <DialogTitle className="text-base">{t("templates.editor.previewTitle")}</DialogTitle>
+          <DialogTitle>{t("templates.editor.previewTitle")}</DialogTitle>
         </DialogHeader>
-        <p className="meta mb-3 leading-5">{t("templates.editor.previewBody")}</p>
+        <p className="t-body-sm mb-3 text-muted-foreground">{t("templates.editor.previewBody")}</p>
         {!config && (
-          <p role="alert" className="text-xs text-error">
+          <p role="alert" className="text-[13px] text-error">
             {t("templates.error.preview")}
           </p>
         )}
@@ -363,7 +363,7 @@ export function TemplatePreviewDialog({
         )}
         {config && preview.isPending && <p className="meta">{t("templates.editor.previewing")}</p>}
         {config && preview.isError && (
-          <p role="alert" className="text-xs text-error">
+          <p role="alert" className="text-[13px] text-error">
             {t("templates.error.preview")}
           </p>
         )}

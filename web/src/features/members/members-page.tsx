@@ -41,26 +41,26 @@ function MembersPanel() {
       {!members.isPending && !members.error && items.length === 0 && (
         <EmptyState title={t("activity.members.emptyTitle")} />
       )}
-      <ul className="divide-y border-t">
+      <ul className="border-t border-hairline divide-y divide-hairline">
         {items.map((member) => {
           const self = member.id === user?.id;
           return (
-            <li key={member.id} className="flex items-start justify-between gap-3 py-3">
+            <li key={member.id} className="flex items-start justify-between gap-3 border-b border-hairline py-4">
               <div className="min-w-0">
-                <p className="flex flex-wrap items-center gap-2 text-[13px] font-medium">
+                <p className="flex flex-wrap items-center gap-2 text-[14px] font-medium text-ink">
                   <span className="truncate">{member.display_name}</span>
                   {member.role === "admin" && <Badge tone="neutral">{t("common.admin")}</Badge>}
                   {!member.active && <Badge tone="warning">{t("activity.members.disabled")}</Badge>}
                 </p>
-                <p className="num mt-0.5 truncate text-[11px] text-muted-foreground">{member.email}</p>
-                <p className="num mt-0.5 text-[11px] text-muted-foreground">
+                <p className="num mt-0.5 truncate text-[12px] text-muted-soft">{member.email}</p>
+                <p className="num mt-0.5 text-[12px] text-muted-soft">
                   {formatDateTime(member.created_at)}
                 </p>
               </div>
               <Button
                 variant="ghost"
                 size="sm"
-                className="h-7 shrink-0 px-2 text-xs text-muted-foreground"
+                className="h-7 shrink-0 px-2 text-[13px] text-muted-soft hover:text-ink"
                 disabled={self || setActive.isPending}
                 onClick={() => setActive.mutate({ userId: member.id, active: !member.active })}
               >
@@ -119,7 +119,7 @@ function InvitationsPanel() {
         <p className="meta mt-1 leading-5">{t("activity.invitations.description")}</p>
       </header>
 
-      <div className="space-y-3 rounded-[0.875rem] border bg-card p-4">
+      <div className="space-y-3 rounded-lg border border-hairline bg-canvas p-5">
         <div className="space-y-1.5">
           <Label htmlFor="invite-email">{t("activity.invitations.email")}</Label>
           <Input
@@ -151,15 +151,15 @@ function InvitationsPanel() {
           {create.isPending ? t("activity.invitations.creating") : t("activity.invitations.create")}
         </Button>
         {error && (
-          <p role="alert" className="text-xs text-error">
+          <p role="alert" className="text-[13px] text-error">
             {error.code ? errorText(error.code) : t("format.operationFailed")}
           </p>
         )}
         {created && (
-          <div className="space-y-1.5 border-t pt-3">
+          <div className="space-y-1.5 border-t border-hairline pt-3">
             <p className="meta">{t("activity.invitations.created", { email: created.email })}</p>
             <div className="flex items-start gap-2">
-              <Input readOnly value={created.url} className="text-[11px]" />
+              <Input readOnly value={created.url} className="text-[12px]" />
               <Button variant="outline" size="sm" className="shrink-0 whitespace-nowrap" onClick={() => void copy()}>
                 {copied ? <Check strokeWidth={1.5} /> : <Copy strokeWidth={1.5} />}
                 {copied ? t("monitors.config.copied") : t("monitors.config.copy")}
@@ -178,11 +178,11 @@ function InvitationsPanel() {
       {!invitations.isPending && !invitations.error && items.length === 0 && (
         <p className="meta mt-1">{t("activity.invitations.empty")}</p>
       )}
-      <ul className="mt-1 divide-y border-t">
+      <ul className="mt-1 border-t border-hairline divide-y divide-hairline">
         {items.map((invitation) => (
-          <li key={invitation.id} className="flex items-baseline justify-between gap-3 py-2">
-            <span className="num min-w-0 truncate text-[12px]">{invitation.email}</span>
-            <span className="num shrink-0 text-[11px] text-muted-foreground">
+          <li key={invitation.id} className="flex items-baseline justify-between gap-3 border-b border-hairline py-3">
+            <span className="num min-w-0 truncate text-[13px] text-ink">{invitation.email}</span>
+            <span className="num shrink-0 text-[12px] text-muted-soft">
               {formatDateTime(invitation.expires_at)}
             </span>
           </li>
@@ -213,7 +213,7 @@ export function MembersPage() {
           title={t("common.members")}
           description={t("activity.members.pageDescription")}
         />
-        <div className="grid items-start gap-10 lg:grid-cols-2 lg:gap-14">
+        <div className="grid items-start gap-12 lg:grid-cols-2 lg:gap-16">
           <MembersPanel />
           <InvitationsPanel />
         </div>

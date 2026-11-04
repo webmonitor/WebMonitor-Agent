@@ -96,10 +96,10 @@ export function EventsPage() {
                     key={value}
                     type="button"
                     aria-pressed={filter === value}
-                    className={`h-8 rounded-md px-2.5 text-xs transition-colors duration-150 ${
+                    className={`h-8 rounded-md px-2.5 text-[13px] transition-colors duration-150 ${
                       filter === value
-                        ? "bg-secondary font-medium text-foreground"
-                        : "text-muted-foreground hover:text-foreground"
+                        ? "bg-surface-card font-medium text-ink"
+                        : "text-muted-foreground hover:text-ink"
                     }`}
                     onClick={() => setParam("unread", value === "unread" ? "1" : null)}
                   >
@@ -138,10 +138,10 @@ export function EventsPage() {
           />
         )}
 
-        <div className="space-y-10">
+        <div className="space-y-12">
           {groups.map((group) => (
             <section key={group.day}>
-              <h2 className="num border-b pb-1.5 text-[11px] text-muted-foreground">{group.day}</h2>
+              <h2 className="eyebrow border-b border-hairline pb-2">{group.day}</h2>
               <ul className="divide-y">
                 {group.events.map((event) => (
                   <EventCard

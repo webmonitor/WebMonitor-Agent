@@ -15,7 +15,7 @@ type PagedList = {
 export function ListPagination({ query }: { query: PagedList }) {
   const { t } = useI18n();
   return (
-    <div className="space-y-2 py-2 text-xs text-muted-foreground">
+    <div className="space-y-2 py-3 t-caption text-muted-foreground">
       {Boolean(query.error) && (
         <div role="alert" className="space-y-1.5 text-error">
           <p>{t("common.listError")}</p>
@@ -25,12 +25,12 @@ export function ListPagination({ query }: { query: PagedList }) {
         </div>
       )}
       {query.data && query.hasNextPage && query.data.total > 0 && (
-        <p className="num text-[11px]">
+        <p className="num text-[13px]">
           {t("common.loadedCount", { count: query.data.items.length, total: query.data.total })}
         </p>
       )}
       {query.hasNextPage && (
-        <Button size="sm" variant="ghost" className="px-0 text-xs text-foreground hover:bg-transparent hover:underline"
+        <Button size="sm" variant="link" className="px-0 text-[13px]"
           disabled={query.isFetchingNextPage}
           onClick={() => void query.fetchNextPage()}>
           {query.isFetchingNextPage ? t("common.loading") : t("common.loadMore")}

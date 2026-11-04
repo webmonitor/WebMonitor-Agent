@@ -35,20 +35,19 @@ export function ArchivedPage() {
         )}
         <ul className="border-t">
           {items.map((monitor) => (
-            <li key={monitor.id} className="flex flex-wrap items-center gap-3 border-b py-3">
+            <li key={monitor.id} className="flex flex-wrap items-center gap-3 border-b border-hairline py-4">
               <Link
                 href={`/app/monitors/${monitor.id}`}
-                className="min-w-0 flex-1 truncate text-[13px] font-medium underline-offset-2 hover:underline"
+                className="min-w-0 flex-1 truncate text-[14px] font-medium text-ink underline-offset-2 hover:underline"
               >
                 {monitor.name}
               </Link>
-              <span className="num text-[11px] text-muted-foreground">
+              <span className="num text-[12px] text-muted-soft">
                 {monitor.archived_at ? formatDateTime(monitor.archived_at) : "—"}
               </span>
               <Button
                 variant="outline"
                 size="sm"
-                className="h-7 px-2 text-xs"
                 disabled={restore.isPending}
                 onClick={() => restore.mutate(monitor.id)}
               >
