@@ -188,7 +188,7 @@ export function useDeliveries(status?: string, monitorId?: string) {
   const suffix = query.toString();
   return usePagedQuery<Delivery>(
     ["deliveries", status ?? "all", monitorId ?? "all"],
-    `/email-deliveries${suffix ? `?${suffix}` : ""}`, 15000);
+    `/deliveries${suffix ? `?${suffix}` : ""}`, 15000);
 }
 
 /** A failed or cancelled delivery can be queued again; the server resets the attempt budget. */
@@ -196,7 +196,7 @@ export function useRetryDelivery() {
   const cache = useQueryClient();
   return useMutation({
     mutationFn: (id: string) =>
-      api<Delivery>(`/email-deliveries/${id}/retry`, { method: "POST" }),
+      api<Delivery>(`/deliveries/${id}/retry`, { method: "POST" }),
     onSuccess: () => void cache.invalidateQueries({ queryKey: ["deliveries"] }),
   });
 }

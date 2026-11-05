@@ -60,6 +60,9 @@ export const deliveryPreviewSchema = z.object({
   preview_id: z.string(),
   settings_revision: z.number(),
   settings_hash: z.string(),
+  channel: z.string().default("email"),
+  webhook_url: z.string().nullish(),
+  webhook_body: z.record(z.string(), z.unknown()).nullish(),
   template_id: z.string().nullish(),
   template_name: z.string().nullish(),
   template_hash: z.string(),
@@ -173,7 +176,9 @@ export const monitorSpecSchema = z.object({
 
 /** User-owned delivery settings; a draft may still be empty here. */
 export const deliverySettingsSchema = z.object({
+  channel: z.enum(["email", "webhook"]).default("email"),
   notification_group_ids: z.array(z.string()),
+  webhook_url: z.string().nullish(),
   schedule: z
     .object({ interval_seconds: z.number(), timezone: z.string() })
     .nullish(),

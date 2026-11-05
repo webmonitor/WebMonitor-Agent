@@ -6,20 +6,20 @@
 
 <p align="center">
   Describe the page and the condition in your own words. The assistant reads the page, extracts the values, and shows you a real sample before anything is scheduled.<br>
-  After you confirm, it checks on time, stores the evidence, and emails you when your condition is met.
+  After you confirm, it checks on time, stores the evidence, and notifies you when your condition is met.
 </p>
 
 <p align="center">
   <a href="#what-it-is">Overview</a> ·
   <a href="#install-in-three-steps">Quick start</a> ·
   <a href="#create-your-first-monitor">First monitor</a> ·
-  <a href="#email-alerts">Email alerts</a> ·
+  <a href="#email-alerts">Email and webhook alerts</a> ·
   <a href="#faq">FAQ</a> ·
   <a href="#update-roll-back-and-your-data">Updates and data</a> ·
   <a href="./README.zh-CN.md">简体中文</a>
 </p>
 
-![The confirmation card in the conversation, with delivery settings opened inside it](./docs/screenshot.png)
+![The conversation with inline tool calls and the confirmation card](./docs/screenshot.png)
 
 ## What it is
 
@@ -39,12 +39,12 @@ It checks public `http://` and `https://` pages on ports 80 or 443, every 1 minu
 
 1. **Describe the target.** Paste the URL and say what matters, how often to check, and when to notify.
 2. **Let the assistant do the reading.** It fetches the HTML first and opens the page in a sandboxed browser when the data needs JavaScript. It records which fields it found and how much of the page it covers.
-3. **Review a real sample.** The confirmation card shows the extracted values, coverage, the rule that will fire, recipients, the saved page archive, and the actual email body. Say what is wrong and the assistant takes another sample.
+3. **Review a real sample.** The confirmation card shows the extracted values, coverage, the rule that will fire, the destination, the saved page archive, and the actual email or webhook payload. Say what is wrong and the assistant takes another sample.
 4. **Confirm to schedule.** **Create monitor** is the only action that starts checks. The preview expires after 60 minutes and a different preview must be confirmed again.
 
 What the system guarantees:
 
-- Previews never send email, and the first successful check only records a baseline.
+- Previews never send a notification, and the first successful check only records a baseline.
 - Collection evidence is committed only after the upload succeeds; a failed check keeps the last successful baseline.
 - Every check is stored with its values, coverage and page archive, and each event links to the check that produced it.
 - The browser runs sandboxed. If the sandbox is unavailable the check fails as `browser_unavailable` instead of falling back to an unsandboxed browser.
@@ -54,7 +54,7 @@ What the system guarantees:
 
 - Docker Engine with Docker Compose v2, on Linux, macOS or Windows.
 - An OpenAI Chat Completions model service: API key, base URL and model name, for conversational monitor setup.
-- An SMTP account (optional), for email alerts.
+- An SMTP account (optional), for email alerts; a webhook destination needs neither.
 - A page URL you can open in a private window without signing in.
 
 ## Install in three steps
@@ -133,12 +133,15 @@ OPENAI_API_KEY=replace-with-your-model-api-key
 OPENAI_BASE_URL=https://api.openai.com/v1
 OPENAI_MODEL=replace-with-your-model-name
 
-# What a monitor created in the chat starts with (optional). Recipients, cadence
-# and the mail template are edited on the monitor itself, under "Delivery settings".
+# What a monitor created in the chat starts with (optional). Recipients, cadence,
+# channel and the mail template are edited on the monitor itself, under
+# "Delivery settings".
 # DEFAULT_INTERVAL_SECONDS=3600
 # DEFAULT_NOTIFICATION_GROUP=
+# DEFAULT_DELIVERY_CHANNEL=email
+# DEFAULT_WEBHOOK_URL=
 
-# Email alerts (optional). Rules are under "Email alerts" below.
+# Email alerts (optional). Rules are under "Email and webhook alerts" below.
 # SMTP_HOST=
 # SMTP_PORT=465
 # SMTP_USERNAME=
@@ -187,7 +190,7 @@ Click **New conversation** and type what you need, for example one of the senten
 Two things happen next:
 
 - The assistant opens the page and shows a work log — **View N steps** — listing what it did: read the page and saved the collection definition.
-- The assistant asks for any missing details about what to extract and when a change counts. Recipients, check frequency and the email template are yours: you set them in the workspace beside the conversation.
+- The assistant asks for any missing details about what to extract and when a change counts. The channel, destination, check frequency and email template are yours: you set them in the workspace beside the conversation.
 
 ### Check the preview, then create
 
@@ -199,7 +202,7 @@ The card shows:
 - **Extracted content** — the fields it read and their actual values on this page
 - **Coverage** — how much of the page this check covers
 - **Page screenshot** / **Page archive** when the sample saved them
-- **Preview notification email** — the real body for every event this monitor can produce, rendered with the selected template
+- **Preview notification** — the real email body, or the exact webhook JSON, for every event this monitor can produce
 - warnings such as “The check covers only part of the page”, or that the mail needs a field the page does not have
 
 If something is wrong, say so in the chat: the assistant takes a new sample and the card updates. A missing, failed or expired sample offers **Retry** on the line under the button.
@@ -210,20 +213,20 @@ The card shows a preview's queued, running or failed status. Failed previews ret
 
 ### After it starts
 
-- The monitor appears under **Monitors** in the left sidebar with its name and interval. Its page shows **Last check**, **Next check**, **Check frequency**, **Collection method**, and **Monitor definition**: the selectors, fields, normalization, change rules and coverage actually in use. Notification groups, check frequency, timezone and the email template are separate delivery settings, edited from **Delivery settings** on the monitor; each monitor also shows the template name and the approved recipients. **Raw definition (JSON)** shows the collection definition exactly as the worker executes it, and **Definition versions** lists every published version that changed it.
+- The monitor appears under **Monitors** in the left sidebar with its name and interval. Its page shows **Last check**, **Next check**, **Check frequency**, **Collection method**, and **Monitor definition**: the selectors, fields, normalization, change rules and coverage actually in use. Notification channel, destination, check frequency, timezone and the email template are separate delivery settings, edited from **Delivery settings** on the monitor; the monitor shows the channel, template name and approved recipients or webhook URL. **Raw definition (JSON)** shows the collection definition exactly as the worker executes it, and **Definition versions** lists every published version that changed it.
 - **Edit definition** edits that collection JSON directly. Saving writes a draft, starts a real preview and opens the conversation where you confirm it; only a confirmed preview updates the monitor, and editing from an older version starts a new draft from it. **Delivery settings** opens the recipients, cadence and template for this monitor; changing them keeps the collected baseline.
 - **Rename** changes the name. **Archive** stops checks and moves the monitor to **Archived**, keeping its definition and history; **Restore** brings it back, paused.
 - **Check history** stores every successful collection. Open one to see the stored values, coverage, screenshot and page archive. Events link to their check record and check details.
 - **Pause** / **Resume** stops and restarts the schedule. Pausing cancels queued or running collection; **Check now** is available while the monitor is active. An active check can be cancelled from its details, and a failed check can be retried there.
 - **Email templates** in the left sidebar stores reusable mail designs. You describe the email in one sentence — colours, type, density, what to show, where the record link goes — and the model writes both the look and the layout: a subject with `{monitor_name}`, `{event_label}` and `{event_date}` tokens, a style (five colours, font family, heading scale, density, corner radius, border, label case), an optional intro per event type, and ordered blocks (summary, all collected fields, detection time, links, dividers). The style is a set of validated tokens the server turns into CSS, so a design never carries markup of its own. The result is rendered as a real mail before you save it, and a design never names a specific field, so it fits any monitor. Editing an existing template is the same one-sentence prompt. Any member can create one; only its creator or an administrator can change or disable it. A monitor keeps the design it was approved with, so editing or disabling a template never rewrites an existing monitor.
 - **Events** lists everything detected, with **All** / **Unread** filters, monitor and event-type filters, and **Mark as read**. The filters live in the address, so a reload or a shared link opens the same list; an event that produced no email says why.
-- **Notifications** → **Delivery log** lists each email with its monitor, recipient, status, attempts, body, and the error if it failed. Filter by status, and a failed or cancelled email can be **retried**, which queues it again with a fresh attempt count.
+- **Notifications** → **Delivery log** lists each notification with its channel, monitor, recipient or endpoint, status, attempts, body, and the error if it failed. Filter by status, and a failed or cancelled delivery can be **retried**, which queues it again with a fresh attempt count.
 - **Members** (administrators) enables or disables accounts and creates single-use invitation links to copy.
 - Use **Load more** to reach older conversations, monitors, checks, events, groups and deliveries. Monitor detail pages show events filtered for that monitor.
 
-The first successful check only records the starting content and sends no email; comparisons begin with the second check. Previews never send email. A failed check keeps the last successful content as the comparison baseline.
+The first successful check only records the starting content and sends no notification; comparisons begin with the second check. Previews never send a notification. A failed check keeps the last successful content as the comparison baseline.
 
-## Email alerts
+## Email and webhook alerts
 
 Add these to `.env` and apply them:
 
@@ -247,9 +250,27 @@ Rules that matter:
 - Set `MAIL_FROM` to your sender address and match the account when your provider requires it.
 - Set both `SMTP_USERNAME` and `SMTP_PASSWORD` when authentication is required.
 
-Configure SMTP in `.env`. Collection results appear in Events; email status appears in **Delivery log**.
+Configure SMTP in `.env`. Collection results appear in Events; delivery status appears in **Delivery log**.
 
 `Sent` means the mail server accepted the message. Check spam if it has not arrived. Temporary failures are retried up to three times; configuration errors appear as failed.
+
+### Webhook alerts
+
+Each monitor uses exactly one channel, chosen in its **Delivery settings**. Selecting **Webhook** asks for an HTTPS URL on a public host and port 443; the same egress policy as collection applies, and redirects are not followed.
+
+```dotenv
+DEFAULT_DELIVERY_CHANNEL=webhook
+DEFAULT_WEBHOOK_URL=https://hooks.example.com/services/your-endpoint
+```
+
+The default channel applies to monitors created from the conversation. Changing it affects new drafts; existing monitors keep their own setting. A webhook delivery POSTs the JSON payload shown in the confirmation preview — `monitor`, `event`, `change`, `fields` and `evidence_url` — with these headers:
+
+- `Content-Type: application/json`
+- `X-WebMonitor-Event`: the event type
+- `X-WebMonitor-Monitor`: the monitor ID
+- `X-WebMonitor-Delivery`: the delivery ID
+
+Endpoints normally answer `2xx`; `408`, `425`, `429` and `5xx` are retried, and other responses are recorded as failed. The **Delivery log** shows the endpoint, HTTP status and error code, and a failed delivery can be retried.
 
 ## FAQ
 
@@ -285,8 +306,8 @@ The assistant reads the HTML first and opens the page in a real browser when the
 **Create monitor is greyed out.**
 There is no valid sample yet: use **Retry** on the line under the button, or wait for the running sample. If the line says no recipient group is configured, an administrator has to create one under **Notifications** → **Notification groups**.
 
-**No email arrived.**
-Open **Notifications** → **Delivery log** to check recipients, status and errors. For `Sent`, check spam; for `Failed`, review the SMTP settings using the error shown. The first check establishes a baseline; later changes trigger the configured rules. Repeated collection failures send one alert per cause, followed by a recovery alert after success.
+**No notification arrived.**
+Open **Notifications** → **Delivery log** to check the channel, destination, status and errors. For `Sent`, check spam; for `Failed`, review the SMTP settings using the error shown. The first check establishes a baseline; later changes trigger the configured rules. Repeated collection failures send one alert per cause, followed by a recovery alert after success.
 
 **I changed the recipients but nothing happened.**
 Recipients come from notification groups. Editing a group changes who a future mail reaches; open the monitor's **Delivery settings** and save to approve the current set. The collected baseline is kept, so checks continue from the last known values.

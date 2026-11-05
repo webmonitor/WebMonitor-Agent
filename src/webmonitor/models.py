@@ -206,6 +206,7 @@ class Monitor(UUIDPrimaryKey, Created, Updated, Base):
         CheckConstraint("baseline_status IN ('pending_first_success', 'ready')", name="baseline_status"),
         CheckConstraint("health_status IN ('healthy', 'failed')", name="health_status"),
         CheckConstraint("collection_mode IN ('http', 'browser')", name="collection_mode"),
+        CheckConstraint("delivery_channel IN ('email', 'webhook')", name="delivery_channel"),
         Index("ix_monitors_due", "next_run_at", postgresql_where=text("status = 'active'")),
         Index("ix_monitors_user_created", "user_id", "created_at"),
     )
@@ -221,6 +222,8 @@ class Monitor(UUIDPrimaryKey, Created, Updated, Base):
     interval_seconds: Mapped[int] = mapped_column(Integer)
     timezone: Mapped[str] = mapped_column(String(100))
     notification_group_ids: Mapped[list[str]] = mapped_column(JSONB, default=list, server_default="[]")
+    delivery_channel: Mapped[str] = mapped_column(String(16), default="email", server_default="email")
+    webhook_url: Mapped[str | None] = mapped_column(String(1000))
     email_template_id: Mapped[UUID | None] = mapped_column(
         ForeignKey("email_templates.id", ondelete="SET NULL"), index=True)
     # Frozen EmailTemplateConfig at approval; NULL means the packaged default template.
@@ -303,20 +306,25 @@ class EmailTemplate(UUIDPrimaryKey, Created, Updated, Base):
     deleted_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
 
 
-class EmailDelivery(UUIDPrimaryKey, Created, Base):
-    __tablename__ = "email_deliveries"
+class Delivery(UUIDPrimaryKey, Created, Base):
+    """One queued outbound notification: an email or a webhook POST."""
+
+    __tablename__ = "deliveries"
     __table_args__ = (
+        CheckConstraint("channel IN ('email', 'webhook')", name="channel"),
         CheckConstraint("status IN ('queued', 'sending', 'retrying', 'sent', 'failed', 'cancelled')", name="status"),
         UniqueConstraint("event_id", "recipient"),
-        Index("ix_email_deliveries_created", "created_at"),
-        Index("ix_email_deliveries_event", "event_id"),
+        Index("ix_deliveries_created", "created_at"),
+        Index("ix_deliveries_event", "event_id"),
     )
     user_id: Mapped[UUID] = mapped_column(ForeignKey("users.id"))
     monitor_id: Mapped[UUID] = mapped_column(ForeignKey("monitors.id", ondelete="CASCADE"))
     event_id: Mapped[UUID] = mapped_column(ForeignKey("events.id", ondelete="CASCADE"))
-    recipient: Mapped[str] = mapped_column(String(320))
+    channel: Mapped[str] = mapped_column(String(16), default="email", server_default="email")
+    # An email address or the webhook URL; it is also the destination identity.
+    recipient: Mapped[str] = mapped_column(String(1000))
     subject: Mapped[str] = mapped_column(Text)
-    html: Mapped[str] = mapped_column(Text)
+    html: Mapped[str] = mapped_column(Text, default="", server_default="")
     body_text: Mapped[str] = mapped_column(Text)
     payload: Mapped[dict[str, Any]] = mapped_column(JSONB)
     status: Mapped[str] = mapped_column(String(16), default="queued", server_default="queued")
@@ -326,8 +334,9 @@ class EmailDelivery(UUIDPrimaryKey, Created, Base):
     lease_expires_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
     error_code: Mapped[str | None] = mapped_column(String(80))
     error_message: Mapped[str | None] = mapped_column(Text)
-    smtp_response_code: Mapped[int | None] = mapped_column(Integer)
-    message_id: Mapped[str] = mapped_column(Text)
+    # SMTP acceptance for email; the HTTP status for a webhook.
+    response_code: Mapped[int | None] = mapped_column(Integer)
+    message_id: Mapped[str | None] = mapped_column(Text)
     sent_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
     failed_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
     cancelled_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))

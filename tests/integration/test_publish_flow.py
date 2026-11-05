@@ -3,7 +3,6 @@ from uuid import uuid4
 
 import pytest
 from sqlalchemy import func, select
-
 from support import (
     build_settings,
     build_spec,
@@ -14,13 +13,15 @@ from support import (
     publish,
     seed_owner,
 )
+
 from webmonitor.config import get_settings
 from webmonitor.errors import DomainError
-from webmonitor.models import Draft, Monitor
-from webmonitor.schemas.delivery import DeliverySettings
+from webmonitor.models import Draft, Monitor, NotificationGroup, User
 from webmonitor.schemas.api import DraftUpdate, EmailTemplateSpec
+from webmonitor.schemas.delivery import DeliverySettings
 from webmonitor.schemas.monitors import MonitorSpec
 from webmonitor.schemas.templates import EmailTemplateConfig
+from webmonitor.security.auth import CurrentUser
 from webmonitor.services import drafts, jobs, templates
 from webmonitor.services.monitors import list_spec_versions
 
@@ -84,6 +85,44 @@ async def test_preview_seeds_delivery_defaults_and_publishes_without_user_settin
     await session.commit()
 
     assert monitor.interval_seconds == get_settings().default_interval_seconds
+    assert monitor.notification_group_ids == [str(group.id)]
+
+
+@pytest.mark.asyncio
+async def test_a_group_created_after_the_first_preview_is_seeded_by_a_rerun(session):
+    """Without a group the first preview has no recipient; a rerun must pick one up."""
+    user = User(email=f"{uuid4().hex}@example.com", display_name="Owner",
+                password_hash="not-a-login-hash", role="admin")
+    session.add(user)
+    await session.flush()
+    current = CurrentUser(user_id=user.id, role="admin")
+    conversation = await conversation_for(session, user)
+    spec = build_spec()
+    draft = await drafts.save_spec(session, current, conversation_id=conversation.id, spec=spec)
+
+    first = await drafts.start_preview(session, current, draft.id)
+    await jobs.finish(session, first, "cancelled")
+    await collect(session, user, draft, collection_result(spec))
+    assert draft.delivery_preview is None
+    assert DeliverySettings.model_validate(draft.settings).notification_group_ids == []
+
+    group = NotificationGroup(name=f"Ops {uuid4().hex}", members=[
+        {"email": "ops@example.com", "active": True}], created_by_user_id=user.id)
+    session.add(group)
+    await session.flush()
+
+    second = await drafts.start_preview(session, current, draft.id)
+    await jobs.finish(session, second, "cancelled")
+    await collect(session, user, draft, collection_result(spec))
+    await session.commit()
+
+    assert [str(item) for item in DeliverySettings.model_validate(
+        draft.settings).notification_group_ids] == [str(group.id)]
+    assert draft.delivery_preview is not None
+    assert draft.delivery_preview["settings_revision"] == draft.settings_revision
+    await drafts.validate_delivery_preview(session, draft)
+    monitor = await publish(session, conversation, draft, current)
+    await session.commit()
     assert monitor.notification_group_ids == [str(group.id)]
 
 
@@ -382,3 +421,29 @@ async def collect_after_settings(session, user, draft):
 
 def _template_spec(config: EmailTemplateConfig) -> EmailTemplateSpec:
     return EmailTemplateSpec(name=f"Design {uuid4().hex[:8]}", description="", config=config)
+
+
+@pytest.mark.asyncio
+async def test_webhook_settings_publish_a_json_preview_without_groups(session):
+    user, current, group = await seed_owner(session)
+    settings = DeliverySettings.model_validate({
+        "channel": "webhook",
+        "webhook_url": "https://hooks.example.com/ops",
+        "schedule": {"interval_seconds": 120, "timezone": "UTC"},
+    })
+    conversation, draft, _ = await prepare_draft(session, user, group, settings=settings)
+    await session.commit()
+
+    preview = draft.delivery_preview or {}
+    assert preview["channel"] == "webhook"
+    assert preview["webhook_url"] == "https://hooks.example.com/ops"
+    assert preview["rendered_emails"] == []
+    assert preview["recipients"] == []
+    assert preview["webhook_body"]["monitor"]["name"] == "Notice watch"
+
+    monitor = await publish(session, conversation, draft, current)
+    await session.commit()
+    assert monitor.delivery_channel == "webhook"
+    assert monitor.webhook_url == "https://hooks.example.com/ops"
+    assert monitor.approved_recipients == []
+    assert monitor.interval_seconds == 120

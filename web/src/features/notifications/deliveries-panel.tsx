@@ -1,6 +1,6 @@
 "use client";
 import { useState } from "react";
-import { Mail, RefreshCw } from "lucide-react";
+import { Mail, RefreshCw, Webhook } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
@@ -70,7 +70,11 @@ export function DeliveriesPanel() {
               className="flex w-full items-start gap-3 py-4 text-left transition-colors duration-150 hover:bg-surface-soft/70"
               onClick={() => setOpenId(delivery.id)}
             >
-              <Mail className="mt-0.5 size-4 shrink-0 text-muted-foreground" strokeWidth={1.5} />
+              {delivery.channel === "webhook" ? (
+                <Webhook className="mt-0.5 size-4 shrink-0 text-muted-foreground" strokeWidth={1.5} />
+              ) : (
+                <Mail className="mt-0.5 size-4 shrink-0 text-muted-foreground" strokeWidth={1.5} />
+              )}
               <span className="min-w-0 flex-1">
                 <span className="flex items-start justify-between gap-2">
                   <span className="truncate text-[15px] font-medium text-ink">{delivery.subject}</span>
@@ -97,6 +101,14 @@ export function DeliveriesPanel() {
           {open && (
             <div className="space-y-4">
               <dl className="grid grid-cols-2 gap-3 text-[14px]">
+                <div>
+                  <dt className="label-line">{t("activity.deliveries.channel")}</dt>
+                  <dd>
+                    {open.channel === "webhook"
+                      ? t("settings.channel.webhook")
+                      : t("settings.channel.email")}
+                  </dd>
+                </div>
                 <div>
                   <dt className="label-line">{t("activity.deliveries.recipient")}</dt>
                   <dd className="num truncate">{open.recipient}</dd>

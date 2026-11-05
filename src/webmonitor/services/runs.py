@@ -23,7 +23,8 @@ RETRYABLE = frozenset({"lease_expired", "collection_timeout", "target_unavailabl
                        "storage_unavailable", "browser_collection_failed"})
 # A valid snapshot is never rolled back because notifications cannot be composed.
 NOTIFICATION_ERRORS = frozenset({"notification_routes_invalid", "notification_recipients_empty",
-                                 "template_unavailable", "template_contract_failed"})
+                                 "template_unavailable", "template_contract_failed",
+                                 "webhook_url_missing"})
 
 
 async def schedule_due(session: AsyncSession, *, now=None, limit: int = 200) -> int:

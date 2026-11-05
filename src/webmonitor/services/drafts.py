@@ -30,18 +30,20 @@ from webmonitor.schemas.templates import (
     validate_template_for_spec,
 )
 from webmonitor.security.auth import CurrentUser, require_owner
-from webmonitor.security.egress import validate_url
+from webmonitor.security.egress import validate_url, validate_webhook_url
 from webmonitor.services import jobs, notifications, templates
 
 EXTRACTION_KEYS = ("preview_id", "spec_revision", "spec_hash", "extracted_data", "coverage",
                    "final_url", "evidence_refs", "rule_simulation", "source", "warnings")
-DELIVERY_KEYS = ("preview_id", "settings_revision", "settings_hash", "template_id",
+DELIVERY_KEYS = ("preview_id", "settings_revision", "settings_hash", "channel",
+                 "webhook_url", "webhook_body", "template_id",
                  "template_name", "template_hash", "rendered_emails", "recipients",
                  "recipient_sources", "warnings")
 # A delivery preview that cannot be rendered never invalidates a real collection.
 DELIVERY_WARNINGS = frozenset({"notification_routes_invalid", "notification_recipients_empty",
                                "template_unavailable", "template_incompatible",
-                               "template_contract_failed"})
+                               "template_contract_failed", "webhook_url_missing",
+                               "webhook_url_insecure", "url_forbidden"})
 
 
 async def require_draft(session: AsyncSession, user: CurrentUser, draft_id: UUID,
@@ -87,8 +89,14 @@ async def default_delivery_settings(session: AsyncSession) -> DeliverySettings:
             NotificationGroup.enabled.is_(True),
             NotificationGroup.deleted_at.is_(None)).order_by(
                 NotificationGroup.created_at).limit(1))
+    channel = configured.default_delivery_channel
+    webhook_url = configured.default_webhook_url.strip() or None
+    if channel == "webhook":
+        webhook_url = validate_webhook_url(webhook_url)
     return DeliverySettings(
+        channel=channel,
         notification_group_ids=[group_id] if group_id is not None else [],
+        webhook_url=webhook_url,
         schedule=Schedule(interval_seconds=interval, timezone="UTC"))
 
 
@@ -170,6 +178,9 @@ async def save_spec(session: AsyncSession, user: CurrentUser, *, conversation_id
 
 async def _validate_settings(session: AsyncSession, draft: Draft,
                              settings: DeliverySettings) -> None:
+    if settings.channel == "webhook":
+        validate_webhook_url(settings.webhook_url)
+        return
     if settings.notification_group_ids:
         await notifications.load_recipients(session, settings.notification_group_ids)
     if settings.email_template_id is None or draft.spec is None:
@@ -235,7 +246,9 @@ async def draft_from_monitor(session: AsyncSession, user: CurrentUser,
     session.add(conversation)
     await session.flush()
     settings = DeliverySettings(
+        channel=monitor.delivery_channel,
         notification_group_ids=[UUID(item) for item in monitor.notification_group_ids or []],
+        webhook_url=monitor.webhook_url,
         schedule={"interval_seconds": monitor.interval_seconds, "timezone": monitor.timezone},
         email_template_id=monitor.email_template_id)
     draft = Draft(user_id=user.user_id, conversation_id=conversation.id,
@@ -259,14 +272,20 @@ async def start_preview(session: AsyncSession, user: CurrentUser, draft_id: UUID
     # Delivery settings are never collected in the chat: seed the deployment
     # default before the preview that has to render a real mail.
     current = _settings(draft)
-    if current.schedule is None or not current.notification_group_ids:
+    route_missing = ((current.channel == "webhook" and not current.webhook_url)
+                     or (current.channel == "email" and not current.notification_group_ids))
+    if current.schedule is None or route_missing:
         seeded = await default_delivery_settings(session)
-        seeded = seeded.model_copy(update={
+        merged = seeded.model_copy(update={
+            "channel": current.channel,
             "notification_group_ids": current.notification_group_ids or seeded.notification_group_ids,
+            "webhook_url": current.webhook_url or seeded.webhook_url,
             "schedule": current.schedule or seeded.schedule,
             "email_template_id": current.email_template_id or seeded.email_template_id})
-        draft.settings = seeded.model_dump(mode="json")
-        draft.settings_hash = content_hash(seeded)
+        if merged.channel == "webhook":
+            validate_webhook_url(merged.webhook_url)
+        draft.settings = DeliverySettings.model_validate(merged).model_dump(mode="json")
+        draft.settings_hash = content_hash(merged)
         draft.settings_revision += 1
     existing = await session.scalar(select(Job).where(Job.draft_id == draft.id,
         Job.kind == "preview", Job.revision == draft.spec_revision,
@@ -343,13 +362,43 @@ def _delivery_payload(draft: Draft, spec: MonitorSpec, settings: DeliverySetting
 
 
 async def build_delivery_preview(session: AsyncSession, draft: Draft) -> dict | None:
-    """Render what the mail will look like for the current settings and template."""
+    """Render what the selected channel will send for the current settings."""
     if draft.extraction_preview is None:
         raise DomainError("preview_missing", 409)
     settings = _settings(draft)
+    spec = _spec(draft)
+    payload = _delivery_payload(draft, spec, settings,
+                               draft.extraction_preview.get("extracted_data") or {})
+    now = utc_now()
+    ttl = get_settings().preview_ttl_minutes
+    if settings.channel == "webhook":
+        url = validate_webhook_url(settings.webhook_url)
+        preview = {
+            "preview_id": str(uuid4()),
+            "settings_revision": draft.settings_revision,
+            "settings_hash": content_hash(settings),
+            "channel": "webhook",
+            "webhook_url": url,
+            "webhook_body": payload,
+            "template_id": None,
+            "template_name": None,
+            "template_hash": content_hash(None),
+            "rendered_emails": [],
+            "recipients": [],
+            "recipient_sources": [],
+            "warnings": [],
+            "created_at": now.isoformat(),
+            "expires_at": (now + timedelta(minutes=ttl)).isoformat(),
+        }
+        stored = DeliveryPreview.model_validate(preview).model_dump(mode="json")
+        digest = delivery_hash(stored)
+        draft.delivery_preview = stored
+        draft.delivery_preview_hash = digest
+        draft.delivery_preview_expires_at = now + timedelta(minutes=ttl)
+        await session.flush()
+        return stored
     if not settings.notification_group_ids:
         return None
-    spec = _spec(draft)
     recipients = await notifications.load_recipients(
         session, settings.notification_group_ids, lock=True)
     config: EmailTemplateConfig | None = None
@@ -359,8 +408,6 @@ async def build_delivery_preview(session: AsyncSession, draft: Draft) -> dict | 
         template_id, config, template_name = await _resolve_template(
             session, settings.email_template_id, spec)
     template_hash = content_hash(config.model_dump(mode="json") if config else None)
-    payload = _delivery_payload(draft, spec, settings,
-                               draft.extraction_preview.get("extracted_data") or {})
     rendered: list[dict] = []
     warnings: list[str] = []
     for event_type in sorted(_event_types(spec)):
@@ -369,12 +416,13 @@ async def build_delivery_preview(session: AsyncSession, draft: Draft) -> dict | 
         rendered.append({"event_type": event_type, "subject": message["subject"],
                          "html": message["html"], "text": message["text"],
                          "preview_html": sanitize_preview(message["html"])})
-    now = utc_now()
-    ttl = get_settings().preview_ttl_minutes
     preview = {
         "preview_id": str(uuid4()),
         "settings_revision": draft.settings_revision,
         "settings_hash": content_hash(settings),
+        "channel": "email",
+        "webhook_url": None,
+        "webhook_body": None,
         "template_id": str(template_id) if template_id is not None else None,
         "template_name": template_name,
         "template_hash": template_hash,
@@ -434,7 +482,7 @@ def validate_extraction_preview(draft: Draft) -> dict:
 
 
 async def validate_delivery_preview(session: AsyncSession, draft: Draft) -> dict:
-    """The rendered mail must still match the current settings, template and people."""
+    """The rendered preview must still match the current channel and settings."""
     if draft.delivery_preview is None:
         raise DomainError("preview_missing", 409)
     preview = dict(draft.delivery_preview)
@@ -446,6 +494,13 @@ async def validate_delivery_preview(session: AsyncSession, draft: Draft) -> dict
     if delivery_hash(preview) != draft.delivery_preview_hash:
         raise DomainError("preview_stale", 409, "Preview result changed; preview again")
     settings = _settings(draft)
+    if preview.get("channel") != settings.channel:
+        raise DomainError("preview_stale", 409, "The delivery channel changed; preview again")
+    if settings.channel == "webhook":
+        url = validate_webhook_url(settings.webhook_url)
+        if preview.get("webhook_url") != url:
+            raise DomainError("preview_stale", 409, "The webhook URL changed; preview again")
+        return preview
     template_hash = content_hash(None)
     if settings.email_template_id is not None:
         try:
@@ -494,9 +549,11 @@ async def publish_draft(session: AsyncSession, user: CurrentUser, *, conversatio
         return monitor
     settings = _settings(draft)
     schedule = settings.schedule
-    missing = [name for name, present in (
-        ("notification_group_ids", bool(settings.notification_group_ids)),
-        ("schedule", schedule is not None)) if not present]
+    missing = [name for name, absent in (
+        ("notification_group_ids", settings.channel == "email"
+         and not settings.notification_group_ids),
+        ("webhook_url", settings.channel == "webhook" and not settings.webhook_url),
+        ("schedule", schedule is None)) if absent]
     if missing or schedule is None:
         raise DomainError("settings_incomplete", 409, details={"missing": missing})
     if draft.extraction_preview_hash is None or \
@@ -511,9 +568,15 @@ async def publish_draft(session: AsyncSession, user: CurrentUser, *, conversatio
         raise DomainError("preview_not_ready", 409)
     spec = _spec(draft)
     validate_url(spec.url)
+    if settings.channel == "webhook":
+        validate_webhook_url(settings.webhook_url)
     validate_extraction_preview(draft)
     delivery = await validate_delivery_preview(session, draft)
-    template_id, snapshot = await _template_snapshot(session, settings, spec)
+    if settings.channel == "webhook":
+        template_id, snapshot = ((monitor.email_template_id, monitor.email_template)
+                                 if monitor is not None else (None, None))
+    else:
+        template_id, snapshot = await _template_snapshot(session, settings, spec)
     if monitor is not None and _contract(monitor.spec or {}) == _contract(
             spec.model_dump(mode="json")):
         _apply_settings(monitor, spec, settings, schedule, template_id, snapshot,
@@ -534,6 +597,7 @@ async def publish_draft(session: AsyncSession, user: CurrentUser, *, conversatio
             interval_seconds=schedule.interval_seconds,
             timezone=schedule.timezone,
             notification_group_ids=[str(item) for item in settings.notification_group_ids],
+            delivery_channel=settings.channel, webhook_url=settings.webhook_url,
             email_template_id=template_id, email_template=snapshot,
             approved_recipients=delivery["recipient_sources"],
             baseline_status="pending_first_success", rule_state={}, next_run_at=utc_now())
@@ -568,6 +632,8 @@ def _apply_settings(monitor: Monitor, spec: MonitorSpec, settings: DeliverySetti
     monitor.interval_seconds = interval
     monitor.timezone = schedule.timezone
     monitor.notification_group_ids = [str(item) for item in settings.notification_group_ids]
+    monitor.delivery_channel = settings.channel
+    monitor.webhook_url = settings.webhook_url
     monitor.email_template_id = template_id
     monitor.email_template = snapshot
     # The approved snapshot follows the publication the user confirmed.

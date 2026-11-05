@@ -22,6 +22,13 @@ WAIT_SECONDS = 70.0
 WAIT_MARGIN_SECONDS = 5.0
 ANALYSIS_REUSE_SECONDS = 900
 
+# Tool traffic is shown to the user and polled with the conversation. Keep each
+# request/response readable and bounded instead of storing whole page samples.
+STEP_MAX_TEXT = 800
+STEP_MAX_ITEMS = 40
+STEP_MAX_DEPTH = 5
+STEP_MAX_JSON = 6000
+
 
 def _wait_timeout(deadline: float | None) -> float:
     """Clamp a child-job wait inside the run budget so a long wait cannot eat it."""
@@ -31,6 +38,53 @@ def _wait_timeout(deadline: float | None) -> float:
     if remaining <= WAIT_MARGIN_SECONDS:
         raise DomainError("run_budget_exhausted", 409)
     return min(WAIT_SECONDS, remaining - WAIT_MARGIN_SECONDS)
+
+
+def _bounded(value, depth: int = 0):
+    if isinstance(value, str):
+        return value if len(value) <= STEP_MAX_TEXT else value[:STEP_MAX_TEXT] + "…"
+    if isinstance(value, dict):
+        if depth >= STEP_MAX_DEPTH:
+            return "…"
+        return {str(key): _bounded(item, depth + 1)
+                for key, item in list(value.items())[:STEP_MAX_ITEMS]}
+    if isinstance(value, (list, tuple)):
+        if depth >= STEP_MAX_DEPTH:
+            return ["…"]
+        return [_bounded(item, depth + 1) for item in list(value)[:STEP_MAX_ITEMS]]
+    if value is None or isinstance(value, (int, float, bool)):
+        return value
+    return str(value)[:STEP_MAX_TEXT]
+
+
+def _step_value(value):
+    """A JSONB-safe value bounded for polling, never a whole page or response."""
+    bounded = _bounded(value)
+    encoded = json.dumps(bounded, ensure_ascii=False)
+    if len(encoded) > STEP_MAX_JSON:
+        return {"truncated": True, "preview": encoded[:STEP_MAX_JSON]}
+    return bounded
+
+
+def _tool_arguments(ctx):
+    raw = getattr(ctx, "tool_arguments", None)
+    if not isinstance(raw, str) or not raw:
+        return None
+    try:
+        return _step_value(json.loads(raw))
+    except (ValueError, TypeError):
+        return {"unparsed": raw[:STEP_MAX_TEXT]}
+
+
+def _tool_result(result):
+    if isinstance(result, str):
+        stripped = result.strip()
+        if stripped.startswith(("{", "[")):
+            try:
+                result = json.loads(stripped)
+            except ValueError:
+                pass
+    return _step_value(result)
 
 
 def _validation_details(errors) -> list[dict]:
@@ -83,14 +137,17 @@ async def _check(session, ctx, *, lock=False):
 
 
 async def _step(ctx, *, name: str, status: str, error_code: str | None = None,
-                detail: str | None = None, duration_ms: int | None = None) -> None:
+                detail: str | None = None, duration_ms: int | None = None,
+                arguments=None, result=None) -> None:
     async with get_session_factory()() as session:
         job = await _check(session, ctx, lock=True)
         job.steps = list(job.steps or []) + [{"name": name, "status": status,
                                               "at": utc_now().isoformat(),
                                               "error_code": error_code,
                                               "detail": detail,
-                                              "duration_ms": duration_ms}]
+                                              "duration_ms": duration_ms,
+                                              "arguments": arguments,
+                                              "result": result}]
         await session.commit()
 
 
@@ -100,7 +157,8 @@ async def _observed(ctx, operation):
     def elapsed() -> int:
         return round((asyncio.get_running_loop().time() - started) * 1000)
 
-    await _step(ctx, name=ctx.tool_name, status="started")
+    arguments = _tool_arguments(ctx)
+    await _step(ctx, name=ctx.tool_name, status="started", arguments=arguments)
     try:
         result = await operation()
     except asyncio.CancelledError:
@@ -110,9 +168,10 @@ async def _observed(ctx, operation):
         await _step(ctx, name=ctx.tool_name, status="failed",
                     error_code=payload["code"],
                     detail=json.dumps(payload.get("details") or [], ensure_ascii=False)[:500],
-                    duration_ms=elapsed())
+                    duration_ms=elapsed(), arguments=arguments)
         raise
-    await _step(ctx, name=ctx.tool_name, status="succeeded", duration_ms=elapsed())
+    await _step(ctx, name=ctx.tool_name, status="succeeded",
+                duration_ms=elapsed(), result=_tool_result(result))
     return result
 
 

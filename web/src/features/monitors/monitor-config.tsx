@@ -293,7 +293,11 @@ export function MonitorConfig({
 
           <div>
             <h3 className="label-line">{t("monitors.config.notifications")}</h3>
-            {groupLabels.length === 0 ? (
+            {monitor.delivery_channel === "webhook" ? (
+              <p className="num mt-1 break-all text-[14px]">
+                {t("settings.channel.webhook")} · {monitor.webhook_url}
+              </p>
+            ) : groupLabels.length === 0 ? (
               <p className="meta mt-1">{t("monitors.config.noGroups")}</p>
             ) : (
               <ul className="mt-1 flex flex-wrap gap-x-3 gap-y-1">
@@ -302,7 +306,8 @@ export function MonitorConfig({
                 ))}
               </ul>
             )}
-            {(monitor.approved_recipients ?? []).length > 0 && (
+            {monitor.delivery_channel !== "webhook"
+              && (monitor.approved_recipients ?? []).length > 0 && (
               <p className="meta mt-1.5 break-words">
                 {t("monitors.config.recipients")} · {(monitor.approved_recipients ?? []).join(" · ")}
               </p>
@@ -318,12 +323,14 @@ export function MonitorConfig({
             </p>
           </div>
 
-          <div>
-            <h3 className="label-line">{t("monitors.config.template")}</h3>
-            <p className="mt-1 text-[14px]">
-              {templateName(monitor) || t("templates.systemDefault")}
-            </p>
-          </div>
+          {monitor.delivery_channel !== "webhook" && (
+            <div>
+              <h3 className="label-line">{t("monitors.config.template")}</h3>
+              <p className="mt-1 text-[14px]">
+                {templateName(monitor) || t("templates.systemDefault")}
+              </p>
+            </div>
+          )}
 
           {(spec?.browser_steps ?? []).length > 0 && (
             <div>

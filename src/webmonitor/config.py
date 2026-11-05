@@ -34,6 +34,8 @@ class Settings(BaseSettings):
     # conversation starts with these instead of asking the user in the chat.
     default_interval_seconds: int = 3600
     default_notification_group: str = ""
+    default_delivery_channel: str = "email"
+    default_webhook_url: str = ""
 
     openai_api_key: SecretStr = SecretStr("")
     openai_base_url: str = "https://api.openai.com/v1"
@@ -103,6 +105,10 @@ class Settings(BaseSettings):
             raise ValueError("TARGET_POLICY other than public requires DEVELOPMENT_MODE=true")
         if self.target_policy == "allowlist" and not parse_target_origins(self.target_allowed_origins):
             raise ValueError("TARGET_POLICY=allowlist requires TARGET_ALLOWED_ORIGINS")
+        if self.default_delivery_channel not in {"email", "webhook"}:
+            raise ValueError("DEFAULT_DELIVERY_CHANNEL must be email or webhook")
+        if self.default_delivery_channel == "webhook" and not self.default_webhook_url.strip():
+            raise ValueError("DEFAULT_DELIVERY_CHANNEL=webhook requires DEFAULT_WEBHOOK_URL")
         if self.agent_model_retries < 0:
             raise ValueError("AGENT_MODEL_RETRIES must not be negative")
         for name in ("preview_ttl_minutes", "agent_concurrency", "http_concurrency",

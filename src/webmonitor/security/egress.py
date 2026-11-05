@@ -61,3 +61,18 @@ async def validate_target(url: str) -> str:
     # would fail on internal networks and introduce a second, TOCTOU-prone DNS view.
     # Squid resolves via its TLS resolver and checks each actual destination address.
     return validate_url(url)
+
+
+def validate_webhook_url(url: str | None) -> str:
+    """A webhook leaves the deployment with monitored page data; never in clear text.
+
+    The same destination policy as collection applies, and Squid enforces it again
+    when the request is actually forwarded. HTTP is allowed only during explicit
+    development with an allowlisted origin.
+    """
+    if url is None:
+        raise DomainError("webhook_url_missing", 422, "A webhook URL is required")
+    target = validate_url(url)
+    if urlsplit(target).scheme != "https" and not get_settings().development_mode:
+        raise DomainError("webhook_url_insecure", 422, "Webhook URLs must use HTTPS")
+    return target

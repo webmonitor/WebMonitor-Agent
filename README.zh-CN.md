@@ -6,20 +6,20 @@
 
 <p align="center">
   把页面和关注条件用自己的话说清楚。助手读取页面、提取字段，并先给你看一次真实采集结果，确认之后才开始定时检查。<br>
-  之后它按点运行、保存证据，符合条件时发邮件给你。
+  之后它按点运行、保存证据，符合条件时通过邮件或 Webhook 通知你。
 </p>
 
 <p align="center">
   <a href="#它是什么">项目介绍</a> ·
   <a href="#三步装好">快速开始</a> ·
   <a href="#创建第一个监控">第一次使用</a> ·
-  <a href="#邮件提醒">邮件提醒</a> ·
+  <a href="#邮件与-webhook-提醒">邮件与 Webhook 提醒</a> ·
   <a href="#常见问题">常见问题</a> ·
   <a href="#更新回退与数据保留">更新与数据</a> ·
   <a href="./README.md">English</a>
 </p>
 
-![对话里的确认卡片，投递设置就在卡片内展开](./docs/screenshot.png)
+![对话中的工具调用与创建监控确认卡片](./docs/screenshot.png)
 
 ## 它是什么
 
@@ -133,11 +133,14 @@ OPENAI_API_KEY=replace-with-your-model-api-key
 OPENAI_BASE_URL=https://api.openai.com/v1
 OPENAI_MODEL=replace-with-your-model-name
 
-# 对话里创建的监控以什么为准（可选）。收件人、频率和邮件模板在监控页的「投递设置」里改。
+# 对话里创建的监控以什么为准（可选）。收件人、频率、通知方式和邮件模板
+# 在监控页的「投递设置」里改。
 # DEFAULT_INTERVAL_SECONDS=3600
 # DEFAULT_NOTIFICATION_GROUP=
+# DEFAULT_DELIVERY_CHANNEL=email
+# DEFAULT_WEBHOOK_URL=
 
-# 邮件提醒（可选），规则见下面「邮件提醒」。
+# 邮件提醒（可选），规则见下面「邮件与 Webhook 提醒」。
 # SMTP_HOST=
 # SMTP_PORT=465
 # SMTP_USERNAME=
@@ -186,11 +189,11 @@ docker compose up -d --wait
 接下来会看到两件事：
 
 - 助手打开页面，并出现一条 **查看 N 步操作** 的记录，说明它做了什么：读取页面、保存采集定义。
-- 助手会询问需要补充的信息，例如提取哪些内容、什么算发生变化。收件人、检查频率和邮件模板由你自己设置：在对话右侧的工作区里选。
+- 助手会询问需要补充的信息，例如提取哪些内容、什么算发生变化。通知方式、去向、检查频率和邮件模板由你自己设置：在对话右侧的工作区里选。
 
 ### 核对预览再创建
 
-在开始定时检查之前，对话里会出现一张确认卡片：一次真实采集、会发出的那封邮件，加一个 **创建监控** 按钮。收件人、检查频率、时区和邮件模板不在对话里问：监控按部署默认值创建（`DEFAULT_INTERVAL_SECONDS`，以及 `DEFAULT_NOTIFICATION_GROUP` 或第一个启用的通知组），之后在监控页的 **投递设置** 里改。
+在开始定时检查之前，对话里会出现一张确认卡片：一次真实采集、会发出的邮件或 Webhook 请求，加一个 **创建监控** 按钮。通知方式、去向、检查频率、时区和邮件模板不在对话里问：监控按部署默认值创建（`DEFAULT_INTERVAL_SECONDS`、`DEFAULT_DELIVERY_CHANNEL`，以及 `DEFAULT_NOTIFICATION_GROUP` 或第一个启用的通知组；Webhook 方式使用 `DEFAULT_WEBHOOK_URL`），之后在监控页的 **投递设置** 里改。
 
 卡片里包含：
 
@@ -220,9 +223,9 @@ docker compose up -d --wait
 - **成员**（管理员）可以启用或停用账户，并生成可复制的单次邀请链接。
 - 对话、监控、检查记录、事件、通知组和投递列表均可通过 **加载更多** 访问较早记录。监控详情只显示该监控的事件。
 
-第一次成功检查只记录起始内容，不发邮件；从第二次检查开始比较变化。预览从不发邮件。某次检查失败时，监控继续用上一次成功的内容作比较基线。
+第一次成功检查只记录起始内容，不发送通知；从第二次检查开始比较变化。预览从不发送通知。某次检查失败时，监控继续用上一次成功的内容作比较基线。
 
-## 邮件提醒
+## 邮件与 Webhook 提醒
 
 把下面几行加进 `.env`，然后重新应用：
 
@@ -249,6 +252,25 @@ docker compose up -d --wait
 SMTP 在 `.env` 中配置。采集结果记录在事件页，邮件发送状态显示在 **投递记录** 中。
 
 `已发送` 表示邮件服务器已接受邮件。未收到时可检查垃圾邮件。临时发送失败最多重试三次，配置错误显示为失败。
+
+
+### Webhook 提醒
+
+每个监控只使用一种通知方式，在监控页的 **投递设置** 里选择。选择 **Webhook** 后填写 HTTPS 地址，主机必须是公网且端口为 443；请求经过与采集相同的出站策略，并且不跟随重定向。
+
+```dotenv
+DEFAULT_DELIVERY_CHANNEL=webhook
+DEFAULT_WEBHOOK_URL=https://hooks.example.com/services/your-endpoint
+```
+
+默认通知方式只作用于对话中新创建的监控；已有监控保留各自设置。Webhook 会 POST 确认预览里展示的那份 JSON（`monitor`、`event`、`change`、`fields`、`evidence_url`），并带上这些请求头：
+
+- `Content-Type: application/json`
+- `X-WebMonitor-Event`：事件类型
+- `X-WebMonitor-Monitor`：监控 ID
+- `X-WebMonitor-Delivery`：投递 ID
+
+端点通常应返回 `2xx`；`408`、`425`、`429` 和 `5xx` 会重试，其他响应记为失败。**投递日志** 会显示地址、HTTP 状态和错误码，失败的投递可以重试。
 
 ## 常见问题
 

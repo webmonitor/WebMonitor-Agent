@@ -436,6 +436,23 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v1/monitors/{monitor_id}/settings": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        /** Update Monitor Settings */
+        patch: operations["update_monitor_settings_api_v1_monitors__monitor_id__settings_patch"];
+        trace?: never;
+    };
     "/api/v1/monitors/{monitor_id}/archive": {
         parameters: {
             query?: never;
@@ -608,7 +625,7 @@ export interface paths {
         patch: operations["patch_group_api_v1_notification_groups__group_id__patch"];
         trace?: never;
     };
-    "/api/v1/email-deliveries": {
+    "/api/v1/deliveries": {
         parameters: {
             query?: never;
             header?: never;
@@ -616,7 +633,7 @@ export interface paths {
             cookie?: never;
         };
         /** List Deliveries */
-        get: operations["list_deliveries_api_v1_email_deliveries_get"];
+        get: operations["list_deliveries_api_v1_deliveries_get"];
         put?: never;
         post?: never;
         delete?: never;
@@ -625,7 +642,7 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
-    "/api/v1/email-deliveries/{delivery_id}": {
+    "/api/v1/deliveries/{delivery_id}": {
         parameters: {
             query?: never;
             header?: never;
@@ -633,7 +650,7 @@ export interface paths {
             cookie?: never;
         };
         /** Read Delivery */
-        get: operations["read_delivery_api_v1_email_deliveries__delivery_id__get"];
+        get: operations["read_delivery_api_v1_deliveries__delivery_id__get"];
         put?: never;
         post?: never;
         delete?: never;
@@ -642,7 +659,7 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
-    "/api/v1/email-deliveries/{delivery_id}/retry": {
+    "/api/v1/deliveries/{delivery_id}/retry": {
         parameters: {
             query?: never;
             header?: never;
@@ -655,7 +672,7 @@ export interface paths {
          * Retry Delivery
          * @description Requeue one delivery the user can see, resetting its attempt history.
          */
-        post: operations["retry_delivery_api_v1_email_deliveries__delivery_id__retry_post"];
+        post: operations["retry_delivery_api_v1_deliveries__delivery_id__retry_post"];
         delete?: never;
         options?: never;
         head?: never;
@@ -991,6 +1008,8 @@ export interface components {
              * Format: uuid
              */
             event_id: string;
+            /** Channel */
+            channel: string;
             /** Recipient */
             recipient: string;
             /** Subject */
@@ -1005,8 +1024,8 @@ export interface components {
             error_code: string | null;
             /** Error Message */
             error_message: string | null;
-            /** Smtp Response Code */
-            smtp_response_code: number | null;
+            /** Response Code */
+            response_code: number | null;
             /**
              * Created At
              * Format: date-time
@@ -1019,14 +1038,24 @@ export interface components {
         };
         /**
          * DeliverySettings
-         * @description Who is told, how often, and in which mail design.
+         * @description Who is told, how often, and through which channel.
          *
-         *     A draft may carry empty settings; publication requires at least one group and a
-         *     schedule. `email_template_id=None` means the packaged default template.
+         *     A draft may carry empty settings; publication requires a schedule and the
+         *     configuration of the selected channel. `channel` selects exactly one route:
+         *     notification groups and the mail template for email, or the webhook URL.
+         *     `email_template_id=None` means the packaged default template.
          */
         DeliverySettings: {
+            /**
+             * Channel
+             * @default email
+             * @enum {string}
+             */
+            channel: "email" | "webhook";
             /** Notification Group Ids */
             notification_group_ids?: string[];
+            /** Webhook Url */
+            webhook_url?: string | null;
             schedule?: components["schemas"]["Schedule"] | null;
             /** Email Template Id */
             email_template_id?: string | null;
@@ -1146,7 +1175,7 @@ export interface components {
                 [key: string]: string;
             };
             /** Blocks */
-            blocks?: (components["schemas"]["TextBlock"] | components["schemas"]["SummaryBlock"] | components["schemas"]["FieldBlock"] | components["schemas"]["ListChangesBlock"] | components["schemas"]["AllFieldsBlock"] | components["schemas"]["EventTimeBlock"] | components["schemas"]["MonitorLinkBlock"] | components["schemas"]["EvidenceLinkBlock"] | components["schemas"]["DividerBlock"])[];
+            blocks: (components["schemas"]["TextBlock"] | components["schemas"]["SummaryBlock"] | components["schemas"]["FieldBlock"] | components["schemas"]["ListChangesBlock"] | components["schemas"]["AllFieldsBlock"] | components["schemas"]["EventTimeBlock"] | components["schemas"]["MonitorLinkBlock"] | components["schemas"]["EvidenceLinkBlock"] | components["schemas"]["DividerBlock"])[];
         };
         /** EmailTemplatePatch */
         EmailTemplatePatch: {
@@ -1333,6 +1362,11 @@ export interface components {
              * @default true
              */
             required: boolean;
+            /**
+             * Allow Empty
+             * @default false
+             */
+            allow_empty: boolean;
             normalize?: components["schemas"]["Normalization"];
             /** Item Fields */
             item_fields?: components["schemas"]["FieldSpec"][] | null;
@@ -1523,6 +1557,10 @@ export interface components {
             detail?: string | null;
             /** Duration Ms */
             duration_ms?: number | null;
+            /** Arguments */
+            arguments?: unknown | null;
+            /** Result */
+            result?: unknown | null;
         };
         /** JobView */
         JobView: {
@@ -1756,6 +1794,13 @@ export interface components {
             health_status: string;
             /** Notification Group Ids */
             notification_group_ids: string[];
+            /**
+             * Delivery Channel
+             * @default email
+             */
+            delivery_channel: string;
+            /** Webhook Url */
+            webhook_url?: string | null;
             /** Email Template Id */
             email_template_id?: string | null;
             /**
@@ -1798,6 +1843,13 @@ export interface components {
         MonitorRename: {
             /** Name */
             name: string;
+        };
+        /**
+         * MonitorSettingsUpdate
+         * @description Who is told and how often, edited on the monitor itself.
+         */
+        MonitorSettingsUpdate: {
+            settings: components["schemas"]["DeliverySettings"];
         };
         /**
          * MonitorSpec
@@ -1849,6 +1901,13 @@ export interface components {
             health_status: string;
             /** Notification Group Ids */
             notification_group_ids: string[];
+            /**
+             * Delivery Channel
+             * @default email
+             */
+            delivery_channel: string;
+            /** Webhook Url */
+            webhook_url?: string | null;
             /** Email Template Id */
             email_template_id?: string | null;
             /**
@@ -3250,6 +3309,41 @@ export interface operations {
             };
         };
     };
+    update_monitor_settings_api_v1_monitors__monitor_id__settings_patch: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                monitor_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["MonitorSettingsUpdate"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["MonitorDetail"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
     archive_monitor_api_v1_monitors__monitor_id__archive_post: {
         parameters: {
             query?: never;
@@ -3636,7 +3730,7 @@ export interface operations {
             };
         };
     };
-    list_deliveries_api_v1_email_deliveries_get: {
+    list_deliveries_api_v1_deliveries_get: {
         parameters: {
             query?: {
                 limit?: number;
@@ -3670,7 +3764,7 @@ export interface operations {
             };
         };
     };
-    read_delivery_api_v1_email_deliveries__delivery_id__get: {
+    read_delivery_api_v1_deliveries__delivery_id__get: {
         parameters: {
             query?: never;
             header?: never;
@@ -3701,7 +3795,7 @@ export interface operations {
             };
         };
     };
-    retry_delivery_api_v1_email_deliveries__delivery_id__retry_post: {
+    retry_delivery_api_v1_deliveries__delivery_id__retry_post: {
         parameters: {
             query?: never;
             header?: never;

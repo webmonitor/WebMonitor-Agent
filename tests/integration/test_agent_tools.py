@@ -89,6 +89,8 @@ async def test_browser_analysis_requires_http_evidence(session):
     assert (steps[-1]["status"], steps[-1]["error_code"]) == ("failed",
                                                               "http_analysis_required")
     assert isinstance(steps[-1]["duration_ms"], int)
+    assert steps[0]["arguments"]["url"] == "https://8.8.8.8/page"
+    assert steps[0]["arguments"]["collection_mode"] == "browser"
 
 
 @pytest.mark.asyncio
@@ -170,6 +172,7 @@ async def test_hourly_run_cap_blocks_a_new_message(session, monkeypatch):
 @pytest.mark.asyncio
 async def test_preview_tool_returns_the_evidence_the_model_must_describe(session, monkeypatch):
     from support import build_spec, collect, collection_result
+
     from webmonitor.agent.tools import preview_monitor
     from webmonitor.services import drafts
 
@@ -204,3 +207,10 @@ async def test_preview_tool_returns_the_evidence_the_model_must_describe(session
     assert response["coverage"]["scope"] == "full"
     assert isinstance(response["evidence_refs"], list)
     assert response["expires_at"]
+    steps = await _steps(session, job.id)
+    started = next(step for step in steps if step["status"] == "started")
+    finished = steps[-1]
+    assert started["arguments"]["draft_id"] == str(draft.id)
+    assert finished["status"] == "succeeded"
+    assert finished["result"]["final_url"] == draft.spec["url"]
+    assert finished["result"]["spec_revision"] == draft.spec_revision

@@ -52,11 +52,11 @@ export const en = {
 
   "activity.notifications.title": "Notifications",
   "activity.notifications.description":
-    "Notification groups decide who receives email; the delivery log records where each message went and how it turned out.",
+    "The channel decides where notifications go; the delivery log records each destination and result.",
 
   "activity.groups.title": "Notification groups",
   "activity.groups.description":
-    "Monitors send email through notification groups. After changing recipients, confirm the monitor again.",
+    "Email notifications go through notification groups. After changing recipients, confirm the monitor again.",
   "activity.groups.new": "New",
   "activity.groups.loading": "Loading…",
   "activity.groups.emptyTitle": "No notification groups yet",
@@ -88,12 +88,13 @@ export const en = {
 
   "activity.deliveries.title": "Delivery log",
   "activity.deliveries.description":
-    "“Sent” means the mail server accepted the message; when it reaches the inbox is up to the recipient.",
+    "For email, “Sent” means the mail server accepted the message; for a webhook, it means the endpoint answered 2xx.",
   "activity.deliveries.loading": "Loading…",
   "activity.deliveries.emptyTitle": "No deliveries yet",
   "activity.deliveries.emptyDescription":
-    "Once a monitor finds a change, emails sent to notification groups are recorded here.",
-  "activity.deliveries.recipient": "Recipient",
+    "Once a monitor finds a change, each email or webhook delivery is recorded here.",
+  "activity.deliveries.channel": "Channel",
+  "activity.deliveries.recipient": "Destination",
   "activity.deliveries.status": "Status",
   "activity.deliveries.allStatuses": "All statuses",
   "activity.deliveries.attempts": "{count} attempts",
@@ -153,10 +154,10 @@ export const zh: Record<keyof typeof en, string> = {
   "activity.recent.empty": "还没有事件。发现变化时会出现在这里，并发送邮件。",
 
   "activity.notifications.title": "通知",
-  "activity.notifications.description": "通知组决定谁收到邮件；投递记录保存每一封邮件的去向与结果。",
+  "activity.notifications.description": "通知方式决定通知发往哪里；投递记录保存每次投递的去向与结果。",
 
   "activity.groups.title": "通知组",
-  "activity.groups.description": "监控按通知组发送邮件。改动收件人后，需要重新确认一次监控。",
+  "activity.groups.description": "邮件通知通过通知组发送。改动收件人后，需要重新确认一次监控。",
   "activity.groups.new": "新建",
   "activity.groups.loading": "正在加载…",
   "activity.groups.emptyTitle": "还没有通知组",
@@ -186,11 +187,12 @@ export const zh: Record<keyof typeof en, string> = {
 
   "activity.deliveries.title": "投递记录",
   "activity.deliveries.description":
-    "“已发送”表示邮件服务器已接收；何时进入收件箱由收件方决定。",
+    "邮件中“已发送”表示邮件服务器已接收；Webhook 中表示端点返回了 2xx。",
   "activity.deliveries.loading": "正在加载…",
   "activity.deliveries.emptyTitle": "还没有投递记录",
-  "activity.deliveries.emptyDescription": "监控发现变化后，发往通知组的邮件会记录在这里。",
-  "activity.deliveries.recipient": "收件人",
+  "activity.deliveries.emptyDescription": "监控发现变化后，每一次邮件或 Webhook 投递都会记录在这里。",
+  "activity.deliveries.channel": "通知方式",
+  "activity.deliveries.recipient": "去向",
   "activity.deliveries.status": "状态",
   "activity.deliveries.allStatuses": "全部状态",
   "activity.deliveries.attempts": "尝试 {count} 次",

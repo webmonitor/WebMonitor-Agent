@@ -1,4 +1,5 @@
-"""First success only establishes a baseline; later runs publish events and mail."""
+"""First success only establishes a baseline; later runs publish events and delivery."""
+import json
 from datetime import timedelta
 from uuid import uuid4
 
@@ -6,8 +7,8 @@ import pytest
 from sqlalchemy import func, select
 
 from webmonitor.models import (
+    Delivery,
     Draft,
-    EmailDelivery,
     Event,
     Job,
     Monitor,
@@ -17,7 +18,7 @@ from webmonitor.models import (
     utc_now,
 )
 from webmonitor.schemas.monitors import MonitorSpec, content_hash
-from webmonitor.services import runs
+from webmonitor.services import notifications, runs
 
 
 def spec_for() -> MonitorSpec:
@@ -106,7 +107,7 @@ async def test_first_success_establishes_the_baseline_without_events(session):
     assert snapshot.job_id == job.id
     assert snapshot.extracted_data == {"title": "A"}
     assert await session.scalar(select(func.count()).select_from(Event)) == 0
-    assert await session.scalar(select(func.count()).select_from(EmailDelivery)) == 0
+    assert await session.scalar(select(func.count()).select_from(Delivery)) == 0
 
 
 @pytest.mark.asyncio
@@ -125,7 +126,7 @@ async def test_changed_value_publishes_one_event_and_one_delivery(session):
     assert events[0].type == "content_changed"
     assert events[0].change["before"] == {"title": "A"}
     assert events[0].change["after"] == {"title": "B"}
-    deliveries = (await session.scalars(select(EmailDelivery))).all()
+    deliveries = (await session.scalars(select(Delivery))).all()
     assert len(deliveries) == 1
     assert deliveries[0].recipient == "ops@example.com"
     assert deliveries[0].status == "queued"
@@ -199,3 +200,40 @@ async def test_schedule_due_enqueues_one_job_and_advances_the_clock(session):
 
     # A monitor with queued work is not scheduled twice.
     assert await runs.schedule_due(session, now=advanced.next_run_at) == 0
+
+
+@pytest.mark.asyncio
+async def test_webhook_channel_queues_one_json_delivery_and_revokes_on_change(session):
+    user, group = await seed(session)
+    monitor = await make_monitor(session, user, group)
+    monitor.delivery_channel = "webhook"
+    monitor.webhook_url = "https://hooks.example.com/ops"
+    monitor.approved_recipients = []
+    await session.flush()
+    await runs.commit_success(session, await running_job(session, monitor), result("A"))
+    await session.commit()
+
+    await runs.commit_success(session, await running_job(session, monitor), result("B"))
+    await session.commit()
+
+    deliveries = (await session.scalars(select(Delivery))).all()
+    assert len(deliveries) == 1
+    delivery = deliveries[0]
+    assert delivery.channel == "webhook"
+    assert delivery.recipient == "https://hooks.example.com/ops"
+    assert delivery.html == ""
+    body = json.loads(delivery.body_text)
+    assert body["monitor"]["id"] == str(monitor.id)
+    assert body["event"]["type"] == "content_changed"
+    assert body["change"]["before"] == {"title": "A"}
+    assert body["change"]["after"] == {"title": "B"}
+    assert await notifications.authorized(session, delivery)
+
+    monitor.webhook_url = "https://hooks.example.com/replacement"
+    await session.flush()
+    assert not await notifications.authorized(session, delivery)
+
+    monitor.webhook_url = delivery.recipient
+    monitor.delivery_channel = "email"
+    await session.flush()
+    assert not await notifications.authorized(session, delivery)

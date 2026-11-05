@@ -51,7 +51,7 @@ async def ensure_admin(session) -> User:
 @pytest.mark.asyncio
 async def test_unauthenticated_reads_are_rejected(client):
     for path in ("/api/v1/conversations", "/api/v1/monitors", "/api/v1/events",
-                 "/api/v1/email-deliveries", "/api/v1/auth/me"):
+                 "/api/v1/deliveries", "/api/v1/auth/me"):
         response = await client.get(path)
         assert response.status_code == 401, path
         assert response.json()["error"]["code"] == "unauthenticated"
@@ -101,7 +101,7 @@ async def test_conversation_round_trip_and_every_list(client, session):
     assert detail["attempts"] == []
 
     for path in ("/api/v1/conversations", "/api/v1/monitors", "/api/v1/events",
-                 "/api/v1/notification-groups", "/api/v1/email-deliveries", "/api/v1/members"):
+                 "/api/v1/notification-groups", "/api/v1/deliveries", "/api/v1/members"):
         response = await client.get(path)
         assert response.status_code == 200, path
         assert "items" in response.json() and "total" in response.json()
@@ -464,7 +464,7 @@ async def test_monitor_history_lifecycle_over_http(client, session):
 
 @pytest.mark.asyncio
 async def test_events_filter_and_delivery_monitor_name(client, session):
-    from webmonitor.models import EmailDelivery, Event, utc_now
+    from webmonitor.models import Delivery, Event, utc_now
 
     user = await ensure_admin(session)
     headers = await sign_in(client)
@@ -474,7 +474,7 @@ async def test_events_filter_and_delivery_monitor_name(client, session):
     failed = Event(monitor_id=monitor.id, job_id=job.id, type="run_failed", change={})
     session.add(failed)
     await session.flush()
-    delivery = EmailDelivery(user_id=user.id, monitor_id=monitor.id, event_id=failed.id,
+    delivery = Delivery(user_id=user.id, monitor_id=monitor.id, event_id=failed.id,
         recipient="ops@example.com", subject="Alert", html="<p>x</p>", body_text="x",
         payload={}, message_id="m-1", available_at=utc_now())
     session.add(delivery)
@@ -484,7 +484,7 @@ async def test_events_filter_and_delivery_monitor_name(client, session):
     assert filtered.status_code == 200
     assert [row["type"] for row in filtered.json()["items"]] == ["run_failed"]
 
-    deliveries = (await client.get("/api/v1/email-deliveries")).json()
+    deliveries = (await client.get("/api/v1/deliveries")).json()
     assert deliveries["items"][0]["monitor_name"] == monitor.name
 
 
@@ -602,7 +602,7 @@ async def test_an_event_without_mail_reports_why(client, session):
 
 @pytest.mark.asyncio
 async def test_events_and_deliveries_filter_on_state(client, session):
-    from webmonitor.models import EmailDelivery, Event, Job, utc_now
+    from webmonitor.models import Delivery, Event, Job, utc_now
 
     user = await ensure_admin(session)
     await sign_in(client)
@@ -617,7 +617,7 @@ async def test_events_and_deliveries_filter_on_state(client, session):
     session.add(unread)
     await session.flush()
     for event, status in ((read, "sent"), (unread, "failed")):
-        session.add(EmailDelivery(user_id=user.id, monitor_id=monitor.id, event_id=event.id,
+        session.add(Delivery(user_id=user.id, monitor_id=monitor.id, event_id=event.id,
             recipient="ops@example.com", subject="Alert", html="<p>x</p>", body_text="x",
             payload={}, message_id="m", status=status, available_at=utc_now()))
     await session.commit()
@@ -625,15 +625,15 @@ async def test_events_and_deliveries_filter_on_state(client, session):
     assert (await client.get("/api/v1/events?acknowledged=false")).json()["total"] == 1
     assert (await client.get("/api/v1/events?acknowledged=true")).json()["total"] == 1
     assert (await client.get("/api/v1/events?acknowledged=false&limit=1")).json()["total"] == 1
-    assert (await client.get("/api/v1/email-deliveries?status=failed")).json()["total"] == 1
-    assert (await client.get("/api/v1/email-deliveries?status=sent")).json()["total"] == 1
+    assert (await client.get("/api/v1/deliveries?status=failed")).json()["total"] == 1
+    assert (await client.get("/api/v1/deliveries?status=sent")).json()["total"] == 1
     assert (await client.get(
-        f"/api/v1/email-deliveries?monitor_id={uuid4()}")).json()["total"] == 0
+        f"/api/v1/deliveries?monitor_id={uuid4()}")).json()["total"] == 0
 
 
 @pytest.mark.asyncio
 async def test_a_failed_delivery_can_be_retried(client, session):
-    from webmonitor.models import EmailDelivery, Event, utc_now
+    from webmonitor.models import Delivery, Event, utc_now
 
     user = await ensure_admin(session)
     headers = await sign_in(client)
@@ -642,21 +642,21 @@ async def test_a_failed_delivery_can_be_retried(client, session):
                   type="content_changed", change={})
     session.add(event)
     await session.flush()
-    delivery = EmailDelivery(user_id=user.id, monitor_id=monitor.id, event_id=event.id,
+    delivery = Delivery(user_id=user.id, monitor_id=monitor.id, event_id=event.id,
         recipient="ops@example.com", subject="Alert", html="<p>x</p>", body_text="x",
         payload={}, message_id="m", status="failed", attempt_count=3, error_code="smtp_rejected",
         failed_at=utc_now(), available_at=utc_now())
     session.add(delivery)
     await session.commit()
 
-    retried = await client.post(f"/api/v1/email-deliveries/{delivery.id}/retry", headers=headers)
+    retried = await client.post(f"/api/v1/deliveries/{delivery.id}/retry", headers=headers)
     assert retried.status_code == 200, retried.text
     body = retried.json()
     assert body["status"] == "queued"
     assert body["attempt_count"] == 0
     assert body["error_code"] is None
 
-    again = await client.post(f"/api/v1/email-deliveries/{delivery.id}/retry", headers=headers)
+    again = await client.post(f"/api/v1/deliveries/{delivery.id}/retry", headers=headers)
     assert again.status_code == 409
     assert again.json()["error"]["code"] == "delivery_not_retryable"
 

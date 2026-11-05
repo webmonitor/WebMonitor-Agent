@@ -18,6 +18,7 @@ from webmonitor.schemas.api import (
 from webmonitor.schemas.delivery import DeliverySettings
 from webmonitor.schemas.monitors import MonitorSpec, content_hash
 from webmonitor.security.auth import CurrentUser, require_owner
+from webmonitor.security.egress import validate_webhook_url
 from webmonitor.services import drafts, jobs, notifications
 
 ACTIVE = ("queued", "running")
@@ -30,6 +31,8 @@ def monitor_view(monitor: Monitor) -> MonitorView:
         timezone=monitor.timezone, baseline_status=monitor.baseline_status,
         health_status=monitor.health_status,
         notification_group_ids=list(monitor.notification_group_ids or []),
+        delivery_channel=monitor.delivery_channel,
+        webhook_url=monitor.webhook_url,
         email_template_id=monitor.email_template_id,
         next_run_at=monitor.next_run_at, last_success_at=monitor.last_success_at,
         last_failure_at=monitor.last_failure_at, created_at=monitor.created_at,
@@ -150,15 +153,22 @@ async def update_delivery_settings(session: AsyncSession, user: CurrentUser, mon
     """
     monitor = await read_monitor_row(session, user, monitor_id, lock=True)
     schedule = settings.schedule
-    missing = [name for name, present in (
-        ("notification_group_ids", bool(settings.notification_group_ids)),
-        ("schedule", schedule is not None)) if not present]
+    missing = [name for name, absent in (
+        ("notification_group_ids", settings.channel == "email"
+         and not settings.notification_group_ids),
+        ("webhook_url", settings.channel == "webhook" and not settings.webhook_url),
+        ("schedule", schedule is None)) if absent]
     if missing or schedule is None:
         raise DomainError("settings_incomplete", 409, details={"missing": missing})
     spec = MonitorSpec.model_validate(monitor.spec)
-    recipients = await notifications.load_recipients(
-        session, settings.notification_group_ids, lock=True)
-    template_id, snapshot = await drafts._template_snapshot(session, settings, spec)
+    if settings.channel == "webhook":
+        validate_webhook_url(settings.webhook_url)
+        recipients: list[dict] = []
+        template_id, snapshot = monitor.email_template_id, monitor.email_template
+    else:
+        recipients = await notifications.load_recipients(
+            session, settings.notification_group_ids, lock=True)
+        template_id, snapshot = await drafts._template_snapshot(session, settings, spec)
     drafts._apply_settings(monitor, spec, settings, schedule, template_id, snapshot, recipients)
     await session.flush()
     return monitor

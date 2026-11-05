@@ -97,4 +97,4 @@ def test_readiness_derives_its_table_list_from_the_model():
     from webmonitor.db import EXPECTED_TABLES
 
     assert "email_templates" in EXPECTED_TABLES
-    assert "email_deliveries" in EXPECTED_TABLES
+    assert "deliveries" in EXPECTED_TABLES

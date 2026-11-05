@@ -1,7 +1,7 @@
 "use client";
 import { useEffect, useState } from "react";
 import Link from "next/link";
-import { Bell, Mail } from "lucide-react";
+import { Bell, Mail, Webhook } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { Input } from "@/components/ui/input";
@@ -43,7 +43,11 @@ export function DeliverySettingsDialog({
   const templates = useEmailTemplates();
   const update = useUpdateMonitorSettings();
 
+  const storedChannel: "email" | "webhook" =
+    monitor.delivery_channel === "webhook" ? "webhook" : "email";
+  const [channel, setChannel] = useState<"email" | "webhook">(storedChannel);
   const [selectedGroups, setSelectedGroups] = useState<string[]>(monitor.notification_group_ids);
+  const [webhookUrl, setWebhookUrl] = useState(monitor.webhook_url ?? "");
   const [interval, setInterval] = useState<number | null>(monitor.interval_seconds);
   const [timezone, setTimezone] = useState(monitor.timezone);
   const storedTemplate = monitor.email_template_id ?? null;
@@ -53,16 +57,20 @@ export function DeliverySettingsDialog({
   // Every open starts from the monitor as stored, so a cancelled edit leaves nothing.
   useEffect(() => {
     if (!open) return;
+    setChannel(storedChannel);
     setSelectedGroups(monitor.notification_group_ids);
+    setWebhookUrl(monitor.webhook_url ?? "");
     setInterval(monitor.interval_seconds);
     setTimezone(monitor.timezone);
     setTemplateId(storedTemplate);
     setError(null);
-  }, [open, monitor.notification_group_ids, monitor.interval_seconds, monitor.timezone,
-      storedTemplate]);
+  }, [open, storedChannel, monitor.notification_group_ids, monitor.webhook_url,
+      monitor.interval_seconds, monitor.timezone, storedTemplate]);
 
   const dirty =
+    channel !== storedChannel ||
     [...selectedGroups].sort().join() !== [...monitor.notification_group_ids].sort().join() ||
+    webhookUrl.trim() !== (monitor.webhook_url ?? "") ||
     interval !== monitor.interval_seconds ||
     timezone.trim() !== monitor.timezone ||
     templateId !== storedTemplate;
@@ -70,7 +78,9 @@ export function DeliverySettingsDialog({
     interval !== null && Number.isInteger(interval) &&
     interval >= MIN_INTERVAL && interval <= MAX_INTERVAL;
   const timezoneValid = timezone.trim().length > 0;
-  const incomplete = selectedGroups.length === 0 || !intervalValid;
+  const routeValid =
+    channel === "webhook" ? webhookUrl.trim().length > 0 : selectedGroups.length > 0;
+  const incomplete = !routeValid || !intervalValid;
 
   function toggleGroup(id: string) {
     setSelectedGroups((current) =>
@@ -80,12 +90,14 @@ export function DeliverySettingsDialog({
 
   async function save() {
     setError(null);
-    if (!intervalValid || !timezoneValid || selectedGroups.length === 0) return;
+    if (!intervalValid || !timezoneValid || !routeValid) return;
     try {
       await update.mutateAsync({
         monitorId: monitor.id,
         settings: {
+          channel,
           notification_group_ids: selectedGroups,
+          webhook_url: webhookUrl.trim() || null,
           schedule: { interval_seconds: interval, timezone: timezone.trim() },
           email_template_id: templateId,
         },
@@ -108,6 +120,36 @@ export function DeliverySettingsDialog({
         </DialogHeader>
 
         <div className="space-y-6">
+          <div className="space-y-2">
+            <h3 className="label-line">{t("settings.channel.title")}</h3>
+            <div className="flex gap-1.5">
+              <Button
+                type="button"
+                size="sm"
+                variant={channel === "email" ? "secondary" : "outline"}
+                onClick={() => setChannel("email")}
+              >
+                <Mail strokeWidth={1.5} />
+                {t("settings.channel.email")}
+              </Button>
+              <Button
+                type="button"
+                size="sm"
+                variant={channel === "webhook" ? "secondary" : "outline"}
+                onClick={() => setChannel("webhook")}
+              >
+                <Webhook strokeWidth={1.5} />
+                {t("settings.channel.webhook")}
+              </Button>
+            </div>
+            <p className="meta">
+              {channel === "webhook"
+                ? t("settings.channel.webhookBody")
+                : t("settings.channel.emailBody")}
+            </p>
+          </div>
+
+          {channel === "email" ? (
           <div className="space-y-2">
             <div className="flex items-baseline justify-between gap-2">
               <h3 className="label-line flex items-center gap-1.5">
@@ -174,6 +216,29 @@ export function DeliverySettingsDialog({
               <p className="text-[13px] text-warning-ink">{t("settings.groups.required")}</p>
             )}
           </div>
+          ) : (
+          <div className="space-y-2">
+            <h3 className="label-line flex items-center gap-1.5">
+              <Webhook className="size-3.5" strokeWidth={1.5} />
+              {t("settings.webhook.title")}
+            </h3>
+            <Label htmlFor="monitor-webhook" className="text-[13px] text-muted-soft">
+              {t("settings.webhook.url")}
+            </Label>
+            <Input
+              id="monitor-webhook"
+              type="url"
+              inputMode="url"
+              value={webhookUrl}
+              onChange={(event) => setWebhookUrl(event.target.value)}
+              placeholder="https://hooks.example.com/services/..."
+            />
+            <p className="meta">{t("settings.webhook.hint")}</p>
+            {webhookUrl.trim().length === 0 && (
+              <p className="text-[13px] text-warning-ink">{t("settings.webhook.required")}</p>
+            )}
+          </div>
+          )}
 
           <div className="space-y-2">
             <h3 className="label-line">{t("settings.schedule.title")}</h3>
@@ -220,6 +285,7 @@ export function DeliverySettingsDialog({
             />
           </div>
 
+          {channel === "email" && (
           <div className="space-y-2">
             <div className="flex items-baseline justify-between gap-2">
               <h3 className="label-line flex items-center gap-1.5">
@@ -246,6 +312,7 @@ export function DeliverySettingsDialog({
             />
             <p className="meta">{t("templates.systemDefault.body")}</p>
           </div>
+          )}
 
           {error && (
             <p role="alert" className="text-[13px] text-error">

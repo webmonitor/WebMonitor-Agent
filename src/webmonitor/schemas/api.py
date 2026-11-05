@@ -221,6 +221,9 @@ class JobStep(BaseModel):
     detail: str | None = None
     # A started step has no duration yet; a finished one reports its own elapsed time.
     duration_ms: int | None = None
+    # Bounded, JSON-safe request and response detail for the tool-call timeline.
+    arguments: Any | None = None
+    result: Any | None = None
 
 
 class JobAttempt(BaseModel):
@@ -308,11 +311,14 @@ class ExtractionPreview(BaseModel):
 
 
 class DeliveryPreview(BaseModel):
-    """What the mail will look like for the current settings and template."""
+    """What the selected channel will send for the current settings."""
 
     preview_id: str
     settings_revision: int
     settings_hash: str
+    channel: str = "email"
+    webhook_url: str | None = None
+    webhook_body: dict[str, Any] | None = None
     template_id: UUID | None
     template_name: str | None
     template_hash: str
@@ -377,6 +383,8 @@ class MonitorView(BaseModel):
     baseline_status: str
     health_status: str
     notification_group_ids: list[str]
+    delivery_channel: str = "email"
+    webhook_url: str | None = None
     email_template_id: UUID | None = None
     next_run_at: datetime
     last_success_at: datetime | None
@@ -452,6 +460,7 @@ class Delivery(BaseModel):
     monitor_id: UUID
     monitor_name: str
     event_id: UUID
+    channel: str
     recipient: str
     subject: str
     body_text: str
@@ -459,7 +468,7 @@ class Delivery(BaseModel):
     attempt_count: int
     error_code: str | None
     error_message: str | None
-    smtp_response_code: int | None
+    response_code: int | None
     created_at: datetime
     sent_at: datetime | None
     failed_at: datetime | None

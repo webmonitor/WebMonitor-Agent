@@ -105,7 +105,15 @@ def test_delivery_settings_validate_groups_and_the_interval():
         "schedule": {"interval_seconds": 60, "timezone": "Asia/Shanghai"}})
     assert settings.notification_group_ids == [group_id]
     assert settings.email_template_id is None
+    assert settings.channel == "email"
     assert DeliverySettings.model_validate({}).notification_group_ids == []
+    webhook = DeliverySettings.model_validate({"channel": "webhook",
+        "webhook_url": "  https://hooks.example.com/ops  "})
+    assert webhook.webhook_url == "https://hooks.example.com/ops"
+    with pytest.raises(ValidationError):
+        DeliverySettings.model_validate({"channel": "webhook"})
+    with pytest.raises(ValidationError):
+        DeliverySettings.model_validate({"channel": "webhook", "webhook_url": "   "})
     with pytest.raises(ValidationError):
         DeliverySettings.model_validate({"notification_group_ids": [group_id, group_id]})
     with pytest.raises(ValidationError):

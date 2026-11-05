@@ -26,7 +26,7 @@ from webmonitor.agent.tools import save_monitor_draft
 from webmonitor.errors import DomainError
 from webmonitor.models import (
     Draft,
-    EmailDelivery,
+    Delivery,
     Event,
     Job,
     Monitor,
@@ -58,7 +58,7 @@ async def changed_event(session, monitor):
         await session.commit()
     await collect("Open")
     await collect("Closed")
-    return (await session.scalars(select(EmailDelivery))).all()
+    return (await session.scalars(select(Delivery))).all()
 
 
 @pytest.mark.asyncio
@@ -191,7 +191,7 @@ async def test_cancelled_production_lease_is_terminal_and_does_not_fail_monitor(
     await session.refresh(monitor)
     assert live.status == "cancelled" and live.lease_owner is None
     assert monitor.health_status == "healthy"
-    assert not (await session.scalars(select(EmailDelivery))).all()
+    assert not (await session.scalars(select(Delivery))).all()
 
 
 @pytest.mark.asyncio
@@ -266,7 +266,7 @@ async def test_republishing_with_a_new_group_refreshes_approved_recipients(sessi
     await notifications.enqueue_event_deliveries(session, stored, event, extracted())
     await session.commit()
     recipients = sorted(delivery.recipient for delivery in
-                        (await session.scalars(select(EmailDelivery))).all())
+                        (await session.scalars(select(Delivery))).all())
     assert recipients == ["night@example.com"]
 
 
@@ -322,7 +322,7 @@ async def test_delivery_attempts_stop_at_the_configured_limit(session, monkeypat
 
     assert await notifications.claim_delivery(session, "mailer") is None
     await session.commit()
-    stored = await session.get(EmailDelivery, delivery.id, populate_existing=True)
+    stored = await session.get(Delivery, delivery.id, populate_existing=True)
     assert stored.status == "failed"
     assert stored.error_code == "delivery_attempts_exhausted"
     assert stored.lease_owner is None
@@ -343,7 +343,7 @@ async def test_unexpected_delivery_fault_does_not_leave_the_row_sending(session,
 
     monkeypatch.setattr(worker, "send_email", broken)
     await worker._deliver(claimed, "mailer")
-    stored = await session.get(EmailDelivery, delivery.id, populate_existing=True)
+    stored = await session.get(Delivery, delivery.id, populate_existing=True)
     assert stored.status == "failed"
     assert stored.error_code == "delivery_aborted"
     assert stored.lease_owner is None

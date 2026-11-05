@@ -1,4 +1,5 @@
-"""Notification groups, recipient resolution and leased email delivery."""
+"""Notification groups, recipient resolution and leased notification delivery."""
+import json
 from datetime import timedelta
 from email.utils import parseaddr
 from typing import Any
@@ -11,7 +12,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from webmonitor.config import get_settings
 from webmonitor.errors import DomainError
 from webmonitor.models import (
-    EmailDelivery,
+    Delivery,
     Event,
     Monitor,
     NotificationGroup,
@@ -180,11 +181,24 @@ def _payload(monitor: Monitor, event: Event, fields: dict) -> dict:
 async def enqueue_event_deliveries(session: AsyncSession, monitor: Monitor, event: Event,
                                    fields: dict) -> None:
     """Flush only. Disabled or empty routes never undo a valid snapshot."""
+    payload = _payload(monitor, event, fields)
+    event.payload = payload
+    if monitor.delivery_channel == "webhook":
+        if not monitor.webhook_url:
+            raise DomainError("webhook_url_missing", 409)
+        delivery_id = uuid4()
+        subject = f"{monitor.name} · {event.type}"
+        session.add(Delivery(id=delivery_id, user_id=monitor.user_id,
+            monitor_id=monitor.id, event_id=event.id, channel="webhook",
+            recipient=monitor.webhook_url, subject=subject, html="",
+            body_text=json.dumps(payload, ensure_ascii=False, indent=2),
+            payload={**payload, "channel": "webhook"},
+            status="queued", attempt_count=0, available_at=event.created_at))
+        await session.flush()
+        return
     recipients = await approved_recipients(session, monitor)
     if not recipients:
         raise DomainError("notification_recipients_empty", 409)
-    payload = _payload(monitor, event, fields)
-    event.payload = payload
     try:
         template = (EmailTemplateConfig.model_validate(monitor.email_template)
                     if monitor.email_template else None)
@@ -196,8 +210,9 @@ async def enqueue_event_deliveries(session: AsyncSession, monitor: Monitor, even
     domain = parseaddr(get_settings().mail_from)[1].split("@")[-1] or "webmonitor.local"
     for recipient in recipients:
         delivery_id = uuid4()
-        session.add(EmailDelivery(id=delivery_id, user_id=monitor.user_id,
-            monitor_id=monitor.id, event_id=event.id, recipient=recipient["email"],
+        session.add(Delivery(id=delivery_id, user_id=monitor.user_id,
+            monitor_id=monitor.id, event_id=event.id, channel="email",
+            recipient=recipient["email"],
             subject=rendered["subject"], html=rendered["html"], body_text=rendered["text"],
             payload={**payload, "recipient_sources": recipient["group_ids"]},
             status="queued", attempt_count=0,
@@ -205,14 +220,14 @@ async def enqueue_event_deliveries(session: AsyncSession, monitor: Monitor, even
     await session.flush()
 
 
-async def claim_delivery(session: AsyncSession, worker_id: str) -> EmailDelivery | None:
+async def claim_delivery(session: AsyncSession, worker_id: str) -> Delivery | None:
     now = utc_now()
-    delivery = await session.scalar(select(EmailDelivery).where(
-        EmailDelivery.available_at <= now,
-        or_(EmailDelivery.status.in_(("queued", "retrying")),
-            and_(EmailDelivery.status == "sending",
-                 EmailDelivery.lease_expires_at <= now)),
-    ).order_by(EmailDelivery.available_at, EmailDelivery.created_at)
+    delivery = await session.scalar(select(Delivery).where(
+        Delivery.available_at <= now,
+        or_(Delivery.status.in_(("queued", "retrying")),
+            and_(Delivery.status == "sending",
+                 Delivery.lease_expires_at <= now)),
+    ).order_by(Delivery.available_at, Delivery.created_at)
         .with_for_update(skip_locked=True).limit(1).execution_options(populate_existing=True))
     if delivery is None:
         return None
@@ -232,24 +247,28 @@ async def claim_delivery(session: AsyncSession, worker_id: str) -> EmailDelivery
     return delivery
 
 
-async def authorized(session: AsyncSession, delivery: EmailDelivery) -> bool:
-    """Only this monitor's approved, still-active sources authorize a queued mail."""
+async def authorized(session: AsyncSession, delivery: Delivery) -> bool:
+    """Only this monitor's approved, still-active route authorizes a queued delivery."""
     monitor = await session.get(Monitor, delivery.monitor_id)
+    if monitor is None or monitor.delivery_channel != delivery.channel:
+        return False
+    if delivery.channel == "webhook":
+        return bool(monitor.webhook_url) and monitor.webhook_url == delivery.recipient
     sources = set((delivery.payload or {}).get("recipient_sources") or [])
-    if monitor is None or not sources:
+    if not sources:
         return False
     recipients = await approved_recipients(session, monitor)
     return any(recipient["email"] == delivery.recipient
                and sources.intersection(recipient["group_ids"]) for recipient in recipients)
 
 
-async def finish_delivery(session: AsyncSession, delivery: EmailDelivery, *, worker_id: str,
+async def finish_delivery(session: AsyncSession, delivery: Delivery, *, worker_id: str,
                           failure=None, response_code: int | None = None) -> None:
     if delivery.lease_owner != worker_id or delivery.status != "sending":
         return
     now = utc_now()
     delivery.lease_owner = delivery.lease_expires_at = None
-    delivery.smtp_response_code = getattr(failure, "response_code", None) if failure else response_code
+    delivery.response_code = getattr(failure, "response_code", None) if failure else response_code
     delivery.error_code = failure.code if failure else None
     delivery.error_message = failure.message if failure else None
     if failure is None:
@@ -262,7 +281,7 @@ async def finish_delivery(session: AsyncSession, delivery: EmailDelivery, *, wor
     await session.flush()
 
 
-async def cancel_delivery(session: AsyncSession, delivery: EmailDelivery, *,
+async def cancel_delivery(session: AsyncSession, delivery: Delivery, *,
                           worker_id: str, code: str, message: str) -> None:
     if delivery.lease_owner != worker_id or delivery.status != "sending":
         return

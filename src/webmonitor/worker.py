@@ -20,8 +20,10 @@ from webmonitor.collection.http import collect_http
 from webmonitor.config import get_settings
 from webmonitor.db import get_session_factory
 from webmonitor.errors import DomainError
-from webmonitor.models import Draft, EmailDelivery, Job
-from webmonitor.notifications.delivery import SendFailure, send_email
+from webmonitor.models import Delivery, Draft, Job
+from webmonitor.notifications.delivery import send_email
+from webmonitor.notifications.errors import DeliveryFailure
+from webmonitor.notifications.webhook import send_webhook
 from webmonitor.schemas.monitors import MonitorSpec
 from webmonitor.services import accounts, drafts, jobs, notifications, runs
 from webmonitor.storage.evidence import delete_evidence, upload_evidence
@@ -265,7 +267,7 @@ async def _collection_slot(worker_id: str, mode: str) -> None:
             await asyncio.sleep(2)
 
 
-async def _mailer_slot(worker_id: str) -> None:
+async def _delivery_slot(worker_id: str) -> None:
     while True:
         try:
             async with _session() as session, session.begin():
@@ -277,36 +279,40 @@ async def _mailer_slot(worker_id: str) -> None:
         except asyncio.CancelledError:
             raise
         except Exception:
-            logger.exception("Mail delivery iteration failed")
+            logger.exception("Notification delivery iteration failed")
             await asyncio.sleep(5)
 
 
-async def _deliver(delivery: EmailDelivery, worker_id: str) -> None:
+async def _deliver(delivery: Delivery, worker_id: str) -> None:
     delivery_id = delivery.id
     async with _session() as session:
         allowed = await notifications.authorized(session, delivery)
     if not allowed:
         async with _session() as session, session.begin():
-            live = await session.get(EmailDelivery, delivery_id,
+            live = await session.get(Delivery, delivery_id,
                                      with_for_update=True, populate_existing=True)
             await notifications.cancel_delivery(session, live, worker_id=worker_id,
                 code="recipient_authorization_revoked",
-                message="All recipient sources were revoked")
+                message="The approved delivery route was revoked")
         return
-    rendered = {"subject": delivery.subject, "html": delivery.html, "text": delivery.body_text}
     failure = None
     code = None
     try:
-        code = await send_email(delivery, rendered)
-    except SendFailure as exc:
+        if delivery.channel == "webhook":
+            code = await send_webhook(delivery)
+        else:
+            rendered = {"subject": delivery.subject, "html": delivery.html,
+                        "text": delivery.body_text}
+            code = await send_email(delivery, rendered)
+    except DeliveryFailure as exc:
         failure = exc
     except Exception:
         # An unexpected fault must still end this attempt, never leave it `sending`.
-        logger.exception("Mail delivery aborted: delivery=%s", delivery_id)
-        failure = SendFailure("delivery_aborted", "Delivery aborted", retryable=False)
+        logger.exception("Notification delivery aborted: delivery=%s", delivery_id)
+        failure = DeliveryFailure("delivery_aborted", "Delivery aborted", retryable=False)
     try:
         async with _session() as session, session.begin():
-            live = await session.get(EmailDelivery, delivery_id, with_for_update=True,
+            live = await session.get(Delivery, delivery_id, with_for_update=True,
                                      populate_existing=True)
             if live is None:
                 return
@@ -330,12 +336,12 @@ async def collection_loop(worker_id: str, mode: str) -> None:
                            for index in range(concurrency)])
 
 
-async def mailer_loop(worker_id: str) -> None:
-    await _mailer_slot(f"{worker_id}:mail")
+async def delivery_loop(worker_id: str) -> None:
+    await _delivery_slot(f"{worker_id}:delivery")
 
 
 async def run_worker() -> None:
-    """Scheduler, agent, both collectors and the mailer in one process."""
+    """Scheduler, agent, both collectors and notification delivery in one process."""
     worker_id = make_worker_id()
     # One loop crashing takes the process down loudly instead of running half-deaf.
     async with asyncio.TaskGroup() as group:
@@ -343,4 +349,4 @@ async def run_worker() -> None:
         group.create_task(agent_loop(worker_id))
         group.create_task(collection_loop(worker_id, "http"))
         group.create_task(collection_loop(worker_id, "browser"))
-        group.create_task(mailer_loop(worker_id))
+        group.create_task(delivery_loop(worker_id))

@@ -31,10 +31,25 @@ import { useI18n } from "@/lib/i18n";
 
 const ACTIVE = ["queued", "running"];
 
+function asRecord(value: unknown): Record<string, unknown> | null {
+  return value && typeof value === "object" && !Array.isArray(value)
+    ? (value as Record<string, unknown>)
+    : null;
+}
+
+function textValue(value: unknown): string | null {
+  return typeof value === "string" && value.trim() ? value : null;
+}
+
+function shortId(value: unknown): string | null {
+  const text = textValue(value);
+  return text ? text.slice(0, 8) : null;
+}
+
 /**
  * The job appends a `started` entry and later a terminal entry per tool call, and
  * parallel calls interleave. Pair each terminal entry with the pending entry of the
- * same name so one tool call reads as one line.
+ * same name so one tool call reads as one line; the request stays from the start.
  */
 function mergeSteps(steps: JobView["steps"]) {
   const merged: JobView["steps"] = [];
@@ -47,53 +62,180 @@ function mergeSteps(steps: JobView["steps"]) {
       if (start !== undefined) pending.set(step.name, start);
       continue;
     }
-    merged[index] = step;
+    merged[index] = { ...step, arguments: step.arguments ?? merged[index].arguments };
     pending.delete(step.name);
   }
   return merged;
 }
 
-function StepList({ steps }: { steps: JobView["steps"] }) {
-  const { errorText, stepLabel, formatDuration } = useFormat();
+type Translate = ReturnType<typeof useI18n>["t"];
+
+/** One readable line of the arguments a tool actually received. */
+function stepArgumentsSummary(
+  step: JobView["steps"][number],
+  t: Translate,
+  formatMode: (mode?: string | null) => string,
+): string | null {
+  const args = asRecord(step.arguments);
+  if (!args) return null;
+  const url = textValue(args.url);
+  const request = asRecord(args.request);
+  const spec = asRecord(args.spec);
+  const draft = shortId(args.draft_id);
+  const revision = typeof args.spec_revision === "number" ? args.spec_revision : null;
+  switch (step.name) {
+    case "analyze_target":
+      return [formatMode(textValue(args.collection_mode) ?? undefined), url].filter(Boolean).join(" · ");
+    case "probe_target":
+    case "capture_network":
+      return url;
+    case "replay_request":
+      return [textValue(request?.method), textValue(request?.url)].filter(Boolean).join(" ");
+    case "save_monitor_draft": {
+      const fields = Array.isArray(spec?.fields) ? spec.fields.length : null;
+      return [
+        textValue(spec?.name),
+        fields === null ? null : t("chat.tool.fields", { count: fields }),
+        draft,
+      ].filter(Boolean).join(" · ");
+    }
+    case "preview_monitor":
+    case "request_creation":
+      return [
+        draft,
+        revision === null ? null : t("chat.tool.revision", { revision }),
+      ].filter(Boolean).join(" · ") || null;
+    default:
+      return Object.entries(args)
+        .filter(([, value]) => ["string", "number", "boolean"].includes(typeof value))
+        .slice(0, 3)
+        .map(([key, value]) => `${key}: ${String(value)}`)
+        .join(" · ") || null;
+  }
+}
+
+function stepResultHint(step: JobView["steps"][number], t: Translate): string | null {
+  const result = asRecord(step.result);
+  if (!result) return null;
+  if (result.truncated === true) return t("chat.tool.truncated");
+  const url = textValue(result.final_url);
+  if (url) return url;
+  if (typeof result.status === "number") return `HTTP ${result.status}`;
+  const draft = shortId(result.draft_id);
+  if (draft) return draft;
+  const job = shortId(result.job_id);
+  if (job) return job;
+  const warnings = Array.isArray(result.warnings) ? result.warnings.length : 0;
+  return warnings ? t("chat.tool.warnings", { count: warnings }) : null;
+}
+
+function stepJson(value: unknown): string {
+  if (typeof value === "string") return value;
+  try {
+    return JSON.stringify(value, null, 2);
+  } catch {
+    return String(value);
+  }
+}
+
+function StepDot({ status }: { status: string }) {
   return (
-    <ol className="mt-2 space-y-1.5">
-      {steps.map((step, index) => (
-        <li
-          key={`${step.name}-${index}`}
-          className={`flex items-start gap-2 ${
-            step.status === "failed"
-              ? "text-error"
-              : step.status === "started"
-                ? "text-ink"
-                : "text-muted-foreground"
-          }`}
-        >
-          <span
-            aria-hidden
-            className={`mt-[0.4rem] size-1.5 shrink-0 rounded-full ${
-              step.status === "failed"
-                ? "bg-error"
-                : step.status === "succeeded"
-                  ? "bg-success"
-                  : "bg-primary animate-pulse"
-            }`}
-          />
+    <span
+      aria-hidden
+      className={`mt-[0.4rem] size-1.5 shrink-0 rounded-full ${
+        status === "failed"
+          ? "bg-error"
+          : status === "succeeded"
+            ? "bg-success"
+            : "bg-primary animate-pulse"
+      }`}
+    />
+  );
+}
+
+function JsonBlock({ title, value }: { title: string; value: unknown }) {
+  return (
+    <div>
+      <h4 className="label-line">{title}</h4>
+      <pre className="code-window mt-1 max-h-64 overflow-auto text-[12px]">
+        {stepJson(value)}
+      </pre>
+    </div>
+  );
+}
+
+/**
+ * One tool call inside the answer, in the order it happened. The summary line
+ * carries the concrete request; opening it adds the full request, response and
+ * error detail without leaving the conversation.
+ */
+function ToolCall({ step }: { step: JobView["steps"][number] }) {
+  const { t } = useI18n();
+  const { errorText, stepLabel, formatDuration, formatMode, statusLabel } = useFormat();
+  const [open, setOpen] = useState(false);
+  const summary = stepArgumentsSummary(step, t, formatMode);
+  const hint = stepResultHint(step, t);
+  const details = step.arguments != null || step.result != null
+    || step.error_code != null || step.detail != null;
+
+  return (
+    <li className="rounded-md border border-hairline bg-surface-soft/40">
+      <details
+        className="group"
+        onToggle={(event) => setOpen(event.currentTarget.open)}
+      >
+        <summary className="flex cursor-pointer list-none items-start gap-2 px-3 py-2 select-none [&::-webkit-details-marker]:hidden">
+          <StepDot status={step.status} />
           <span className="min-w-0 flex-1 leading-5">
-            {stepLabel(step.name)}
+            <span className="flex flex-wrap items-baseline gap-x-2">
+              <span className={`text-[13.5px] font-medium ${
+                step.status === "failed" ? "text-error" : "text-ink"
+              }`}>
+                {stepLabel(step.name)}
+              </span>
+              {summary && (
+                <span className="num min-w-0 truncate text-[12.5px] text-muted-soft">
+                  {summary}
+                </span>
+              )}
+            </span>
+            <span className="num mt-0.5 flex flex-wrap items-center gap-x-2 text-[12px] text-muted-soft">
+              <span className={step.status === "failed" ? "text-error" : undefined}>
+                {statusLabel(step.status)}
+              </span>
+              {typeof step.duration_ms === "number" && (
+                <span>{formatDuration(step.duration_ms)}</span>
+              )}
+              {hint && <span className="min-w-0 truncate">{hint}</span>}
+            </span>
             {step.error_code && (
-              <span className="block text-[13px] leading-5 text-error">
+              <span className="mt-0.5 block text-[12.5px] text-error">
                 {errorText(step.error_code)}
               </span>
             )}
           </span>
-          {typeof step.duration_ms === "number" && (
-            <span className="num mt-[0.05rem] shrink-0 text-[13px] text-muted-soft">
-              {formatDuration(step.duration_ms)}
-            </span>
+          {details && (
+            <ChevronRight
+              className="mt-0.5 size-3.5 shrink-0 text-muted-soft transition-transform duration-150 group-open:rotate-90"
+              strokeWidth={1.5}
+            />
           )}
-        </li>
-      ))}
-    </ol>
+        </summary>
+        {open && details && (
+          <div className="space-y-2.5 border-t border-hairline px-3 py-2.5">
+            {step.arguments != null && (
+              <JsonBlock title={t("chat.tool.request")} value={step.arguments} />
+            )}
+            {step.result != null && (
+              <JsonBlock title={t("chat.tool.response")} value={step.result} />
+            )}
+            {step.detail != null && step.error_code != null && (
+              <JsonBlock title={t("chat.tool.errorDetail")} value={step.detail} />
+            )}
+          </div>
+        )}
+      </details>
+    </li>
   );
 }
 
@@ -116,71 +258,73 @@ function RunCost({ jobId }: { jobId: string }) {
   );
 }
 
+type TurnPart = { id: string; content: string; at: string | null };
+
 /**
- * The run's trail. While the assistant works it stays open under the current
- * step; once the run is done it folds into one quiet line above the answer.
+ * A turn is one user message, or every assistant message and tool call produced
+ * by one agent job. Tool calls are placed back between the text fragments by
+ * their recorded time, so the answer reads in the order it was produced.
  */
-function WorkLog({ job, active = false }: { job: JobView; active?: boolean }) {
-  const { t } = useI18n();
-  const { stepLabel } = useFormat();
-  const [open, setOpen] = useState(false);
-  const steps = mergeSteps(job.steps);
-  if (steps.length === 0) return null;
-  const done = steps.filter((step) => step.status === "succeeded").length;
-  const failed = steps.filter((step) => step.status === "failed").length;
-
-  if (active) {
-    const current = [...steps].reverse().find((step) => step.status === "started") ?? steps.at(-1)!;
-    return (
-      <div className="text-[14px]">
-        <p className="flex items-center gap-2 text-muted-foreground">
-          <span aria-hidden className="size-1.5 shrink-0 animate-pulse rounded-full bg-primary" />
-          <span className="min-w-0 truncate">{stepLabel(current.name)}</span>
-          <span className="num ml-auto shrink-0 text-[13px] tabular-nums">
-            {done}/{steps.length}
-          </span>
-        </p>
-        <StepList steps={steps} />
-      </div>
-    );
-  }
-
-  return (
-    <details
-      className="group text-[14px]"
-      onToggle={(event) => setOpen(event.currentTarget.open)}
-    >
-      <summary className="inline-flex cursor-pointer list-none items-center gap-1 text-muted-foreground transition-colors duration-150 select-none hover:text-ink [&::-webkit-details-marker]:hidden">
-        <ChevronRight className="size-3.5 transition-transform duration-150 group-open:rotate-90" strokeWidth={1.5} />
-        {failed > 0
-          ? t("chat.worklog.incomplete", { total: steps.length, failed })
-          : t("chat.worklog.view", { total: steps.length })}
-      </summary>
-      <StepList steps={steps} />
-      {open && <RunCost jobId={job.id} />}
-    </details>
-  );
-}
-
-type Turn = { id: string; role: string; jobId: string | null; content: string };
+type Turn = { id: string; role: string; jobId: string | null; parts: TurnPart[] };
 
 /**
- * One turn is one user message and everything the assistant said while handling
- * it. Progress messages arrive as separate rows; joining them keeps the turn's
- * prose at normal paragraph rhythm instead of one 32px gap per fragment.
+ * One turn is one user message, or every assistant message produced by one agent
+ * job. Fragments stay separate so the job's tool calls can sit between them.
  */
 function buildTurns(messages: MessageView[]): Turn[] {
   const turns: Turn[] = [];
   for (const message of messages) {
     const last = turns.at(-1);
+    const part: TurnPart = { id: message.id, content: message.content, at: message.created_at };
     if (last && message.role === "assistant" && last.role === "assistant"
         && last.jobId === message.job_id) {
-      last.content = `${last.content}\n\n${message.content}`;
+      last.parts.push(part);
       continue;
     }
-    turns.push({ id: message.id, role: message.role, jobId: message.job_id, content: message.content });
+    turns.push({ id: message.id, role: message.role, jobId: message.job_id, parts: [part] });
   }
   return turns;
+}
+
+type TimelineBlock =
+  | { kind: "text"; content: string }
+  | { kind: "step"; step: JobView["steps"][number] };
+
+/** Merge prose fragments and tool calls into the order they actually happened. */
+function buildTimeline(parts: TurnPart[], steps: JobView["steps"]): TimelineBlock[] {
+  const events = [
+    ...parts.filter((part) => part.content.trim()).map((part, index) => ({
+      kind: "text" as const,
+      at: part.at ? Date.parse(part.at) : Number.POSITIVE_INFINITY,
+      order: index * 2,
+      content: part.content,
+    })),
+    ...steps.map((step, index) => ({
+      kind: "step" as const,
+      at: Date.parse(step.at),
+      order: index * 2 + 1,
+      step,
+    })),
+  ];
+  events.sort((left, right) => {
+    const a = Number.isNaN(left.at) ? Number.POSITIVE_INFINITY : left.at;
+    const b = Number.isNaN(right.at) ? Number.POSITIVE_INFINITY : right.at;
+    return a === b ? left.order - right.order : a - b;
+  });
+  const blocks: TimelineBlock[] = [];
+  for (const event of events) {
+    if (event.kind === "step") {
+      blocks.push({ kind: "step", step: event.step });
+      continue;
+    }
+    const last = blocks.at(-1);
+    if (last?.kind === "text") {
+      last.content = `${last.content}\n\n${event.content}`;
+    } else {
+      blocks.push({ kind: "text", content: event.content });
+    }
+  }
+  return blocks;
 }
 
 /** Assistant prose: no bubble, no avatar — full-width text, the way it reads best. */
@@ -199,6 +343,57 @@ function Thinking({ label }: { label: string }) {
       <span aria-hidden className="size-1.5 shrink-0 animate-pulse rounded-full bg-primary" />
       {label}
     </p>
+  );
+}
+
+
+/**
+ * One agent job as it reads: prose, then the tools it called at that point, then
+ * the prose that followed. A running call stays visible in place.
+ */
+function AssistantTurn({
+  job,
+  parts,
+  live,
+  label,
+}: {
+  job?: JobView;
+  parts: TurnPart[];
+  live: boolean;
+  label: string;
+}) {
+  const { t } = useI18n();
+  const [usageOpen, setUsageOpen] = useState(false);
+  const steps = job ? mergeSteps(job.steps) : [];
+  const blocks = buildTimeline(parts, steps);
+  const terminal = Boolean(job && !live && !ACTIVE.includes(job.status));
+
+  return (
+    <li className="min-w-0 space-y-2.5">
+      {blocks.map((block, index) =>
+        block.kind === "text" ? (
+          <AssistantText key={`text-${index}`} content={block.content} />
+        ) : (
+          <ToolCall key={`step-${index}-${block.step.name}`} step={block.step} />
+        ),
+      )}
+      {live && blocks.length === 0 && <Thinking label={label} />}
+      {terminal && job && steps.length > 0 && (
+        <details
+          className="group text-[13px] text-muted-soft"
+          onToggle={(event) => setUsageOpen(event.currentTarget.open)}
+        >
+          <summary className="inline-flex cursor-pointer list-none items-center gap-1 select-none transition-colors hover:text-ink [&::-webkit-details-marker]:hidden">
+            <ChevronRight
+              className="size-3.5 transition-transform duration-150 group-open:rotate-90"
+              strokeWidth={1.5}
+            />
+            {t("chat.run.details")}
+          </summary>
+          {usageOpen && <RunCost jobId={job.id} />}
+        </details>
+      )}
+    </li>
   );
 }
 
@@ -238,22 +433,29 @@ export function ChatPanel({
   const jobsById = new Map(agentJobs?.map((job) => [job.id, job]));
   const turns = buildTurns(messages);
   if (running) {
+    const livePart: TurnPart = {
+      id: `live-${running.id}`,
+      content: running.partial_text,
+      at: null,
+    };
     const last = turns.at(-1);
     if (last?.role === "assistant" && last.jobId === running.id) {
-      last.content = [last.content, running.partial_text].filter(Boolean).join("\n\n");
+      last.parts.push(livePart);
     } else {
       turns.push({
         id: `running-${running.id}`,
         role: "assistant",
         jobId: running.id,
-        content: running.partial_text,
+        parts: [livePart],
       });
     }
   }
+  // A run that left no prose still owes the reader its tool trail.
   const shownJobs = new Set(turns.map((turn) => turn.jobId));
-  const strayTrail = !running && lastJob && lastJob.status !== "failed"
-    && lastJob.status !== "cancelled" && lastJob.steps.length > 0
-    && !shownJobs.has(lastJob.id) ? lastJob : undefined;
+  if (lastJob && lastJob.id !== running?.id && lastJob.steps.length > 0
+      && !shownJobs.has(lastJob.id)) {
+    turns.push({ id: `trail-${lastJob.id}`, role: "assistant", jobId: lastJob.id, parts: [] });
+  }
 
   useEffect(() => {
     if (!pinned) return;
@@ -369,34 +571,23 @@ export function ChatPanel({
                   return (
                     <li key={turn.id} className="flex justify-end">
                       <div className="max-w-[85%] rounded-lg bg-card px-4 py-3 text-[15px] leading-7 break-words whitespace-pre-wrap text-ink">
-                        {turn.content}
+                        {turn.parts.map((part) => part.content).join("\n\n")}
                       </div>
                     </li>
                   );
                 }
                 const job = turn.jobId ? jobsById.get(turn.jobId) : undefined;
                 const live = Boolean(running && turn.jobId === running.id);
-                const trail = job && job.steps.length > 0 && job.id !== failed?.id;
                 return (
-                  <li key={turn.id} className="min-w-0 space-y-2.5">
-                    {trail && <WorkLog job={job} active={live} />}
-                    {turn.content ? (
-                      <AssistantText content={turn.content} />
-                    ) : live && !trail ? (
-                      <Thinking
-                        label={activeStep ? `${stepLabel(activeStep.name)}…` : t("chat.thinking")}
-                      />
-                    ) : null}
-                  </li>
+                  <AssistantTurn
+                    key={turn.id}
+                    job={job}
+                    parts={turn.parts}
+                    live={live}
+                    label={activeStep ? `${stepLabel(activeStep.name)}…` : t("chat.thinking")}
+                  />
                 );
               })}
-
-              {/* A run that left no prose still owes the reader its trail. */}
-              {strayTrail && (
-                <li className="min-w-0">
-                  <WorkLog job={strayTrail} />
-                </li>
-              )}
 
               {!running && stopped && (
                 <li className="flex items-center gap-2.5 text-[15px] text-muted-foreground">
@@ -412,7 +603,6 @@ export function ChatPanel({
                     <p className="mt-0.5 text-[14px] leading-6 text-muted-foreground">
                       {t("chat.failed.body", { reason: errorText(failed.error_code) })}
                     </p>
-                    <WorkLog job={failed} />
                   </div>
                 </li>
               )}

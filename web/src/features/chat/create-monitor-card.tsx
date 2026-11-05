@@ -1,6 +1,6 @@
 "use client";
 import { useState } from "react";
-import { AlertTriangle, CheckCircle2, ExternalLink, Mail } from "lucide-react";
+import { AlertTriangle, CheckCircle2, ExternalLink, Mail, Webhook } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { FieldValues, fieldTypes } from "@/features/monitors/field-values";
 import { ApiError } from "@/lib/api/client";
@@ -175,8 +175,13 @@ export function CreateMonitorCard({
 
   const labels = fieldLabels(spec?.fields ?? []);
   const editing = Boolean(draft.monitor_id);
+  const channel = settings?.channel ?? "email";
   const settingsComplete = Boolean(
-    settings && settings.notification_group_ids.length > 0 && settings.schedule,
+    settings &&
+      settings.schedule &&
+      (channel === "webhook"
+        ? Boolean(settings.webhook_url)
+        : settings.notification_group_ids.length > 0),
   );
   const extractionCurrent = Boolean(
     extraction && extraction.spec_revision === draft.spec_revision && draft.extraction_preview_hash,
@@ -226,13 +231,27 @@ export function CreateMonitorCard({
           : expired
             ? { tone: "warning" as const, text: t("chat.approve.expired") }
             : !settingsComplete
-              ? { tone: "warning" as const, text: t("chat.approve.noRecipients") }
+              ? {
+                  tone: "warning" as const,
+                  text: channel === "webhook"
+                    ? t("chat.approve.noWebhook")
+                    : t("chat.approve.noRecipients"),
+                }
               : !deliveryCurrent
-                ? { tone: "warning" as const, text: t("chat.approve.noRecipients") }
+                ? { tone: "warning" as const, text: t("chat.approve.noDeliveryPreview") }
                 : null;
-  // The only way back from a missing, failed or expired preview.
+  // The only way back from a missing, failed or expired preview. Missing delivery
+  // settings are included because the preview reseeds them from the deployment
+  // defaults, which picks up a notification group created after an earlier run.
   const canRetry =
-    !previewBusy && !approving && (Boolean(error) || expired || previewFailed || !extraction);
+    !previewBusy &&
+    !approving &&
+    (Boolean(error) ||
+      expired ||
+      previewFailed ||
+      !extraction ||
+      !settingsComplete ||
+      !deliveryCurrent);
 
   const statusLine = note ? (
     <div className="flex items-baseline justify-between gap-3">
@@ -353,7 +372,23 @@ export function CreateMonitorCard({
           </ul>
         )}
 
-        {activeEmail && mails.length > 0 && (
+        {delivery?.channel === "webhook" && delivery.webhook_url && (
+          <details className="group border-t border-hairline pt-4" open>
+            <summary className="flex cursor-pointer list-none flex-wrap items-center gap-1.5 text-[13px] text-muted-foreground transition-colors duration-150 hover:text-ink [&::-webkit-details-marker]:hidden">
+              <Webhook className="size-3.5 shrink-0" strokeWidth={1.5} />
+              <span className="shrink-0">{t("chat.webhook.preview")}</span>
+              <span className="num min-w-0 flex-1 truncate text-right text-[13px]">
+                {delivery.webhook_url}
+              </span>
+            </summary>
+            <p className="meta mt-2">{t("chat.webhook.body")}</p>
+            <pre className="code-window mt-2 max-h-72 text-[12px]">
+              {JSON.stringify(delivery.webhook_body ?? {}, null, 2)}
+            </pre>
+          </details>
+        )}
+
+        {delivery?.channel !== "webhook" && activeEmail && mails.length > 0 && (
           <details className="group border-t border-hairline pt-4" open>
             <summary className="flex cursor-pointer list-none flex-wrap items-center gap-1.5 text-[13px] text-muted-foreground transition-colors duration-150 hover:text-ink [&::-webkit-details-marker]:hidden">
               <Mail className="size-3.5 shrink-0" strokeWidth={1.5} />
