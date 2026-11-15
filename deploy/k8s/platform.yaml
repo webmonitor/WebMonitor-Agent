@@ -14,7 +14,8 @@ data:
   PGPORT: "5432"
   PGDATABASE: webmonitor
   PGUSER: webmonitor
-  APP_ORIGIN: http://localhost:8080
+  # Must match how the NodePort below is published; this is the browser's origin.
+  APP_ORIGIN: http://localhost:30080
   DEVELOPMENT_MODE: "true"
   CONTAINER_RUNTIME: "true"
   SESSION_TTL_HOURS: "168"
@@ -36,6 +37,3 @@ data:
   MAIL_FROM: ""
   TARGET_POLICY: public
   TARGET_ALLOWED_ORIGINS: ""
-  # Squid resolves target names itself. Docker's embedded resolver (127.0.0.11) does
-  # not exist here; this must equal the kube-dns Service address of the cluster.
-  CLUSTER_DNS: 10.96.0.10

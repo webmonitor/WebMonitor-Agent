@@ -33,6 +33,7 @@ spec:
       containers:
         - name: api
           image: webmonitor-agent
+          imagePullPolicy: IfNotPresent
           command: [webmonitor, serve]
           envFrom:
             - configMapRef: {name: webmonitor-env}
@@ -85,6 +86,7 @@ spec:
       containers:
         - name: worker
           image: webmonitor-agent
+          imagePullPolicy: IfNotPresent
           command: [webmonitor, serve]
           envFrom:
             - configMapRef: {name: webmonitor-env}
@@ -147,6 +149,7 @@ spec:
       containers:
         - name: web
           image: webmonitor-agent
+          imagePullPolicy: IfNotPresent
           command: [node, /app/web/server.js]
           env:
             # The kubelet injects HOSTNAME as the pod name. Next.js binds to it and

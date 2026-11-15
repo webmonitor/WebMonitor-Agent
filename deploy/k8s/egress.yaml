@@ -1,9 +1,10 @@
 # Squid egress proxy: the only path a collector may use to reach a target.
 #
-# The image already carries deploy/egress/squid.conf. Its `dns_nameservers 127.0.0.11`
-# is Docker's embedded resolver, which does not exist in a cluster, so an init
-# container rewrites that single line to the cluster DNS before Squid starts. Copying
-# the file into a ConfigMap instead would create a second copy to keep in sync.
+# The image carries deploy/egress/squid.conf, whose `dns_nameservers 127.0.0.11` is
+# Docker's embedded resolver. A pod already gets the cluster resolver in
+# /etc/resolv.conf, so the init container deletes that line and Squid falls back to
+# the system resolver. Copying the file into a ConfigMap would create a second copy
+# to keep in sync.
 apiVersion: v1
 kind: Service
 metadata:
@@ -34,8 +35,12 @@ spec:
           command:
             - sh
             - -ec
-            - test -n "$CLUSTER_DNS" || { echo "CLUSTER_DNS is empty" >&2; exit 1; }
-            - sed "s|^dns_nameservers .*|dns_nameservers $CLUSTER_DNS|" /etc/squid/squid.conf > /etc/squid-live/squid.conf
+            - |
+              sed '/^dns_nameservers /d' /etc/squid/squid.conf > /etc/squid-live/squid.conf
+              grep -q '^dns_nameservers ' /etc/squid-live/squid.conf && exit 1 || true
+              # A pod's RLIMIT_NOFILE is ~1e9, and Squid sizes its descriptor table from
+              # that limit: without a ceiling it allocates past any sane memory limit.
+              printf 'max_filedescriptors 4096\n' >> /etc/squid-live/squid.conf
           envFrom: [{configMapRef: {name: webmonitor-env}}]
           securityContext:
             allowPrivilegeEscalation: false
@@ -53,12 +58,14 @@ spec:
             readOnlyRootFilesystem: true
             capabilities: {drop: [ALL]}
           readinessProbe:
-            exec: {command: [sh, -c, "squid -k check -f /etc/squid-live/squid.conf"]}
+            # `squid -k ...` reads /tmp/squid.pid, which is 1 inside a container and is
+            # rejected as malformed; a TCP connect proves the listener is up.
+            exec: {command: [bash, -ec, "exec 3<>/dev/tcp/127.0.0.1/3128"]}
             periodSeconds: 10
             failureThreshold: 6
           resources:
-            requests: {cpu: 50m, memory: 64Mi}
-            limits: {cpu: "1", memory: 256Mi}
+            requests: {cpu: 50m, memory: 128Mi}
+            limits: {cpu: "1", memory: 512Mi}
           volumeMounts:
             - {name: conf, mountPath: /etc/squid-live}
             - {name: tmp, mountPath: /tmp}
