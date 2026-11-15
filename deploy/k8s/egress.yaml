@@ -1,0 +1,69 @@
+# Squid egress proxy: the only path a collector may use to reach a target.
+#
+# The image already carries deploy/egress/squid.conf. Its `dns_nameservers 127.0.0.11`
+# is Docker's embedded resolver, which does not exist in a cluster, so an init
+# container rewrites that single line to the cluster DNS before Squid starts. Copying
+# the file into a ConfigMap instead would create a second copy to keep in sync.
+apiVersion: v1
+kind: Service
+metadata:
+  name: egress
+spec:
+  selector: {app.kubernetes.io/name: webmonitor, app.kubernetes.io/component: egress}
+  ports: [{name: proxy, port: 3128, targetPort: 3128}]
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: egress
+spec:
+  replicas: 1
+  selector: {matchLabels: {app.kubernetes.io/name: webmonitor, app.kubernetes.io/component: egress}}
+  template:
+    metadata:
+      labels: {app.kubernetes.io/name: webmonitor, app.kubernetes.io/component: egress}
+    spec:
+      automountServiceAccountToken: false
+      securityContext:
+        runAsUser: 10001
+        runAsGroup: 10001
+        seccompProfile: {type: RuntimeDefault}
+      initContainers:
+        - name: rewrite-dns
+          image: webmonitor-egress
+          command:
+            - sh
+            - -ec
+            - test -n "$CLUSTER_DNS" || { echo "CLUSTER_DNS is empty" >&2; exit 1; }
+            - sed "s|^dns_nameservers .*|dns_nameservers $CLUSTER_DNS|" /etc/squid/squid.conf > /etc/squid-live/squid.conf
+          envFrom: [{configMapRef: {name: webmonitor-env}}]
+          securityContext:
+            allowPrivilegeEscalation: false
+            readOnlyRootFilesystem: true
+            capabilities: {drop: [ALL]}
+          volumeMounts:
+            - {name: conf, mountPath: /etc/squid-live}
+      containers:
+        - name: squid
+          image: webmonitor-egress
+          command: [squid, -N, -f, /etc/squid-live/squid.conf]
+          ports: [{containerPort: 3128}]
+          securityContext:
+            allowPrivilegeEscalation: false
+            readOnlyRootFilesystem: true
+            capabilities: {drop: [ALL]}
+          readinessProbe:
+            exec: {command: [sh, -c, "squid -k check -f /etc/squid-live/squid.conf"]}
+            periodSeconds: 10
+            failureThreshold: 6
+          resources:
+            requests: {cpu: 50m, memory: 64Mi}
+            limits: {cpu: "1", memory: 256Mi}
+          volumeMounts:
+            - {name: conf, mountPath: /etc/squid-live}
+            - {name: tmp, mountPath: /tmp}
+      volumes:
+        - name: conf
+          emptyDir: {sizeLimit: 1Mi}
+        - name: tmp
+          emptyDir: {sizeLimit: 32Mi}

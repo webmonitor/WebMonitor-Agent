@@ -1,0 +1,41 @@
+# Non-secret settings, mirroring the environment block of compose.yaml. Credentials
+# live in the `webmonitor-secrets` Secret (deploy/k8s/secret.example.yaml).
+#
+# TRUSTED_PROXY_IP is deliberately absent: the proxy pod's address is not stable, and
+# settings reject anything that is not a literal IP. Without it uvicorn ignores
+# X-Forwarded-For, so login attempts record the proxy pod's address as source_ip.
+# The throttle key stays (email, source_ip), so it remains per account.
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: webmonitor-env
+data:
+  PGHOST: postgres
+  PGPORT: "5432"
+  PGDATABASE: webmonitor
+  PGUSER: webmonitor
+  APP_ORIGIN: http://localhost:8080
+  DEVELOPMENT_MODE: "true"
+  CONTAINER_RUNTIME: "true"
+  SESSION_TTL_HOURS: "168"
+  DEFAULT_INTERVAL_SECONDS: "3600"
+  DEFAULT_NOTIFICATION_GROUP: ""
+  DEFAULT_DELIVERY_CHANNEL: email
+  DEFAULT_WEBHOOK_URL: ""
+  OPENAI_BASE_URL: https://api.openai.com/v1
+  OPENAI_CONTAINER_BASE_URL: ""
+  OPENAI_MODEL: ""
+  S3_ENDPOINT_URL: http://s3:9000
+  S3_BUCKET: webmonitor-evidence
+  S3_ACCESS_KEY_ID: webmonitor-admin
+  EGRESS_PROXY_URL: http://egress:3128
+  SMTP_HOST: ""
+  SMTP_PORT: "465"
+  SMTP_USE_SSL: "true"
+  SMTP_STARTTLS: "false"
+  MAIL_FROM: ""
+  TARGET_POLICY: public
+  TARGET_ALLOWED_ORIGINS: ""
+  # Squid resolves target names itself. Docker's embedded resolver (127.0.0.11) does
+  # not exist here; this must equal the kube-dns Service address of the cluster.
+  CLUSTER_DNS: 10.96.0.10

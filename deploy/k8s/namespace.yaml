@@ -1,0 +1,8 @@
+# The Kubernetes variant of the Compose deployment. Compose stays authoritative for
+# single-host installs; these manifests split the same image into api, web and worker.
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: webmonitor
+  labels:
+    app.kubernetes.io/name: webmonitor

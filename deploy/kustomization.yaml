@@ -1,0 +1,27 @@
+apiVersion: kustomize.config.k8s.io/v1beta1
+kind: Kustomization
+namespace: webmonitor
+resources:
+  - k8s/namespace.yaml
+  - k8s/platform.yaml
+  - k8s/data.yaml
+  - k8s/egress.yaml
+  - k8s/app.yaml
+  - k8s/network.yaml
+# Generated from the same file Compose mounts, so there is one routing config.
+configMapGenerator:
+  - name: proxy-conf
+    files:
+      - proxy/nginx.conf
+# Apply the Secret first: kubectl create secret generic webmonitor-secrets \
+#   --from-env-file=<(grep -v '^#' k8s/secret.example.env) -n webmonitor
+# The two sidecar images are built only by Compose (compose.yaml), not published;
+# push them under these names or repoint them here.
+images:
+  - name: webmonitor-agent
+    newName: ghcr.io/webmonitor/webmonitor-agent
+    newTag: latest
+  - name: webmonitor-egress
+    newTag: local
+  - name: webmonitor-minio
+    newTag: local

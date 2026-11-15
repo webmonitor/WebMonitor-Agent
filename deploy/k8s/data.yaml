@@ -1,0 +1,115 @@
+# PostgreSQL and the evidence bucket. Both keep their storage on emptyDir, which is
+# the direct equivalent of the tmpfs mounts in compose.yaml: recreating a pod discards
+# the data. There is no migration path, so a persistent volume would let an older
+# schema survive an image upgrade; see ../deployment.md for the contract.
+apiVersion: v1
+kind: Service
+metadata:
+  name: postgres
+spec:
+  selector: {app.kubernetes.io/name: webmonitor, app.kubernetes.io/component: postgres}
+  ports: [{name: postgres, port: 5432, targetPort: 5432}]
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: postgres
+spec:
+  replicas: 1
+  strategy: {type: Recreate}
+  selector: {matchLabels: {app.kubernetes.io/name: webmonitor, app.kubernetes.io/component: postgres}}
+  template:
+    metadata:
+      labels: {app.kubernetes.io/name: webmonitor, app.kubernetes.io/component: postgres}
+    spec:
+      automountServiceAccountToken: false
+      containers:
+        - name: postgres
+          image: postgres:16
+          env:
+            - {name: POSTGRES_USER, value: webmonitor}
+            - {name: POSTGRES_DB, value: webmonitor}
+            - name: POSTGRES_PASSWORD
+              valueFrom: {secretKeyRef: {name: webmonitor-secrets, key: POSTGRES_PASSWORD}}
+          ports: [{containerPort: 5432}]
+          readinessProbe:
+            exec: {command: [pg_isready, -U, webmonitor, -d, webmonitor]}
+            periodSeconds: 5
+            failureThreshold: 30
+          livenessProbe:
+            exec: {command: [pg_isready, -U, webmonitor, -d, webmonitor]}
+            initialDelaySeconds: 30
+            periodSeconds: 10
+            failureThreshold: 6
+          resources:
+            requests: {cpu: 250m, memory: 256Mi}
+            limits: {cpu: "2", memory: 512Mi}
+          volumeMounts:
+            - {name: data, mountPath: /var/lib/postgresql/data}
+            - {name: tmp, mountPath: /tmp}
+      volumes:
+        - name: data
+          emptyDir: {sizeLimit: 512Mi}
+        - name: tmp
+          emptyDir: {sizeLimit: 32Mi}
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: s3
+spec:
+  selector: {app.kubernetes.io/name: webmonitor, app.kubernetes.io/component: s3}
+  ports: [{name: s3, port: 9000, targetPort: 9000}]
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: s3
+spec:
+  replicas: 1
+  strategy: {type: Recreate}
+  selector: {matchLabels: {app.kubernetes.io/name: webmonitor, app.kubernetes.io/component: s3}}
+  template:
+    metadata:
+      labels: {app.kubernetes.io/name: webmonitor, app.kubernetes.io/component: s3}
+    spec:
+      automountServiceAccountToken: false
+      securityContext:
+        runAsUser: 10001
+        runAsGroup: 10001
+        fsGroup: 10001
+        seccompProfile: {type: RuntimeDefault}
+      containers:
+        - name: minio
+          image: webmonitor-minio
+          args: [server, /data]
+          env:
+            - name: MINIO_ROOT_USER
+              valueFrom: {secretKeyRef: {name: webmonitor-secrets, key: S3_ROOT_USER}}
+            - name: MINIO_ROOT_PASSWORD
+              valueFrom: {secretKeyRef: {name: webmonitor-secrets, key: S3_ROOT_PASSWORD}}
+          ports: [{containerPort: 9000}]
+          securityContext:
+            allowPrivilegeEscalation: false
+            readOnlyRootFilesystem: true
+            capabilities: {drop: [ALL]}
+          # Same probe as the Compose healthcheck: no shell utilities exist in the image.
+          readinessProbe:
+            exec:
+              command:
+                - bash
+                - -ec
+                - 'exec 3<>/dev/tcp/127.0.0.1/9000; printf "GET /minio/health/ready HTTP/1.1\r\nHost: localhost\r\nConnection: close\r\n\r\n" >&3; read -r status <&3; [[ "$status" == *" 200 "* ]]'
+            periodSeconds: 5
+            failureThreshold: 30
+          resources:
+            requests: {cpu: 100m, memory: 128Mi}
+            limits: {cpu: "1", memory: 512Mi}
+          volumeMounts:
+            - {name: data, mountPath: /data}
+            - {name: tmp, mountPath: /tmp}
+      volumes:
+        - name: data
+          emptyDir: {sizeLimit: 512Mi}
+        - name: tmp
+          emptyDir: {sizeLimit: 32Mi}
