@@ -74,10 +74,12 @@ async def read_monitor(session: AsyncSession, user: CurrentUser, monitor_id: UUI
     if monitor.baseline_snapshot_id is not None:
         snapshot = await session.get(Snapshot, monitor.baseline_snapshot_id)
         baseline = snapshot_record(snapshot) if snapshot is not None else None
+    recipients = [item["email"] for item in monitor.approved_recipients or []
+                  if isinstance(item, dict) and "email" in item]
     return MonitorDetail(**monitor_view(monitor).model_dump(), spec=monitor.spec,
         baseline=baseline, email_template=monitor.email_template,
-        approved_recipients=[item["email"] for item in monitor.approved_recipients or []
-                             if isinstance(item, dict) and "email" in item])
+        approved_recipients=recipients if user.role == "admin" else [],
+        approved_recipient_count=len(recipients))
 
 
 async def pause_monitor(session: AsyncSession, user: CurrentUser, monitor_id: UUID) -> Monitor:
@@ -203,14 +205,24 @@ async def list_snapshots(session: AsyncSession, user: CurrentUser, monitor_id: U
     return Page[SnapshotRecord](items=[snapshot_record(row) for row in rows], total=total or 0)
 
 
+async def published_spec(session: AsyncSession, monitor_id: UUID, version: int) -> dict:
+    """Resolve the immutable publication that produced a historical collection."""
+    spec = await session.scalar(select(Draft.spec).where(
+        Draft.monitor_id == monitor_id, Draft.published_spec_version == version))
+    if spec is None:
+        raise DomainError("not_found", 404)
+    return spec
+
+
 async def read_snapshot(session: AsyncSession, user: CurrentUser,
                         snapshot_id: UUID) -> SnapshotDetail:
     snapshot = await session.get(Snapshot, snapshot_id)
     if snapshot is None:
         raise DomainError("not_found", 404)
     monitor = require_owner(user, await session.get(Monitor, snapshot.monitor_id))
+    spec = await published_spec(session, monitor.id, snapshot.spec_version)
     return SnapshotDetail(**snapshot_record(snapshot).model_dump(),
-        monitor_id=monitor.id, monitor_name=monitor.name)
+        monitor_id=monitor.id, monitor_name=monitor.name, spec=spec)
 
 
 async def list_spec_versions(session: AsyncSession, user: CurrentUser, monitor_id: UUID,

@@ -18,7 +18,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from webmonitor.config import get_settings
 from webmonitor.errors import DomainError
-from webmonitor.models import Invitation, Session, User, utc_now
+from webmonitor.models import Delivery, Invitation, Monitor, Session, User, utc_now
 from webmonitor.schemas.api import InvitationView, Page
 from webmonitor.security.auth import CurrentUser
 
@@ -125,6 +125,32 @@ async def create_user(session: AsyncSession, *, email: str, password: str, displ
     session.add(user)
     await session.flush()
     return user
+
+
+async def set_availability(session: AsyncSession, user: User, active: bool) -> None:
+    """Change login availability and atomically stop all work owned by the account."""
+    user.active = active
+    if active:
+        # Reactivation deliberately leaves monitors paused and cancelled work terminal.
+        await session.flush()
+        return
+    now = utc_now()
+    await session.execute(update(Session).where(Session.user_id == user.id,
+        Session.revoked_at.is_(None)).values(revoked_at=now).execution_options(
+            synchronize_session="fetch"))
+    owned_monitors = (await session.scalars(select(Monitor).where(
+        Monitor.user_id == user.id).with_for_update())).all()
+    for monitor in owned_monitors:
+        monitor.status = "paused"
+        monitor.paused_at = monitor.paused_at or now
+    from webmonitor.services import jobs
+    await jobs.cancel_pending(session, user_id=user.id)
+    await session.execute(update(Delivery).where(Delivery.user_id == user.id,
+        Delivery.status.in_(("queued", "retrying", "sending"))).values(
+            status="cancelled", cancelled_at=now, lease_owner=None, lease_expires_at=None,
+            error_code="account_deactivated",
+            error_message="The account was deactivated before delivery"))
+    await session.flush()
 
 
 async def admin_create(session: AsyncSession, *, email: str, password: str) -> CurrentUser:

@@ -1,8 +1,9 @@
 "use client";
 import { useState } from "react";
-import { AlertTriangle, CheckCircle2, ExternalLink, Mail, Webhook } from "lucide-react";
+import { AlertTriangle, CheckCircle2, Mail, Webhook } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { FieldValues, fieldTypes } from "@/features/monitors/field-values";
+import { EvidenceLinks } from "@/features/monitors/evidence-links";
 import { ApiError } from "@/lib/api/client";
 import {
   useApproveDraft,
@@ -20,7 +21,7 @@ import {
   type DeliveryPreview,
   type ExtractionPreview,
 } from "@/lib/api/preview";
-import { formatBytes, useFormat } from "@/lib/format";
+import { useFormat } from "@/lib/format";
 import { useI18n } from "@/lib/i18n";
 
 type CardError =
@@ -34,32 +35,6 @@ function expiresAt(previews: (ExtractionPreview | DeliveryPreview | null)[]): st
   if (values.length === 0) return null;
   return values.reduce((earliest, value) =>
     new Date(value).getTime() < new Date(earliest).getTime() ? value : earliest);
-}
-
-function EvidenceLinks({ draftId, preview }: { draftId: string; preview: ExtractionPreview }) {
-  const { t } = useI18n();
-  if (preview.evidence_refs.length === 0) return null;
-  return (
-    <div className="flex flex-wrap gap-x-4 gap-y-1.5">
-      {preview.evidence_refs.map((reference, index) => (
-        <a
-          key={reference.sha256}
-          className="inline-flex items-center gap-1.5 text-[12px] text-muted-soft transition-colors hover:text-ink"
-          href={`/api/v1/drafts/${draftId}/evidence/${index}`}
-          target="_blank"
-          rel="noreferrer"
-        >
-          {reference.kind === "screenshot"
-            ? t("chat.evidence.screenshot")
-            : reference.kind === "json"
-              ? t("monitors.evidence.json")
-              : t("chat.evidence.archive")}
-          <span className="num text-[12px]">{formatBytes(reference.size_bytes)}</span>
-          <ExternalLink className="size-3.5" strokeWidth={1.5} />
-        </a>
-      ))}
-    </div>
-  );
 }
 
 /**
@@ -254,7 +229,7 @@ export function CreateMonitorCard({
       !deliveryCurrent);
 
   const statusLine = note ? (
-    <div className="flex items-baseline justify-between gap-3">
+    <div className="flex flex-wrap items-baseline justify-between gap-3">
       <p
         role={note.tone === "error" ? "alert" : "status"}
         className={`min-w-0 text-[13px] leading-5 ${
@@ -297,11 +272,10 @@ export function CreateMonitorCard({
   return (
     <section className="surface">
       <header className="space-y-2 border-b border-hairline px-5 py-4">
-        {expiry && (
-          <span className="label-line block">
-            {t("chat.preview.expires", { relative: formatRelative(expiry) })}
-          </span>
-        )}
+        <span className="label-line block">
+          {t("chat.tool.revision", { revision: draft.spec_revision })}
+          {expiry ? ` · ${t("chat.preview.expires", { relative: formatRelative(expiry) })}` : ""}
+        </span>
         <div className="space-y-0.5">
           <h2 className="t-title">
             {editing ? t("chat.approve.editTitle") : t("chat.approve.title")}
@@ -359,7 +333,7 @@ export function CreateMonitorCard({
           </p>
         </div>
 
-        <EvidenceLinks draftId={draft.id} preview={extraction} />
+        <EvidenceLinks draftId={draft.id} references={extraction.evidence_refs} full />
 
         {warnings.length > 0 && (
           <ul className="space-y-1.5 border-l-2 border-warning pl-3 text-[13px] leading-5 text-warning-ink">
@@ -370,6 +344,23 @@ export function CreateMonitorCard({
               </li>
             ))}
           </ul>
+        )}
+
+        {delivery && delivery.channel !== "webhook" && (
+          <div>
+            <h3 className="label-line">{t("monitors.config.recipients")}</h3>
+            {delivery.recipients.length > 0 ? (
+              <p className="num mt-1 break-words text-[13px] text-body">
+                {delivery.recipients.join(" · ")}
+              </p>
+            ) : delivery.recipient_count > 0 ? (
+              <p className="meta mt-1">
+                {t("monitors.config.protectedRecipients", { count: delivery.recipient_count })}
+              </p>
+            ) : (
+              <p className="meta mt-1">{t("activity.groups.noMembers")}</p>
+            )}
+          </div>
         )}
 
         {delivery?.channel === "webhook" && delivery.webhook_url && (

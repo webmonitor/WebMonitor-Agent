@@ -1,8 +1,8 @@
 """JSON API collection: ordered requests, assertions and page pagination.
 
 Every step runs through the same bounded egress transport as HTML collection.
-Only the last response is asserted on and paginated; earlier steps exist to bind
-values for later URLs.
+Only the last step is asserted on and paginated; earlier steps exist to bind
+values for later URLs. Every actual page is asserted before extraction.
 """
 import asyncio
 import json
@@ -126,8 +126,11 @@ def _total(body: Any, pagination: PagePagination) -> int:
 
 async def _paginate(request: ApiRequest, step: dict, pagination: PagePagination,
                     spec: MonitorSpec, *, transport: httpx.AsyncBaseTransport | None
-                    ) -> tuple[dict, int, bool, bool, FetchResult, FetchResult]:
+                    ) -> tuple[dict, int, bool, bool, FetchResult, FetchResult, list[dict]]:
+    if spec.source is None:
+        raise DomainError('validation_failed', 422, details={'field': 'source'})
     list_field = next(field for field in spec.fields if field.type == 'list')
+    assertions: list[dict] = []
     fields = {}
     items: list = []
     total = None
@@ -143,7 +146,9 @@ async def _paginate(request: ApiRequest, step: dict, pagination: PagePagination,
         # parameters so the step URL never decides how many rows arrive.
         fetched, body = await _send(request, _page_url(step['url'], pagination, page),
                                     transport=transport)
+        current_assertions = _assertions(spec.source, body)
         if first is None:
+            assertions = current_assertions
             first = fetched
             for field in spec.fields:
                 if field.type == 'list':
@@ -185,7 +190,7 @@ async def _paginate(request: ApiRequest, step: dict, pagination: PagePagination,
             break
         page += 1
     fields[list_field.name] = items
-    return fields, pages, truncated, converged, first, last
+    return fields, pages, truncated, converged, first, last, assertions
 
 
 async def collect_api(url: str, spec: MonitorSpec, *,
@@ -198,19 +203,21 @@ async def collect_api(url: str, spec: MonitorSpec, *,
         async with asyncio.timeout(TOTAL_TIMEOUT_SECONDS):
             bodies: dict[str, Any] = {}
             steps: list[dict] = []
-            last: FetchResult | None = None
-            last_body: Any = None
-            for step in source.steps:
+            for step in source.steps[:-1]:
                 request_url = _resolve(step.request.url, bodies)
                 fetched, body = await _send(step.request, request_url, transport=transport)
                 bodies[step.id] = body
                 steps.append({'id': step.id, 'method': step.request.method,
                               'url': request_url, 'status': fetched.status, 'pages': 1})
-                last, last_body = fetched, body
-            # The last step's own response is the first page without pagination.
-            page_one = last
-            assertions = _assertions(source, last_body)
+            final_step = source.steps[-1]
+            request_url = _resolve(final_step.request.url, bodies)
             if source.pagination is None:
+                page_one, last_body = await _send(final_step.request, request_url,
+                                                  transport=transport)
+                last = page_one
+                steps.append({'id': final_step.id, 'method': final_step.request.method,
+                              'url': request_url, 'status': page_one.status, 'pages': 1})
+                assertions = _assertions(source, last_body)
                 fields = extract_json_fields(last_body, spec, page_one.final_url)
                 for field in spec.fields:
                     if (field.type == 'list' and not fields.get(field.name)
@@ -219,10 +226,11 @@ async def collect_api(url: str, spec: MonitorSpec, *,
                                           details={'field': field.name})
                 pages, truncated = 1, False
             else:
-                fields, pages, truncated, converged, page_one, last = await _paginate(
-                    source.steps[-1].request, steps[-1], source.pagination, spec,
+                fields, pages, truncated, converged, page_one, last, assertions = await _paginate(
+                    final_step.request, {'url': request_url}, source.pagination, spec,
                     transport=transport)
-                steps[-1]['pages'] = pages
+                steps.append({'id': final_step.id, 'method': final_step.request.method,
+                              'url': request_url, 'status': page_one.status, 'pages': pages})
                 if not converged and spec.coverage.scope == 'full':
                     list_field = next(field for field in spec.fields if field.type == 'list')
                     raise DomainError('api_pagination_limit', 422,

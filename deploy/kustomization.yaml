@@ -13,8 +13,8 @@ configMapGenerator:
   - name: proxy-conf
     files:
       - proxy/nginx.conf
-# Apply the Secret first: kubectl create secret generic webmonitor-secrets \
-#   --from-env-file=<(grep -v '^#' k8s/secret.example.env) -n webmonitor
+# Create the Secret from a configured copy of k8s/secret.example.yaml first;
+# docs/kubernetes.md is the single setup and acceptance procedure.
 # The two sidecar images are built only by Compose (compose.yaml), not published;
 # push them under these names or repoint them here.
 images:

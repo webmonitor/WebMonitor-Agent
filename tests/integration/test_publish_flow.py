@@ -16,13 +16,13 @@ from support import (
 
 from webmonitor.config import get_settings
 from webmonitor.errors import DomainError
-from webmonitor.models import Draft, Monitor, NotificationGroup, User
+from webmonitor.models import Delivery, Draft, Event, Monitor, NotificationGroup, User
 from webmonitor.schemas.api import DraftUpdate, EmailTemplateSpec
 from webmonitor.schemas.delivery import DeliverySettings
 from webmonitor.schemas.monitors import MonitorSpec
 from webmonitor.schemas.templates import EmailTemplateConfig
 from webmonitor.security.auth import CurrentUser
-from webmonitor.services import drafts, jobs, templates
+from webmonitor.services import drafts, jobs, runs, templates
 from webmonitor.services.monitors import list_spec_versions
 
 
@@ -374,6 +374,22 @@ async def test_template_snapshot_survives_template_deletion(session):
     stored = await session.get(Monitor, monitor.id)
     assert stored.email_template == snapshot
     assert stored.email_template["name"] == template.name
+
+    # Production reads only the frozen nested config, even after source deletion.
+    from test_runs import running_job
+    baseline = await running_job(session, monitor)
+    await runs.commit_success(session, baseline, collection_result(state="Open"))
+    await session.commit()
+    assert await session.scalar(select(func.count()).select_from(Delivery)) == 0
+
+    changed = await running_job(session, monitor)
+    await runs.commit_success(session, changed, collection_result(state="Closed"))
+    await session.commit()
+    delivery = await session.scalar(select(Delivery))
+    assert delivery is not None and delivery.status == "queued"
+    assert delivery.subject == "Notice watch 公告提醒"
+    event = await session.scalar(select(Event).where(Event.type == "list_changed"))
+    assert event is not None and event.payload.get("skipped") is None
 
 
 @pytest.mark.asyncio

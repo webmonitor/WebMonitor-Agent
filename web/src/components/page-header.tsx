@@ -7,7 +7,7 @@ import { cn } from "@/lib/utils";
  */
 export function PageBody({ className, children }: { className?: string; children: ReactNode }) {
   return (
-    <div className={cn("mx-auto w-full max-w-[75rem] px-6 py-10 sm:px-10", className)}>{children}</div>
+    <div className={cn("mx-auto w-full max-w-[80rem] px-6 py-8 sm:px-8 sm:py-10 lg:px-10", className)}>{children}</div>
   );
 }
 
@@ -23,9 +23,9 @@ export function PageHeader({
   children?: ReactNode;
 }) {
   return (
-    <header className="mb-10 flex flex-col gap-4 sm:flex-row sm:items-start sm:justify-between">
-      <div className="min-w-0 space-y-1.5">
-        <h1 className="page-title truncate">{title}</h1>
+    <header className="mb-8 flex flex-col gap-5 border-b border-hairline pb-6 sm:flex-row sm:items-start sm:justify-between">
+      <div className="min-w-0 space-y-2">
+        <h1 className="page-title break-words">{title}</h1>
         {description && <div className="t-body-sm max-w-2xl text-muted-foreground">{description}</div>}
         {children}
       </div>

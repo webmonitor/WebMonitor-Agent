@@ -28,6 +28,7 @@ import {
 import { CreateMonitorCard } from "@/features/chat/create-monitor-card";
 import { useFormat } from "@/lib/format";
 import { useI18n } from "@/lib/i18n";
+import { clearSubmittedDraft } from "@/lib/draft";
 
 const ACTIVE = ["queued", "running"];
 
@@ -179,12 +180,12 @@ function ToolCall({ step }: { step: JobView["steps"][number] }) {
     || step.error_code != null || step.detail != null;
 
   return (
-    <li className="rounded-md border border-hairline bg-surface-soft/40">
+    <div className="relative ml-1 border-l border-hairline pl-3">
       <details
         className="group"
         onToggle={(event) => setOpen(event.currentTarget.open)}
       >
-        <summary className="flex cursor-pointer list-none items-start gap-2 px-3 py-2 select-none [&::-webkit-details-marker]:hidden">
+        <summary className="flex cursor-pointer list-none items-start gap-2 rounded-r-lg px-3 py-2 select-none transition-colors hover:bg-surface-soft [&::-webkit-details-marker]:hidden">
           <StepDot status={step.status} />
           <span className="min-w-0 flex-1 leading-5">
             <span className="flex flex-wrap items-baseline gap-x-2">
@@ -235,7 +236,7 @@ function ToolCall({ step }: { step: JobView["steps"][number] }) {
           </div>
         )}
       </details>
-    </li>
+    </div>
   );
 }
 
@@ -330,7 +331,7 @@ function buildTimeline(parts: TurnPart[], steps: JobView["steps"]): TimelineBloc
 /** Assistant prose: no bubble, no avatar — full-width text, the way it reads best. */
 function AssistantText({ content }: { content: string }) {
   return (
-    <div className="space-y-2.5 text-[15px] leading-[1.7] text-body [&_a]:text-primary-active [&_a]:underline [&_a]:underline-offset-2 [&_blockquote]:border-l-2 [&_blockquote]:border-primary/40 [&_blockquote]:pl-3 [&_blockquote]:text-muted-foreground [&_code]:rounded-[4px] [&_code]:bg-surface-strong [&_code]:px-1.5 [&_code]:py-0.5 [&_code]:text-[13.5px] [&_code]:text-ink [&_h1]:mt-5 [&_h1]:font-display [&_h1]:text-[24px] [&_h1]:font-normal [&_h1]:tracking-[-0.01em] [&_h2]:mt-5 [&_h2]:font-display [&_h2]:text-[20px] [&_h2]:font-normal [&_h3]:mt-4 [&_h3]:text-[16px] [&_h3]:font-medium [&_hr]:my-4 [&_li]:pl-0.5 [&_ol]:list-decimal [&_ol]:pl-5 [&_p]:leading-7 [&_pre]:mt-3 [&_pre]:overflow-x-auto [&_pre]:rounded-lg [&_pre]:border-0 [&_pre]:bg-surface-dark [&_pre]:p-4 [&_pre_code]:bg-transparent [&_pre_code]:p-0 [&_pre_code]:text-[13px] [&_pre_code]:text-on-dark [&_table]:w-full [&_table]:text-[14px] [&_td]:border [&_td]:border-hairline [&_td]:px-2.5 [&_td]:py-1.5 [&_td]:text-[13px] [&_th]:border [&_th]:border-hairline [&_th]:px-2.5 [&_th]:py-1.5 [&_th]:text-left [&_th]:text-[12px] [&_th]:font-medium [&_th]:uppercase [&_th]:tracking-[0.12em] [&_th]:text-muted-foreground [&_ul]:list-disc [&_ul]:pl-5">
+    <div className="space-y-2.5 text-[15px] leading-[1.7] text-body [&_a]:text-primary-active [&_a]:underline [&_a]:underline-offset-2 [&_blockquote]:border-l-2 [&_blockquote]:border-primary/40 [&_blockquote]:pl-3 [&_blockquote]:text-muted-foreground [&_code]:rounded-[4px] [&_code]:bg-surface-strong [&_code]:px-1.5 [&_code]:py-0.5 [&_code]:text-[13.5px] [&_code]:text-ink [&_h1]:mt-5 [&_h1]:font-display [&_h1]:text-[24px] [&_h1]:font-normal [&_h1]:tracking-[-0.01em] [&_h2]:mt-5 [&_h2]:font-display [&_h2]:text-[20px] [&_h2]:font-normal [&_h3]:mt-4 [&_h3]:text-[16px] [&_h3]:font-medium [&_hr]:my-4 [&_li]:pl-0.5 [&_ol]:list-decimal [&_ol]:pl-5 [&_p]:leading-7 [&_pre]:mt-3 [&_pre]:overflow-x-auto [&_pre]:rounded-lg [&_pre]:border-0 [&_pre]:bg-surface-dark [&_pre]:p-4 [&_pre_code]:bg-transparent [&_pre_code]:p-0 [&_pre_code]:text-[13px] [&_pre_code]:text-on-dark [&_table]:w-full [&_table]:text-[14px] [&_td]:border [&_td]:border-hairline [&_td]:px-2.5 [&_td]:py-1.5 [&_td]:text-[13px] [&_th]:border [&_th]:border-hairline [&_th]:px-2.5 [&_th]:py-1.5 [&_th]:text-left [&_th]:text-[12px] [&_th]:font-medium [&_th]:text-muted-foreground [&_ul]:list-disc [&_ul]:pl-5">
       <Markdown remarkPlugins={[remarkGfm]}>{content}</Markdown>
     </div>
   );
@@ -478,7 +479,8 @@ export function ChatPanel({
   }, [draft]);
 
   async function submit() {
-    const content = draft.trim();
+    const submittedDraft = draft;
+    const content = submittedDraft.trim();
     if (!content || send.isPending || start.isPending || running) return;
     if (!conversationId && !drafting) return;
     setError(null);
@@ -487,12 +489,12 @@ export function ChatPanel({
         // The conversation is created together with its first message, so an
         // abandoned draft never leaves an empty conversation behind.
         const conversation = await start.mutateAsync(content);
-        setDraft((current) => (current === content ? "" : current));
+        setDraft((current) => clearSubmittedDraft(current, submittedDraft));
         router.replace(`/app?conversation=${conversation.id}`);
         return;
       }
       await send.mutateAsync(content);
-      setDraft((current) => (current === content ? "" : current));
+      setDraft((current) => clearSubmittedDraft(current, submittedDraft));
       // Your own message always brings the conversation back to the latest turn.
       setPinned(true);
     } catch (failure) {
@@ -557,11 +559,22 @@ export function ChatPanel({
             )}
 
             {empty && (
-              <div className="space-y-6">
-                <div className="max-w-[26rem] space-y-2">
+              <div className="space-y-8">
+                <div className="max-w-[30rem] space-y-2">
+                  <p className="label-line">01 → 02 → 03</p>
                   <h2 className="display-sm">{t("chat.hero.title")}</h2>
-                  <p className="t-body mt-3 max-w-[30rem] text-muted-foreground">{t("chat.hero.body")}</p>
+                  <p className="t-body mt-3 text-muted-foreground">{t("chat.hero.body")}</p>
                 </div>
+                <ol className="grid border-y border-hairline sm:grid-cols-3 sm:divide-x sm:divide-hairline">
+                  {(["link", "preview", "notify"] as const).map((step, index) => (
+                    <li key={step} className="border-b border-hairline py-4 last:border-b-0 sm:border-b-0 sm:px-4 sm:first:pl-0 sm:last:pr-0">
+                      <span className="num text-[12px] text-primary">0{index + 1}</span>
+                      <h3 className="mt-2 text-[14px] font-medium text-ink">
+                        {t(`public.steps.${step}.title`)}
+                      </h3>
+                    </li>
+                  ))}
+                </ol>
               </div>
             )}
 

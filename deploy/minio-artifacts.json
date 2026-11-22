@@ -27,8 +27,7 @@
   "base": {
     "image": "debian:bookworm-slim@sha256:3783cc01769c7b2b1b83a5c5ad96c815348e28ed7da68e2e3687004faa906251",
     "source": "https://hub.docker.com/v2/repositories/library/debian/tags/bookworm-slim",
-    "apt_snapshot": "http://snapshot.debian.org/archive/debian/20260920T000000Z",
-    "apt_authentication": "Debian signed Release metadata; HTTP bootstrap avoids requiring CA certificates before installation"
+    "downloader": "python:3.12-slim-bookworm standard-library HTTPS; every downloaded byte is verified against the pinned SHA256 above"
   },
   "verification": "SHA256 values are the binary digests published by GitHub on the official expanded release asset pages, independently confirmed by reading each binary URL plus .sha256sum. These are not the digests of the .sha256sum files. Docker build checks pinned values and fails closed. GitHub API returned HTTP 403; release HTML asset metadata and checksum sidecars were available. No binaries have been downloaded or run during preparation."
 }

@@ -1,7 +1,7 @@
 # PostgreSQL and the evidence bucket. Both keep their storage on emptyDir, which is
 # the direct equivalent of the tmpfs mounts in compose.yaml: recreating a pod discards
 # the data. There is no migration path, so a persistent volume would let an older
-# schema survive an image upgrade; see ../deployment.md for the contract.
+# schema survive an image upgrade; see docs/kubernetes.md for the data contract.
 apiVersion: v1
 kind: Service
 metadata:

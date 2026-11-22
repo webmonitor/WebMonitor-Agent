@@ -219,6 +219,7 @@ __marimo__/
 # Local OS and frontend artifacts
 .DS_Store
 node_modules/
+.pnpm-store
 .next/
 *.tsbuildinfo
 !/web/src/lib/

@@ -9,17 +9,30 @@ let csrf: { token: string; expires: number } | undefined;
 let pendingCsrf: Promise<string> | undefined;
 async function csrfToken(): Promise<string> {
   if (csrf && csrf.expires > Date.now() + 10_000) return csrf.token;
-  if (!pendingCsrf) pendingCsrf = fetch("/api/v1/auth/csrf", { credentials: "same-origin", cache: "no-store" })
-    .then(async response => {
-      if (!response.ok) throw new ApiError("csrf_unavailable", response.status, "");
-      const body = await response.json();
-      csrf = { token: body.csrf_token, expires: body.expires_at * 1000 };
-      return csrf.token;
-    }).finally(() => { pendingCsrf = undefined; });
+  if (!pendingCsrf) {
+    pendingCsrf = (async () => {
+      try {
+        const response = await fetch("/api/v1/auth/csrf", {
+          credentials: "same-origin",
+          cache: "no-store",
+        });
+        if (!response.ok) throw new ApiError("csrf_unavailable", response.status, "");
+        const body = await response.json() as { csrf_token: string; expires_at: number };
+        csrf = { token: body.csrf_token, expires: body.expires_at * 1000 };
+        return csrf.token;
+      } catch (failure) {
+        if (failure instanceof ApiError) throw failure;
+        throw new ApiError("network_unavailable", 0, "");
+      }
+    })().finally(() => { pendingCsrf = undefined; });
+  }
   return pendingCsrf;
 }
-export function clearSessionClient() {
+export function clearCsrfToken() {
   csrf = undefined;
+}
+export function clearSessionClient() {
+  clearCsrfToken();
   window.dispatchEvent(new Event("wm:session-ended"));
 }
 async function errorOf(response: Response): Promise<{ code: string; message: string; details: Record<string, unknown> }> {

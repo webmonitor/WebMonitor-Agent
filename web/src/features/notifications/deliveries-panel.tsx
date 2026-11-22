@@ -81,7 +81,9 @@ export function DeliveriesPanel() {
                   <Badge tone={tone(delivery.status)}>{statusLabel(delivery.status)}</Badge>
                 </span>
                 <span className="num mt-1 block truncate text-[12px] text-muted-soft">
-                  {delivery.monitor_name} · {delivery.recipient} · {formatTime(delivery.created_at)}
+                  {delivery.monitor_name} · {delivery.recipient ?? (
+                    delivery.channel === "email" ? t("activity.deliveries.protectedRecipient") : "—"
+                  )} · {formatTime(delivery.created_at)}
                 </span>
                 {delivery.error_code && (
                   <span className="mt-1 block text-[13px] text-error">{errorText(delivery.error_code)}</span>
@@ -111,7 +113,11 @@ export function DeliveriesPanel() {
                 </div>
                 <div>
                   <dt className="label-line">{t("activity.deliveries.recipient")}</dt>
-                  <dd className="num truncate">{open.recipient}</dd>
+                  <dd className="break-words">
+                    {open.recipient ?? (
+                      open.channel === "email" ? t("activity.deliveries.protectedRecipient") : "—"
+                    )}
+                  </dd>
                 </div>
                 <div>
                   <dt className="label-line">{t("activity.deliveries.status")}</dt>

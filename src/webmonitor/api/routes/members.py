@@ -2,11 +2,11 @@
 from uuid import UUID
 
 from fastapi import APIRouter, Query
-from sqlalchemy import func, select, update
+from sqlalchemy import func, select
 
 from webmonitor.api.dependencies import AuthenticatedUser, DatabaseSession
 from webmonitor.errors import DomainError
-from webmonitor.models import Session, User, utc_now
+from webmonitor.models import User
 from webmonitor.schemas.api import (
     Availability,
     InvitationCreate,
@@ -65,10 +65,7 @@ async def set_availability(user_id: UUID, body: Availability, session: DatabaseS
         raise DomainError("not_found", 404)
     if row.id == user.user_id and not body.active:
         raise DomainError("cannot_disable_self", 409)
-    row.active = body.active
-    if not body.active:
-        await session.execute(update(Session).where(Session.user_id == row.id,
-            Session.revoked_at.is_(None)).values(revoked_at=utc_now()))
+    await accounts.set_availability(session, row, body.active)
     result = _view(row)
     await session.commit()
     return result

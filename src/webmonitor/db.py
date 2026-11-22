@@ -3,7 +3,7 @@ import logging
 from functools import lru_cache
 
 from sqlalchemy import select, text
-from sqlalchemy.ext.asyncio import async_sessionmaker, create_async_engine
+from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker, create_async_engine
 
 from webmonitor.config import get_settings
 from webmonitor.models import Base, User, utc_now
@@ -34,18 +34,19 @@ async def initialize_database() -> None:
     """Create the schema and the first administrator."""
     settings = get_settings()
     engine = get_engine()
+    admin_email = settings.admin_email.strip()
     async with engine.begin() as connection:
+        # Schema creation and the empty-table check share one transaction-level
+        # lock, so concurrent first-start pods cannot both create the admin.
         await connection.execute(text("SELECT pg_advisory_xact_lock(774431082)"))
         await connection.run_sync(Base.metadata.create_all)
-    admin_email = settings.admin_email.strip()
-    if admin_email and settings.admin_password.get_secret_value():
-        from webmonitor.services import accounts
-        async with get_session_factory()() as session:
-            if await session.scalar(select(User.id).limit(1)) is None:
-                await accounts.create_user(session, email=admin_email,
-                    password=settings.admin_password.get_secret_value(),
-                    display_name=admin_email, role="admin")
-                await session.commit()
+        if admin_email and settings.admin_password.get_secret_value():
+            from webmonitor.services import accounts
+            async with AsyncSession(bind=connection, expire_on_commit=False) as session:
+                if await session.scalar(select(User.id).limit(1)) is None:
+                    await accounts.create_user(session, email=admin_email,
+                        password=settings.admin_password.get_secret_value(),
+                        display_name=admin_email, role="admin")
     from webmonitor.storage.evidence import initialize_bucket
     try:
         await initialize_bucket()

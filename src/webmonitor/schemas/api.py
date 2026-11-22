@@ -324,6 +324,7 @@ class DeliveryPreview(BaseModel):
     template_hash: str
     rendered_emails: list[RenderedEmail]
     recipients: list[str]
+    recipient_count: int
     recipient_sources: list[dict[str, Any]]
     warnings: list[str]
     created_at: datetime
@@ -407,12 +408,14 @@ class SnapshotRecord(BaseModel):
 class SnapshotDetail(SnapshotRecord):
     monitor_id: UUID
     monitor_name: str
+    spec: dict[str, Any]
 
 
 class MonitorDetail(MonitorView):
     spec: dict[str, Any]
     baseline: SnapshotRecord | None
     approved_recipients: list[str] = Field(default_factory=list)
+    approved_recipient_count: int
     email_template: dict[str, Any] | None = None
 
 
@@ -429,6 +432,7 @@ class SpecVersion(BaseModel):
 class JobDetail(JobView):
     result: dict[str, Any] | None
     snapshot: SnapshotRecord | None
+    spec: dict[str, Any]
 
 
 class EventView(BaseModel):
@@ -461,7 +465,7 @@ class Delivery(BaseModel):
     monitor_name: str
     event_id: UUID
     channel: str
-    recipient: str
+    recipient: str | None
     subject: str
     body_text: str
     status: str

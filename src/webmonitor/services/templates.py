@@ -10,11 +10,12 @@ import time
 from collections import defaultdict, deque
 from uuid import UUID
 
-from openai import APIConnectionError, APIStatusError, AsyncOpenAI
+from openai import APIConnectionError, APIStatusError
 from sqlalchemy import func, select
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from webmonitor.agent.model import create_model_client
 from webmonitor.agent.template_draft import Proposal, draft_template
 from webmonitor.config import get_settings
 from webmonitor.errors import DomainError
@@ -136,9 +137,7 @@ async def draft(description: str, *, user: CurrentUser) -> Proposal:
     if not settings.openai_api_key.get_secret_value() or not settings.openai_model:
         raise DomainError("model_unavailable", 503)
     await _reserve_generation(user.user_id)
-    client = AsyncOpenAI(api_key=settings.openai_api_key.get_secret_value(),
-        base_url=settings.model_base_url,
-        timeout=settings.agent_model_timeout_seconds, max_retries=0)
+    client = await create_model_client(max_retries=0)
     try:
         async with asyncio.timeout(settings.agent_model_timeout_seconds * 2):
             return await draft_template(description, client=client,

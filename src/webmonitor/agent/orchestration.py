@@ -21,7 +21,7 @@ from agents.exceptions import MaxTurnsExceeded, ModelBehaviorError
 from openai import APIConnectionError, APIStatusError, AsyncOpenAI
 from sqlalchemy import select
 
-from webmonitor.agent.model import CompleteChatCompletionsModel
+from webmonitor.agent.model import CompleteChatCompletionsModel, create_model_client
 from webmonitor.agent.runtime import RuntimeContext, current_draft
 from webmonitor.agent.titling import (
     TITLE_PROMPT,
@@ -385,10 +385,7 @@ async def execute_job(job_id: UUID, worker_id: str) -> None:
             raise DomainError("conversation_empty", 409)
         if not settings.openai_api_key.get_secret_value() or not settings.openai_model:
             raise DomainError("model_unavailable", 503)
-        client = AsyncOpenAI(api_key=settings.openai_api_key.get_secret_value(),
-            base_url=settings.model_base_url,
-            timeout=settings.agent_model_timeout_seconds,
-            max_retries=settings.agent_model_retries)
+        client = await create_model_client(max_retries=settings.agent_model_retries)
         # The title is independent of the answer: it runs beside the agent and
         # never delays the first visible step.
         title_task = asyncio.create_task(

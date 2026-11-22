@@ -44,7 +44,8 @@ export function SnapshotPage({
   }
 
   const row = snapshot.data;
-  const spec = parseSpec(monitor.data?.spec);
+  // Historical values are labelled by the exact definition collected with them.
+  const spec = parseSpec(row.spec);
   const labels = fieldLabels(spec?.fields ?? []);
   const types = fieldTypes(spec?.fields ?? []);
   const coverage = row.coverage as { scope?: string; description?: string };

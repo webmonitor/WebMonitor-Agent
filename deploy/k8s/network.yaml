@@ -1,9 +1,5 @@
-# The three Compose networks, expressed as policy: control (database and bucket),
-# frontend (proxy, api, web) and outbound (egress proxy only). Default-deny is the
-# baseline, so a component that is not listed here has no network at all.
-#
-# Probes are exec-based for this reason: kubelet-originated HTTP probes arrive from
-# the node, which default-deny ingress would block on most CNIs.
+# Default-deny is the baseline. These policies require a CNI that enforces both
+# ingress and egress NetworkPolicy; exec probes deliberately need no node ingress.
 apiVersion: networking.k8s.io/v1
 kind: NetworkPolicy
 metadata:
@@ -23,6 +19,9 @@ spec:
     - to: [{namespaceSelector: {matchLabels: {kubernetes.io/metadata.name: kube-system}}}]
       ports: [{protocol: UDP, port: 53}, {protocol: TCP, port: 53}]
 ---
+# The public proxy and API share one Pod. Remote clients can enter only the proxy's
+# port; there is no ingress rule for port 8000 and no API Service. The proxy reaches
+# the API over loopback, which is the sole forwarding peer trusted by uvicorn.
 apiVersion: networking.k8s.io/v1
 kind: NetworkPolicy
 metadata:
@@ -31,9 +30,10 @@ spec:
   podSelector: {matchLabels: {app.kubernetes.io/component: api}}
   policyTypes: [Ingress, Egress]
   ingress:
-    - from: [{podSelector: {matchLabels: {app.kubernetes.io/component: proxy}}}]
-      ports: [{protocol: TCP, port: 8000}]
+    - ports: [{protocol: TCP, port: 8080}]
   egress:
+    - to: [{podSelector: {matchLabels: {app.kubernetes.io/component: web}}}]
+      ports: [{protocol: TCP, port: 3000}]
     - to: [{podSelector: {matchLabels: {app.kubernetes.io/component: postgres}}}]
       ports: [{protocol: TCP, port: 5432}]
     - to: [{podSelector: {matchLabels: {app.kubernetes.io/component: s3}}}]
@@ -53,10 +53,39 @@ spec:
       ports: [{protocol: TCP, port: 5432}]
     - to: [{podSelector: {matchLabels: {app.kubernetes.io/component: s3}}}]
       ports: [{protocol: TCP, port: 9000}]
-    # A collector reaches a target only through Squid. The proxy in turn refuses
-    # private destinations, so neither loopback nor cluster addresses are reachable.
+    # Targets, webhooks and public model APIs use Squid. An explicitly configured
+    # internal model needs a separate, dedicated Pod-selector policy; see docs/kubernetes.md.
     - to: [{podSelector: {matchLabels: {app.kubernetes.io/component: egress}}}]
       ports: [{protocol: TCP, port: 3128}]
+    # SMTP is direct, not an HTTP proxy request. Permit only public TCP 465/587;
+    # private/loopback/link-local destinations and every other public port stay denied.
+    - to:
+        - ipBlock:
+            cidr: 0.0.0.0/0
+            except:
+              - 0.0.0.0/8
+              - 10.0.0.0/8
+              - 100.64.0.0/10
+              - 127.0.0.0/8
+              - 169.254.0.0/16
+              - 172.16.0.0/12
+              - 192.0.0.0/24
+              - 192.0.2.0/24
+              - 192.88.99.0/24
+              - 192.168.0.0/16
+              - 198.18.0.0/15
+              - 198.51.100.0/24
+              - 203.0.113.0/24
+              - 224.0.0.0/3
+        - ipBlock:
+            cidr: ::/0
+            except:
+              - ::/128
+              - ::1/128
+              - fc00::/7
+              - fe80::/10
+              - ff00::/8
+      ports: [{protocol: TCP, port: 465}, {protocol: TCP, port: 587}]
 ---
 apiVersion: networking.k8s.io/v1
 kind: NetworkPolicy
@@ -66,22 +95,7 @@ spec:
   podSelector: {matchLabels: {app.kubernetes.io/component: web}}
   policyTypes: [Ingress]
   ingress:
-    - from: [{podSelector: {matchLabels: {app.kubernetes.io/component: proxy}}}]
-      ports: [{protocol: TCP, port: 3000}]
----
-apiVersion: networking.k8s.io/v1
-kind: NetworkPolicy
-metadata:
-  name: proxy
-spec:
-  podSelector: {matchLabels: {app.kubernetes.io/component: proxy}}
-  policyTypes: [Ingress, Egress]
-  ingress:
-    - ports: [{protocol: TCP, port: 8080}]
-  egress:
-    - to: [{podSelector: {matchLabels: {app.kubernetes.io/component: api}}}]
-      ports: [{protocol: TCP, port: 8000}]
-    - to: [{podSelector: {matchLabels: {app.kubernetes.io/component: web}}}]
+    - from: [{podSelector: {matchLabels: {app.kubernetes.io/component: api}}}]
       ports: [{protocol: TCP, port: 3000}]
 ---
 apiVersion: networking.k8s.io/v1
@@ -110,9 +124,9 @@ spec:
     - from: [{podSelector: {matchLabels: {app.kubernetes.io/component: worker}}}]
       ports: [{protocol: TCP, port: 9000}]
 ---
-# Squid is the only pod with a route off the cluster, and it may not reach private
-# space: the same destination ACLs the proxy applies to resolved names, applied to
-# addresses before the packet leaves the pod.
+# Squid is the only target/webhook/public-model path off the cluster. Squid's own
+# destination ACLs recheck resolved addresses; NetworkPolicy independently restricts
+# public egress to HTTP(S) ports and excludes non-public destination ranges.
 apiVersion: networking.k8s.io/v1
 kind: NetworkPolicy
 metadata:
@@ -130,16 +144,26 @@ spec:
         - ipBlock:
             cidr: 0.0.0.0/0
             except:
+              - 0.0.0.0/8
               - 10.0.0.0/8
               - 100.64.0.0/10
               - 127.0.0.0/8
               - 169.254.0.0/16
               - 172.16.0.0/12
+              - 192.0.0.0/24
+              - 192.0.2.0/24
+              - 192.88.99.0/24
               - 192.168.0.0/16
-    - to:
+              - 198.18.0.0/15
+              - 198.51.100.0/24
+              - 203.0.113.0/24
+              - 224.0.0.0/3
         - ipBlock:
             cidr: ::/0
             except:
+              - ::/128
               - ::1/128
               - fc00::/7
               - fe80::/10
+              - ff00::/8
+      ports: [{protocol: TCP, port: 80}, {protocol: TCP, port: 443}]

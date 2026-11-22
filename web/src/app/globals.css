@@ -1,59 +1,52 @@
 @import "tailwindcss";
 
 /*
- * Warm-canvas editorial system (DESIGN.md at the repo root).
- *
- * Rules this file encodes:
- * - the page floor is cream, never white; depth comes from the cream/dark
- *   surface contrast, not from shadows;
- * - coral marks action only (primary buttons, links, focus ring, one live dot);
- * - hairlines replace borders-with-color; machine output (code, specs, mail
- *   bodies) sits on the dark surface;
- * - display type is a serif at weight 400 with negative tracking; everything
- *   else is the humanist sans; figures and timestamps are mono.
+ * An operator's editorial desk: warm paper, quiet rules, deep-green actions.
+ * Revision markers and before/after evidence carry the product identity;
+ * decoration, gradients and ambient motion deliberately do not.
  */
 
 :root {
   /* surfaces */
-  --canvas: #faf9f5;
-  --surface-soft: #f5f0e8;
-  --surface-card: #efe9de;
-  --surface-strong: #e8e0d2;
-  --surface-dark: #181715;
-  --surface-dark-elevated: #252320;
-  --surface-dark-soft: #1f1e1b;
-  --surface-dark-line: #2c2a26;
+  --canvas: #fbfaf7;
+  --surface-soft: #f5f3ee;
+  --surface-card: #efede7;
+  --surface-strong: #e8e5dd;
+  --surface-dark: #1c2421;
+  --surface-dark-elevated: #27312d;
+  --surface-dark-soft: #222b27;
+  --surface-dark-line: #35403b;
 
   /* ink */
-  --ink: #141413;
-  --body-text: #3d3d3a;
-  --body-strong: #252523;
-  --muted-ink: #6c6a64;
-  --muted-soft-ink: #8e8b82;
+  --ink: #1c201e;
+  --body-text: #3f4541;
+  --body-strong: #292f2b;
+  --muted-ink: #656b65;
+  --muted-soft-ink: #858a82;
 
-  /* accent */
-  --primary: #cc785c;
-  --primary-active: #a9583e;
-  --primary-disabled: #e6dfd8;
+  /* one accent */
+  --primary: #285f49;
+  --primary-active: #1d4937;
+  --primary-disabled: #dce2dc;
   --on-primary: #ffffff;
-  --accent-teal: #5db8a6;
-  --accent-amber: #e8a55a;
+  --accent-teal: #285f49;
+  --accent-amber: #a8752d;
 
   /* semantic */
-  --success: #5db872;
-  --success-ink: #2f6b41;
-  --warning: #d4a017;
-  --warning-ink: #8a6410;
-  --error: #c64545;
+  --success: #4f7f5f;
+  --success-ink: #285f49;
+  --warning: #b18439;
+  --warning-ink: #79581f;
+  --error: #b54339;
 
   /* lines */
-  --hairline: #e6dfd8;
-  --hairline-soft: #ebe6df;
-  --field-line: #ddd2c0;
+  --hairline: #e2dfd7;
+  --hairline-soft: #eae7e0;
+  --field-line: #d8d5cc;
 
   /* text on dark surfaces */
-  --on-dark: #faf9f5;
-  --on-dark-soft: #a09d96;
+  --on-dark: #f7f6f1;
+  --on-dark-soft: #aab3ac;
 
   /* alias layer: the vocabulary the components already speak */
   --background: var(--canvas);
@@ -141,8 +134,8 @@
   --font-sans: var(--stack-ui);
   --font-display: var(--stack-display);
   --font-mono: var(--stack-code);
-  --shadow-soft: 0 24px 60px rgba(20, 20, 19, 0.12);
-  --shadow-pop: 0 12px 32px rgba(20, 20, 19, 0.12);
+  --shadow-soft: 0 20px 48px rgba(28, 32, 30, 0.10);
+  --shadow-pop: 0 8px 24px rgba(28, 32, 30, 0.10);
 }
 
 @layer base {
@@ -215,27 +208,35 @@
     border-collapse: collapse;
   }
   ::selection {
-    background: rgba(204, 120, 92, 0.25);
+    background: rgba(40, 95, 73, 0.20);
+  }
+  button,
+  summary,
+  [role="button"] {
+    -webkit-tap-highlight-color: transparent;
+  }
+  button:active:not(:disabled),
+  [role="button"]:active:not([aria-disabled="true"]) {
+    transform: scale(0.98);
   }
 }
 
 @layer components {
-  /* A cream content card: one step darker than canvas, hairline, 12px radius. */
+  /* Records are separated by rules and surface steps, not nested card stacks. */
   .surface {
-    @apply rounded-lg border bg-card;
+    @apply rounded-xl border bg-canvas;
   }
   .surface-pad {
-    @apply rounded-lg border bg-card p-6;
+    @apply rounded-xl border bg-canvas p-6;
   }
   .meta {
     @apply text-[13px] leading-5 text-muted-foreground;
   }
-  /* A field label or section kicker: small caps voice, 1.5px tracking. */
   .label-line {
-    @apply text-[12px] font-medium uppercase leading-4 tracking-[0.12em] text-muted-foreground;
+    @apply text-[12px] font-medium leading-4 text-muted-foreground;
   }
   .eyebrow {
-    @apply text-[12px] font-medium uppercase leading-4 tracking-[0.12em] text-muted-foreground;
+    @apply text-[12px] font-medium leading-4 text-muted-foreground;
   }
   /* Figures, timestamps, selectors and specs: one mono voice. */
   .num {

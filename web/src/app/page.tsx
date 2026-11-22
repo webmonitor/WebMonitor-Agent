@@ -29,7 +29,7 @@ function ChangeRecord() {
   return (
     <figure className="w-full overflow-hidden rounded-xl bg-surface-dark p-6 text-on-dark sm:p-8">
       <div className="flex items-baseline justify-between gap-3">
-        <span className="text-[12px] font-medium uppercase tracking-[0.12em] text-on-dark-soft">
+        <span className="text-[12px] font-medium text-on-dark-soft">
           {t("public.sample.title")}
         </span>
         <span className="text-[12px] text-on-dark-soft">{t("public.sample.badge")}</span>
@@ -49,7 +49,7 @@ function ChangeRecord() {
       </div>
 
       <div className="mt-4 rounded-lg bg-surface-dark-elevated px-4 py-3">
-        <p className="flex items-center gap-1.5 text-[12px] font-medium uppercase tracking-[0.12em] text-on-dark-soft">
+        <p className="flex items-center gap-1.5 text-[12px] font-medium text-on-dark-soft">
           <span aria-hidden className="text-accent-teal">+</span>
           {t("public.sample.added")}
         </p>
@@ -134,10 +134,10 @@ export default function LandingPage() {
 
         <section className="border-t border-hairline py-24 sm:py-28">
           <h2 className="display-md">{t("public.features.title")}</h2>
-          <div className="mt-10 grid gap-6 sm:grid-cols-2">
-            {featureItems.map(({ id, icon: Icon, title, body }) => (
-              <div key={id} className="rounded-lg bg-card p-8">
-                <Icon className="size-5 text-ink" strokeWidth={1.5} />
+          <div className="mt-10 grid border-y border-hairline sm:grid-cols-2">
+            {featureItems.map(({ id, icon: Icon, title, body }, index) => (
+              <div key={id} className={`py-6 sm:px-8 ${index % 2 === 0 ? "sm:border-r sm:pl-0" : "sm:pr-0"} ${index < 2 ? "border-b" : index === 2 ? "border-b sm:border-b-0" : ""}`}>
+                <Icon className="size-5 text-muted-foreground" strokeWidth={1.5} />
                 <h3 className="t-title mt-4">{t(title)}</h3>
                 <p className="t-body-sm mt-2 text-muted-foreground">{t(body)}</p>
               </div>

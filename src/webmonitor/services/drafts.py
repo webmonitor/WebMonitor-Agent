@@ -38,7 +38,7 @@ EXTRACTION_KEYS = ("preview_id", "spec_revision", "spec_hash", "extracted_data",
 DELIVERY_KEYS = ("preview_id", "settings_revision", "settings_hash", "channel",
                  "webhook_url", "webhook_body", "template_id",
                  "template_name", "template_hash", "rendered_emails", "recipients",
-                 "recipient_sources", "warnings")
+                 "recipient_count", "recipient_sources", "warnings")
 # A delivery preview that cannot be rendered never invalidates a real collection.
 DELIVERY_WARNINGS = frozenset({"notification_routes_invalid", "notification_recipients_empty",
                                "template_unavailable", "template_incompatible",
@@ -385,6 +385,7 @@ async def build_delivery_preview(session: AsyncSession, draft: Draft) -> dict | 
             "template_hash": content_hash(None),
             "rendered_emails": [],
             "recipients": [],
+            "recipient_count": 0,
             "recipient_sources": [],
             "warnings": [],
             "created_at": now.isoformat(),
@@ -428,6 +429,7 @@ async def build_delivery_preview(session: AsyncSession, draft: Draft) -> dict | 
         "template_hash": template_hash,
         "rendered_emails": rendered,
         "recipients": notifications.recipients_emails(recipients),
+        "recipient_count": len(recipients),
         "recipient_sources": recipients,
         "warnings": warnings,
         "created_at": now.isoformat(),

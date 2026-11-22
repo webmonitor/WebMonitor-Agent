@@ -1011,7 +1011,7 @@ export interface components {
             /** Channel */
             channel: string;
             /** Recipient */
-            recipient: string;
+            recipient: string | null;
             /** Subject */
             subject: string;
             /** Body Text */
@@ -1542,6 +1542,10 @@ export interface components {
                 [key: string]: unknown;
             } | null;
             snapshot: components["schemas"]["SnapshotRecord"] | null;
+            /** Spec */
+            spec: {
+                [key: string]: unknown;
+            };
         };
         /** JobStep */
         JobStep: {
@@ -1826,6 +1830,8 @@ export interface components {
             baseline: components["schemas"]["SnapshotRecord"] | null;
             /** Approved Recipients */
             approved_recipients?: string[];
+            /** Approved Recipient Count */
+            approved_recipient_count: number;
             /** Email Template */
             email_template?: {
                 [key: string]: unknown;
@@ -2192,6 +2198,10 @@ export interface components {
             monitor_id: string;
             /** Monitor Name */
             monitor_name: string;
+            /** Spec */
+            spec: {
+                [key: string]: unknown;
+            };
         };
         /** SnapshotRecord */
         SnapshotRecord: {

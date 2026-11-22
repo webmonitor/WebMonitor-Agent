@@ -1,7 +1,7 @@
 "use client";
 import Link from "next/link";
 import { usePathname, useRouter, useSearchParams } from "next/navigation";
-import { Suspense, useEffect, useState, type ReactNode } from "react";
+import { Suspense, useEffect, useRef, useState, type ReactNode } from "react";
 import {
   Activity,
   Archive,
@@ -25,7 +25,7 @@ import { ListPagination } from "@/components/list-pagination";
 const CONVERSATION_PREVIEW = 8;
 
 /* One row height for every navigation item, so the sidebar reads as a column. */
-const ROW = "flex h-9 items-center gap-2.5 rounded-md px-2.5 text-[14px] transition-colors duration-150";
+const ROW = "flex h-9 items-center gap-2.5 rounded-lg border border-transparent px-3 text-[14px] transition-colors duration-150";
 
 function ConversationList({ onNavigate }: { onNavigate: () => void }) {
   const { t } = useI18n();
@@ -82,7 +82,7 @@ function ConversationList({ onNavigate }: { onNavigate: () => void }) {
                     aria-current={isCurrent ? "page" : undefined}
                     className={`${ROW} pr-8 ${
                       isCurrent
-                        ? "bg-canvas font-medium text-ink"
+                        ? "border-hairline bg-canvas font-medium text-ink"
                         : "text-body hover:bg-surface-strong/60 hover:text-ink"
                     }`}
                   >
@@ -157,7 +157,7 @@ function MonitorList({ onNavigate }: { onNavigate: () => void }) {
                 aria-current={active ? "page" : undefined}
                 className={`${ROW} pr-2 ${
                   active
-                    ? "bg-canvas font-medium text-ink"
+                    ? "border-hairline bg-canvas font-medium text-ink"
                     : "text-body hover:bg-surface-strong/60 hover:text-ink"
                 }`}
               >
@@ -201,7 +201,9 @@ export function WorkspaceShell({ children }: { children: ReactNode }) {
   const pathname = usePathname();
   const router = useRouter();
   const [open, setOpen] = useState(false);
+  const [compact, setCompact] = useState(false);
   const [logoutError, setLogoutError] = useState<Error | null>(null);
+  const navigation = useRef<HTMLElement>(null);
   const { errorText } = useFormat();
 
   const links = [
@@ -215,13 +217,56 @@ export function WorkspaceShell({ children }: { children: ReactNode }) {
 
   useEffect(() => {
     if (!isPending && !user && !error) {
-      router.replace(`/login?returnTo=${encodeURIComponent(pathname)}`);
+      const returnTo = window.location.pathname + window.location.search + window.location.hash;
+      router.replace(`/login?returnTo=${encodeURIComponent(returnTo)}`);
     }
-  }, [isPending, user, error, router, pathname]);
+  }, [isPending, user, error, router]);
 
   useEffect(() => {
     setOpen(false);
   }, [pathname]);
+
+  useEffect(() => {
+    const media = window.matchMedia("(max-width: 767px)");
+    const update = () => setCompact(media.matches);
+    update();
+    media.addEventListener("change", update);
+    return () => media.removeEventListener("change", update);
+  }, []);
+
+  useEffect(() => {
+    if (!compact || !open || !navigation.current) return;
+    const previous = document.activeElement instanceof HTMLElement ? document.activeElement : null;
+    const panel = navigation.current;
+    const focusable = () => Array.from(
+      panel.querySelectorAll<HTMLElement>("a[href], button:not(:disabled)"),
+    ).filter((element) => element.getClientRects().length > 0);
+    focusable()[0]?.focus();
+    const onKeyDown = (event: KeyboardEvent) => {
+      if (event.key === "Escape") {
+        event.preventDefault();
+        setOpen(false);
+        return;
+      }
+      if (event.key !== "Tab") return;
+      const items = focusable();
+      const first = items[0];
+      const last = items.at(-1);
+      if (!first || !last) return;
+      if (event.shiftKey && document.activeElement === first) {
+        event.preventDefault();
+        last.focus();
+      } else if (!event.shiftKey && document.activeElement === last) {
+        event.preventDefault();
+        first.focus();
+      }
+    };
+    document.addEventListener("keydown", onKeyDown);
+    return () => {
+      document.removeEventListener("keydown", onKeyDown);
+      previous?.focus();
+    };
+  }, [compact, open]);
 
   async function startConversation() {
     setOpen(false);
@@ -283,7 +328,13 @@ export function WorkspaceShell({ children }: { children: ReactNode }) {
         />
       )}
       <aside
-        className={`fixed inset-y-0 left-0 z-40 flex w-[17.5rem] shrink-0 flex-col border-r bg-card transition-transform duration-200 md:static md:translate-x-0 ${
+        ref={navigation}
+        id="workspace-navigation"
+        aria-label={t("public.nav.aria")}
+        role={compact ? "dialog" : undefined}
+        aria-modal={compact && open ? true : undefined}
+        inert={compact && !open}
+        className={`fixed inset-y-0 left-0 z-40 flex w-[17.5rem] shrink-0 flex-col border-r border-hairline bg-surface-soft transition-transform duration-200 ease-[var(--ease)] md:static md:translate-x-0 ${
           open ? "translate-x-0" : "-translate-x-full"
         }`}
       >
@@ -307,13 +358,13 @@ export function WorkspaceShell({ children }: { children: ReactNode }) {
         </div>
 
         <nav className="space-y-0.5 px-2 pb-2">
-          <button
+          <Button
             onClick={() => void startConversation()}
-            className={`${ROW} w-full text-left text-body hover:bg-surface-strong/60 hover:text-ink`}
+            className="mb-2 h-9 w-full justify-start px-3"
           >
             <Plus className="size-4" strokeWidth={1.5} />
             {t("common.newConversation")}
-          </button>
+          </Button>
           {links.map(({ href, label, icon: Icon }) => {
             const current = pathname.startsWith(href);
             return (
@@ -323,7 +374,7 @@ export function WorkspaceShell({ children }: { children: ReactNode }) {
                 aria-current={current ? "page" : undefined}
                 className={`${ROW} ${
                   current
-                    ? "bg-canvas font-medium text-ink"
+                    ? "border-hairline bg-canvas font-medium text-ink"
                     : "text-body hover:bg-surface-strong/60 hover:text-ink"
                 }`}
               >
@@ -393,7 +444,15 @@ export function WorkspaceShell({ children }: { children: ReactNode }) {
 
       <div className="flex min-w-0 flex-1 flex-col">
         <header className="flex h-16 items-center gap-3 border-b border-hairline bg-canvas px-4 md:hidden">
-          <Button variant="ghost" size="icon" className="size-8" aria-label={t("common.openNavigation")} onClick={() => setOpen(true)}>
+          <Button
+            variant="ghost"
+            size="icon"
+            className="size-8"
+            aria-label={t("common.openNavigation")}
+            aria-expanded={open}
+            aria-controls="workspace-navigation"
+            onClick={() => setOpen(true)}
+          >
             <Menu className="size-4" strokeWidth={1.5} />
           </Button>
           <span className="flex items-center gap-2.5 font-display text-[20px] leading-none tracking-[-0.02em] text-ink">

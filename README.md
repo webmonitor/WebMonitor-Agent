@@ -132,6 +132,9 @@ ADMIN_PASSWORD=replace-with-a-12-to-128-character-password
 OPENAI_API_KEY=replace-with-your-model-api-key
 OPENAI_BASE_URL=https://api.openai.com/v1
 OPENAI_MODEL=replace-with-your-model-name
+# Public model calls use EGRESS_PROXY_URL. For an explicit in-stack model
+# service, set its internal URL instead; only that endpoint bypasses the proxy.
+# OPENAI_CONTAINER_BASE_URL=http://model:8000/v1
 
 # What a monitor created in the chat starts with (optional). Recipients, cadence,
 # channel and the mail template are edited on the monitor itself, under
@@ -179,7 +182,7 @@ Sign in with the `ADMIN_EMAIL` and `ADMIN_PASSWORD` from `.env`. The first start
 
 **Notifications** → **Notification groups** → **New**. Give it a name, add recipients one per line (commas or spaces also work), then **Save**.
 
-Only an administrator can create groups; members ask an administrator. Every monitor sends through a group, and a group can hold several addresses; members see a group's name, enabled state and how many recipients are active, never the addresses themselves. Adding recipients requires a new preview and confirmation for each monitor. Removing or deactivating a member, or disabling its approved group, revokes that source for pending and future mail. An unrelated group never restores authorization; another group approved for the same monitor may still authorize the address.
+Only an administrator can create groups; members ask an administrator. Every monitor sends through a group, and a group can hold several addresses; members see a group's name, enabled state and how many recipients are active, never the addresses themselves. Delivery previews and monitor details therefore show members the protected recipient count with an empty address list, and email delivery records hide the destination; administrators still see the approved snapshot. Adding recipients requires a new preview and confirmation for each monitor. Removing or deactivating a member, or disabling its approved group, revokes that source for pending and future mail. An unrelated group never restores authorization; another group approved for the same monitor may still authorize the address.
 
 **Delete** asks for confirmation first, and a group still used by a non-archived monitor is refused with the reason: point those monitors at another group, or archive them, then delete. Editing a group keeps each existing recipient's enabled state, and newly added addresses start enabled.
 
@@ -216,12 +219,12 @@ The card shows a preview's queued, running or failed status. Failed previews ret
 - The monitor appears under **Monitors** in the left sidebar with its name and interval. Its page shows **Last check**, **Next check**, **Check frequency**, **Collection method**, and **Monitor definition**: the selectors, fields, normalization, change rules and coverage actually in use. Notification channel, destination, check frequency, timezone and the email template are separate delivery settings, edited from **Delivery settings** on the monitor; the monitor shows the channel, template name and approved recipients or webhook URL. **Raw definition (JSON)** shows the collection definition exactly as the worker executes it, and **Definition versions** lists every published version that changed it.
 - **Edit definition** edits that collection JSON directly. Saving writes a draft, starts a real preview and opens the conversation where you confirm it; only a confirmed preview updates the monitor, and editing from an older version starts a new draft from it. **Delivery settings** opens the recipients, cadence and template for this monitor; changing them keeps the collected baseline.
 - **Rename** changes the name. **Archive** stops checks and moves the monitor to **Archived**, keeping its definition and history; **Restore** brings it back, paused.
-- **Check history** stores every successful collection. Open one to see the stored values, coverage, screenshot and page archive. Events link to their check record and check details.
+- **Check history** stores every successful collection. Open one to see the stored values, coverage, screenshot and page archive. Snapshot and job details also include the published collection spec from that run's `spec_version` / `revision`, rather than a newer monitor definition. Events link to their check record and check details.
 - **Pause** / **Resume** stops and restarts the schedule. Pausing cancels queued or running collection; **Check now** is available while the monitor is active. An active check can be cancelled from its details, and a failed check can be retried there.
 - **Email templates** in the left sidebar stores reusable mail designs. You describe the email in one sentence — colours, type, density, what to show, where the record link goes — and the model writes both the look and the layout: a subject with `{monitor_name}`, `{event_label}` and `{event_date}` tokens, a style (five colours, font family, heading scale, density, corner radius, border, label case), an optional intro per event type, and ordered blocks (summary, all collected fields, detection time, links, dividers). The style is a set of validated tokens the server turns into CSS, so a design never carries markup of its own. The result is rendered as a real mail before you save it, and a design never names a specific field, so it fits any monitor. Editing an existing template is the same one-sentence prompt. Any member can create one; only its creator or an administrator can change or disable it. A monitor keeps the design it was approved with, so editing or disabling a template never rewrites an existing monitor.
 - **Events** lists everything detected, with **All** / **Unread** filters, monitor and event-type filters, and **Mark as read**. The filters live in the address, so a reload or a shared link opens the same list; an event that produced no email says why.
 - **Notifications** → **Delivery log** lists each notification with its channel, monitor, recipient or endpoint, status, attempts, body, and the error if it failed. Filter by status, and a failed or cancelled delivery can be **retried**, which queues it again with a fresh attempt count.
-- **Members** (administrators) enables or disables accounts and creates single-use invitation links to copy.
+- **Members** (administrators) enables or disables accounts and creates single-use invitation links to copy. Disabling an account revokes its sessions, pauses its monitors, and cancels its queued/running jobs and unsent deliveries in one transaction. Re-enabling it does not resume monitors or replay cancelled work.
 - Use **Load more** to reach older conversations, monitors, checks, events, groups and deliveries. Monitor detail pages show events filtered for that monitor.
 
 The first successful check only records the starting content and sends no notification; comparisons begin with the second check. Previews never send a notification. A failed check keeps the last successful content as the comparison baseline.
@@ -317,6 +320,10 @@ Between 1 minute and 24 hours. Short intervals mean more requests to the target 
 
 **Can it watch a page I have to log in to?**
 Currently supported targets are public pages accessible without signing in.
+
+## Kubernetes (local development)
+
+See [the Kubernetes guide](docs/kubernetes.md) for the single-node topology, one API replica, separate worker, required CNI and seccomp setup, Secret creation, public model/SMTP boundaries, and real-cluster acceptance. Compose remains the standard single-host deployment.
 
 ## Update, roll back, and your data
 

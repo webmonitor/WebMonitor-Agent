@@ -4,12 +4,11 @@ import { cva, type VariantProps } from "class-variance-authority";
 import { cn } from "@/lib/utils";
 
 /*
- * Buttons carry the accent only when they are the one action on the screen;
- * selection is a cream fill, never coral. Nothing changes size or lift on
- * hover, only color.
+ * Buttons carry the accent only for primary actions. Hover changes color;
+ * a restrained press transform confirms input without adding ambient motion.
  */
 const buttonVariants = cva(
-  "inline-flex items-center justify-center gap-2 rounded-md text-[14px] font-medium transition-colors duration-150 focus-visible:outline-none focus-visible:ring-[3px] focus-visible:ring-primary/15 disabled:pointer-events-none disabled:opacity-45 [&_svg]:size-4",
+  "inline-flex items-center justify-center gap-2 rounded-lg text-[14px] font-medium transition-[color,background-color,border-color,transform] duration-150 ease-[var(--ease)] focus-visible:outline-none focus-visible:ring-[3px] focus-visible:ring-primary/20 active:scale-[0.98] disabled:pointer-events-none disabled:opacity-45 [&_svg]:size-4",
   {
     variants: {
       variant: {
@@ -17,7 +16,7 @@ const buttonVariants = cva(
         outline: "border border-input bg-canvas text-ink hover:bg-surface-card",
         ghost: "text-body hover:bg-surface-soft hover:text-ink",
         destructive: "bg-error text-white hover:bg-[#a83a3a]",
-        secondary: "bg-secondary text-secondary-foreground hover:bg-[#ded4c0]",
+        secondary: "bg-secondary text-secondary-foreground hover:bg-surface-card",
         link: "text-primary-active underline-offset-4 hover:underline",
       },
       size: {

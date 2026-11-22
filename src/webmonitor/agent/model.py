@@ -1,8 +1,28 @@
-"""SDK-compatible transport gate: truncated responses never release tool arguments."""
+"""SDK model transport, client networking and truncated-stream protection."""
 import json
 
+import httpx
 from agents.exceptions import ModelBehaviorError
 from agents.models.openai_chatcompletions import OpenAIChatCompletionsModel
+from openai import AsyncOpenAI
+
+from webmonitor.config import get_settings
+
+
+async def create_model_client(*, max_retries: int) -> AsyncOpenAI:
+    """Build the sole model client; only the explicit internal endpoint is direct."""
+    settings = get_settings()
+    internal = settings.container_runtime and bool(settings.openai_container_base_url)
+    http_client = httpx.AsyncClient(
+        proxy=None if internal else settings.egress_proxy_url,
+        trust_env=False, timeout=settings.agent_model_timeout_seconds)
+    try:
+        return AsyncOpenAI(api_key=settings.openai_api_key.get_secret_value(),
+            base_url=settings.model_base_url, timeout=settings.agent_model_timeout_seconds,
+            max_retries=max_retries, http_client=http_client)
+    except BaseException:
+        await http_client.aclose()
+        raise
 
 
 class CompleteToolStream:

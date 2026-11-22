@@ -17,9 +17,9 @@
 # Stage 1: Python wheel
 # ---------------------------------------------------------------------------
 FROM python:3.12-slim-bookworm AS py
+ENV PIP_DEFAULT_TIMEOUT=120
 WORKDIR /build
-COPY requirements.txt pyproject.toml LICENSE ./
-RUN pip install --no-cache-dir --require-hashes -r requirements.txt
+COPY pyproject.toml LICENSE ./
 COPY src ./src
 RUN pip wheel --no-deps --wheel-dir /wheel .
 
@@ -38,11 +38,13 @@ RUN pnpm run build
 # ---------------------------------------------------------------------------
 # Stage 3: runtime
 # ---------------------------------------------------------------------------
-FROM python:3.12-slim-bookworm
+FROM python:3.12-slim-bookworm AS runtime
 LABEL org.opencontainers.image.licenses="CC-BY-NC-4.0"
 ARG INSTALL_BROWSER=1
 ENV PYTHONUNBUFFERED=1 \
     PYTHONDONTWRITEBYTECODE=1 \
+    PIP_DEFAULT_TIMEOUT=120 \
+    PLAYWRIGHT_DOWNLOAD_CONNECTION_TIMEOUT=120000 \
     CONTAINER_RUNTIME=true \
     PLAYWRIGHT_BROWSERS_PATH=/opt/playwright \
     NODE_ENV=production \
@@ -50,15 +52,21 @@ ENV PYTHONUNBUFFERED=1 \
     HOSTNAME=0.0.0.0 \
     PORT=3000
 COPY requirements.txt /tmp/requirements.txt
-RUN set -eux; \
-    pip install --no-cache-dir --require-hashes -r /tmp/requirements.txt; \
+RUN --mount=type=cache,target=/root/.cache/pip \
+    --mount=type=cache,target=/opt/playwright \
+    set -eux; \
+    sed -i 's|http://deb.debian.org|https://deb.debian.org|g' /etc/apt/sources.list.d/debian.sources; \
+    apt-get update; \
+    pip install --require-hashes -r /tmp/requirements.txt; \
+    mkdir -p /opt/browser-export; \
     if [ "$INSTALL_BROWSER" = "1" ]; then \
         python -m playwright install --with-deps chromium; \
+        cp -a /opt/playwright/. /opt/browser-export/; \
         rm -rf /var/lib/apt/lists/*; \
     fi; \
     groupadd --gid 10001 webmonitor; \
     useradd --uid 10001 --gid 10001 --create-home webmonitor; \
-    if [ -d /opt/playwright ]; then chmod -R a+rX /opt/playwright; fi
+    if [ -d /opt/browser-export ]; then chmod -R a+rX /opt/browser-export; fi
 # Node runtime for the frontend service. Only the binary is needed; its shared
 # libraries are already present in this base image.
 COPY --from=node:22-bookworm-slim /usr/local/bin/node /usr/local/bin/node
@@ -75,3 +83,9 @@ USER 10001:10001
 WORKDIR /app
 ENTRYPOINT ["webmonitor"]
 CMD ["serve"]
+
+# The download cache is not part of the runtime stage. Export a normal image
+# layer so retries resume missing downloads without losing the browser in the
+# final artifact. INSTALL_BROWSER=0 deliberately produces an empty directory.
+FROM runtime AS final
+COPY --from=runtime /opt/browser-export /opt/playwright

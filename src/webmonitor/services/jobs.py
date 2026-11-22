@@ -4,12 +4,13 @@ Nothing outside this module constructs a `Job`: scheduling, analysis, preview, a
 turns and production collection all enqueue and claim through these helpers.
 """
 import asyncio
+import hashlib
 import logging
 from datetime import timedelta
 from typing import Any
 from uuid import UUID
 
-from sqlalchemy import and_, func, or_, select
+from sqlalchemy import and_, func, or_, select, text
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -54,7 +55,11 @@ async def enqueue(session: AsyncSession, *, user_id: UUID, kind: str, url: str |
 
 async def enforce_hourly_quota(session: AsyncSession, *, user_id: UUID, kind: str,
                                limit: int) -> None:
-    """Refuse new work once the user's rolling hour is full; the caller commits."""
+    """Serialize each user/kind count with its enqueue until the caller commits."""
+    digest = hashlib.sha256(f"{user_id}:{kind}".encode()).digest()
+    lock_key = int.from_bytes(digest[:8], byteorder="big", signed=True)
+    await session.execute(text("SELECT pg_advisory_xact_lock(:lock_key)"),
+                          {"lock_key": lock_key})
     count, oldest = (await session.execute(select(func.count(), func.min(Job.created_at)).where(
         Job.user_id == user_id, Job.kind == kind,
         Job.created_at >= utc_now() - timedelta(hours=1)))).one()
@@ -248,7 +253,7 @@ async def cancel(session: AsyncSession, job: Job) -> None:
 
 
 async def cancel_pending(session: AsyncSession, *, draft_id: UUID | None = None,
-                         monitor_id: UUID | None = None) -> None:
+                         monitor_id: UUID | None = None, user_id: UUID | None = None) -> None:
     rows = []
     if draft_id is not None:
         rows += list((await session.scalars(select(Job).where(Job.draft_id == draft_id,
@@ -257,5 +262,8 @@ async def cancel_pending(session: AsyncSession, *, draft_id: UUID | None = None,
         rows += list((await session.scalars(select(Job).where(Job.monitor_id == monitor_id,
             Job.kind == "production", Job.status.in_(("queued", "running")))
             .with_for_update())).all())
+    if user_id is not None:
+        rows += list((await session.scalars(select(Job).where(Job.user_id == user_id,
+            Job.status.in_(("queued", "running"))).with_for_update())).all())
     for job in rows:
         await cancel(session, job)

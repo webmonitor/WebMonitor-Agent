@@ -1,10 +1,9 @@
 "use client";
 
 import Link from "next/link";
-import { useRouter } from "next/navigation";
 import { useEffect, useRef, useState, type FormEvent } from "react";
-import { ArrowRight, Radar } from "lucide-react";
-import { api, ApiError, safeReturnTo } from "@/lib/api/client";
+import { ArrowRight, Check, Radar } from "lucide-react";
+import { api, ApiError, clearCsrfToken, safeReturnTo } from "@/lib/api/client";
 import { useAuth } from "@/lib/providers";
 import { useI18n } from "@/lib/i18n";
 import { useFormat } from "@/lib/format";
@@ -29,8 +28,7 @@ function errorKeyFor(code: string | undefined) {
 }
 
 export function AuthForm({ register = false }: { register?: boolean }) {
-  const router = useRouter();
-  const { refresh } = useAuth();
+  const { refresh, prepareAuthentication } = useAuth();
   const { t } = useI18n();
   const { errorText: describeError } = useFormat();
   const [invitation, setInvitation] = useState("");
@@ -61,6 +59,7 @@ export function AuthForm({ register = false }: { register?: boolean }) {
     setPending(true);
     const form = new FormData(event.currentTarget);
     try {
+      await prepareAuthentication();
       await api(register ? "/auth/register" : "/auth/login", {
         method: "POST",
         body: JSON.stringify({
@@ -71,8 +70,9 @@ export function AuthForm({ register = false }: { register?: boolean }) {
             : {}),
         }),
       });
+      clearCsrfToken();
       await refresh();
-      router.replace(returnTo);
+      window.location.assign(returnTo);
     } catch (failure) {
       setError(
         failure instanceof ApiError
@@ -95,7 +95,7 @@ export function AuthForm({ register = false }: { register?: boolean }) {
 
   return (
     <div className="flex min-h-dvh flex-col bg-background">
-      <header className="mx-auto flex h-16 w-full max-w-[76rem] items-center gap-4 px-6 sm:px-10">
+      <header className="flex h-16 shrink-0 items-center gap-4 border-b border-hairline px-6 sm:px-8">
         <Link className="flex items-center gap-2.5 font-display text-[20px] leading-none tracking-[-0.02em] text-ink" href="/">
           <Radar className="size-[18px] text-primary" strokeWidth={1.5} />
           WebMonitor
@@ -103,67 +103,113 @@ export function AuthForm({ register = false }: { register?: boolean }) {
         <LanguageSwitcher className="ml-auto" />
       </header>
 
-      <main className="flex flex-1 items-center justify-center px-6 py-12">
-        <div className="w-full max-w-[24rem]">
-          <h1 className="display-md">
-            {t(register ? "public.auth.register.title" : "public.auth.login.title")}
-          </h1>
-          <p className="t-body-sm mt-2 text-muted-foreground">
-            {t(register ? "public.auth.register.description" : "public.auth.login.description")}
-          </p>
+      <main className="grid flex-1 lg:grid-cols-[minmax(0,1fr)_minmax(28rem,0.9fr)]">
+        <section className="flex items-center px-6 py-12 sm:px-12 lg:px-[max(3rem,8vw)]">
+          <div className="w-full max-w-[22rem]">
+            <p className="label-line mb-3">{t("public.hero.eyebrow")}</p>
+            <h1 className="display-md">
+              {t(register ? "public.auth.register.title" : "public.auth.login.title")}
+            </h1>
+            <p className="t-body-sm mt-3 text-muted-foreground">
+              {t(register ? "public.auth.register.description" : "public.auth.login.description")}
+            </p>
 
-          <form onSubmit={submit} className="mt-8 flex flex-col gap-4">
-            {register && (
+            <form onSubmit={submit} className="mt-8 flex flex-col gap-4">
+              {register && (
+                <div>
+                  <Label htmlFor="display_name">{t("public.auth.field.displayName")}</Label>
+                  <Input id="display_name" name="display_name" autoComplete="name" required maxLength={100} />
+                </div>
+              )}
               <div>
-                <Label htmlFor="display_name">{t("public.auth.field.displayName")}</Label>
-                <Input id="display_name" name="display_name" autoComplete="name" required maxLength={100} />
+                <Label htmlFor="email">{t("public.auth.field.email")}</Label>
+                <Input id="email" name="email" type="email" autoComplete="email" required />
               </div>
-            )}
-            <div>
-              <Label htmlFor="email">{t("public.auth.field.email")}</Label>
-              <Input id="email" name="email" type="email" autoComplete="email" required />
-            </div>
-            <div>
-              <Label htmlFor="password">{t("public.auth.field.password")}</Label>
-              <Input
-                id="password"
-                name="password"
-                type="password"
-                autoComplete={register ? "new-password" : "current-password"}
-                minLength={register ? 12 : undefined}
-                maxLength={128}
-                required
-              />
-              {register && <p className="meta mt-1.5">{t("public.auth.passwordHint")}</p>}
-            </div>
-            {register && !invitation && (
-              <p className="rounded-md border border-warning/30 bg-warning/[0.06] px-3 py-2 text-[13px] leading-5 text-warning-ink">
-                {t("public.auth.missingInvitation")}
-              </p>
-            )}
-            {errorText && (
-              <p className="text-[14px] text-error" role="alert">
-                {errorText}
-              </p>
-            )}
-            <Button type="submit" size="lg" className="mt-2 w-full" disabled={pending || (register && !invitation)}>
-              {pending
-                ? t("public.auth.submitting")
-                : t(register ? "public.auth.submitRegister" : "public.auth.submit")}
-              <ArrowRight strokeWidth={1.5} />
-            </Button>
-          </form>
+              <div>
+                <Label htmlFor="password">{t("public.auth.field.password")}</Label>
+                <Input
+                  id="password"
+                  name="password"
+                  type="password"
+                  autoComplete={register ? "new-password" : "current-password"}
+                  minLength={register ? 12 : undefined}
+                  maxLength={128}
+                  required
+                />
+                {register && <p className="meta mt-1.5">{t("public.auth.passwordHint")}</p>}
+              </div>
+              {register && !invitation && (
+                <p className="rounded-md border border-warning/30 bg-warning/[0.06] px-3 py-2 text-[13px] leading-5 text-warning-ink">
+                  {t("public.auth.missingInvitation")}
+                </p>
+              )}
+              {errorText && (
+                <p className="border-l-2 border-error pl-3 text-[14px] leading-6 text-error" role="alert">
+                  {errorText}
+                </p>
+              )}
+              <Button type="submit" size="lg" className="mt-2 w-full" disabled={pending || (register && !invitation)}>
+                {pending
+                  ? t("public.auth.submitting")
+                  : t(register ? "public.auth.submitRegister" : "public.auth.submit")}
+                <ArrowRight strokeWidth={1.5} />
+              </Button>
+            </form>
 
-          <p className="t-caption mt-8 border-t border-hairline pt-5">
-            {register ? (
-              <Link className="text-primary-active underline-offset-4 hover:underline" href="/login">
-                {t("public.auth.hasAccount")}
-              </Link>
-            ) : (
-              t("public.auth.noAccount")
-            )}
-          </p>
-        </div>
+            <p className="t-caption mt-8 border-t border-hairline pt-5 text-muted-foreground">
+              {register ? (
+                <Link
+                  className="text-primary-active underline-offset-4 hover:underline"
+                  href={returnTo === "/app" ? "/login" : `/login?returnTo=${encodeURIComponent(returnTo)}`}
+                >
+                  {t("public.auth.hasAccount")}
+                </Link>
+              ) : (
+                t("public.auth.noAccount")
+              )}
+            </p>
+          </div>
+        </section>
+
+        <aside className="hidden items-center border-l border-hairline bg-surface-soft px-12 py-16 lg:flex xl:px-20">
+          <figure className="w-full max-w-[30rem]">
+            <div className="mb-4 flex items-center justify-between gap-4">
+              <span className="label-line">{t("public.sample.title")}</span>
+              <span className="num text-[12px] text-muted-soft">v2 · 09:41:18</span>
+            </div>
+            <div className="overflow-hidden rounded-xl border border-dark-line bg-surface-dark text-on-dark shadow-soft">
+              <div className="flex items-center justify-between gap-4 border-b border-on-dark/10 px-5 py-4">
+                <div>
+                  <p className="text-[15px] font-medium">{t("public.sample.product")}</p>
+                  <p className="num mt-1 text-[12px] text-on-dark-soft">{t("public.sample.url")}</p>
+                </div>
+                <span className="text-[12px] text-on-dark-soft">{t("public.sample.badge")}</span>
+              </div>
+              <div className="grid grid-cols-[1fr_auto_1fr] items-center gap-3 border-b border-on-dark/10 px-5 py-5">
+                <div>
+                  <p className="text-[12px] text-on-dark-soft">{t("public.sample.previousCount")}</p>
+                  <p className="num mt-1 text-[20px] line-through decoration-on-dark-soft/40">3</p>
+                </div>
+                <ArrowRight aria-hidden className="size-4 text-on-dark-soft" strokeWidth={1.5} />
+                <div className="text-right">
+                  <p className="text-[12px] text-on-dark-soft">{t("public.sample.currentCount")}</p>
+                  <p className="num mt-1 text-[20px]">4</p>
+                </div>
+              </div>
+              <div className="flex gap-3 px-5 py-4">
+                <Check aria-hidden className="mt-0.5 size-4 text-on-dark-soft" strokeWidth={1.5} />
+                <div>
+                  <p className="text-[12px] text-on-dark-soft">{t("public.sample.added")}</p>
+                  <p className="mt-1 text-[15px]">{t("public.sample.addedTitle")}</p>
+                  <p className="meta mt-1 text-on-dark-soft">{t("public.sample.addedMeta")}</p>
+                </div>
+              </div>
+            </div>
+            <figcaption className="mt-4 max-w-md text-[13px] leading-6 text-muted-foreground">
+              {t("public.sample.schedule")}
+            </figcaption>
+          </figure>
+        </aside>
       </main>
     </div>
   );

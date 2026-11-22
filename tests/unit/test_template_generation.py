@@ -1,4 +1,5 @@
 """A one-sentence template request becomes one validated, field-agnostic design."""
+
 import json
 from types import SimpleNamespace
 
@@ -13,8 +14,12 @@ def design(**overrides) -> dict:
         "name": "Plain alert",
         "config": {
             "subject": "{monitor_name} · {event_label}",
-            "style": {"accent": "#8a3123", "font": "serif", "density": "roomy",
-                      "uppercase_labels": True},
+            "style": {
+                "accent": "#8a3123",
+                "font": "serif",
+                "density": "roomy",
+                "uppercase_labels": True,
+            },
             "intros": {"content_changed": "页面有变化。"},
             "blocks": [
                 {"type": "summary"},
@@ -35,8 +40,7 @@ class _Completions:
     async def create(self, **kwargs):
         self.calls.append(kwargs)
         reply = self.replies.pop(0)
-        return SimpleNamespace(choices=[SimpleNamespace(
-            message=SimpleNamespace(content=reply))])
+        return SimpleNamespace(choices=[SimpleNamespace(message=SimpleNamespace(content=reply))])
 
 
 class _Client:
@@ -57,7 +61,10 @@ async def test_a_valid_reply_becomes_a_design():
     assert proposal.config.style.accent == "#8a3123"
     assert proposal.config.style.font == "serif"
     assert [block.type for block in proposal.config.blocks] == [
-        "summary", "all_fields", "evidence_link"]
+        "summary",
+        "all_fields",
+        "evidence_link",
+    ]
     sent = client.chat.completions.calls[0]
     assert sent["model"] == "m"
     assert "语气平实，列出全部内容" in sent["messages"][0]["content"]
@@ -83,13 +90,15 @@ async def test_an_invalid_reply_is_repaired_once_with_the_reason():
 
 @pytest.mark.asyncio
 async def test_a_named_field_block_is_rejected_and_asked_again():
-    named = design(config={
-        "subject": "{monitor_name}",
-        "blocks": [{"type": "field", "field": "page_title"}],
-    })
+    named = design(
+        config={
+            "subject": "{monitor_name}",
+            "blocks": [{"type": "field", "field": "page_title"}],
+        }
+    )
     client = _Client([text(named), text(design())])
     proposal = await draft_template("x", client=client, model="m")
-    assert [block.type for block in proposal.config.blocks][0] == "summary"
+    assert next(block.type for block in proposal.config.blocks) == "summary"
     assert "field" in client.chat.completions.calls[1]["messages"][-1]["content"]
 
 
@@ -107,11 +116,13 @@ async def test_two_invalid_replies_fail_with_the_reasons():
 
 @pytest.mark.asyncio
 async def test_an_unreadable_palette_is_sent_back_once():
-    washed = design(config={
-        "subject": "{monitor_name}",
-        "style": {"text": "#f0f0f0", "surface": "#ffffff"},
-        "blocks": [{"type": "summary"}],
-    })
+    washed = design(
+        config={
+            "subject": "{monitor_name}",
+            "style": {"text": "#f0f0f0", "surface": "#ffffff"},
+            "blocks": [{"type": "summary"}],
+        }
+    )
     client = _Client([text(washed), text(design())])
     proposal = await draft_template("x", client=client, model="m")
     assert proposal.config.style.text != "#f0f0f0"
@@ -133,3 +144,41 @@ async def test_a_blank_request_is_refused_before_the_model():
         await draft_template("   ", client=client, model="m")
     assert raised.value.code == "validation_failed"
     assert client.chat.completions.calls == []
+
+
+@pytest.mark.asyncio
+async def test_generation_service_closes_the_shared_client_after_failure(monkeypatch):
+    from uuid import uuid4
+
+    from openai import APIConnectionError
+    from pydantic import SecretStr
+
+    from webmonitor.config import get_settings
+    from webmonitor.security.auth import CurrentUser
+    from webmonitor.services import templates
+
+    settings = get_settings()
+    monkeypatch.setattr(settings, "openai_api_key", SecretStr("test-key"))
+    monkeypatch.setattr(settings, "openai_model", "test-model")
+
+    class Client:
+        closed = False
+
+        async def close(self):
+            self.closed = True
+
+    client = Client()
+
+    async def factory(*, max_retries):
+        assert max_retries == 0
+        return client
+
+    async def fail(*args, **kwargs):
+        raise APIConnectionError(request=None)
+
+    monkeypatch.setattr(templates, "create_model_client", factory)
+    monkeypatch.setattr(templates, "draft_template", fail)
+    with pytest.raises(DomainError) as raised:
+        await templates.draft("plain", user=CurrentUser(user_id=uuid4(), role="member"))
+    assert raised.value.code == "model_unavailable"
+    assert client.closed

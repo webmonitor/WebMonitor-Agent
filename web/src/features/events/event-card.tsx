@@ -124,8 +124,8 @@ export function ChangeRows({
         ].filter(Boolean);
         return (
           <div key={`${row.field ?? index}-${index}`} className="space-y-1 py-1.5">
-            <div className="flex items-baseline justify-between gap-3">
-              <dt className="shrink-0 text-[13px] text-muted-foreground">
+            <div className="flex flex-wrap items-baseline justify-between gap-x-3 gap-y-1">
+              <dt className="min-w-0 break-words text-[13px] text-muted-foreground">
                 {fieldLabel({ name: row.field ?? "", semantic: labels[row.field ?? ""] })}
               </dt>
               {items.length > 0 ? (
@@ -134,16 +134,16 @@ export function ChangeRows({
                 </dd>
               ) : metrics.length === 0 ? (
                 <dd className="flex min-w-0 flex-wrap items-baseline justify-end gap-x-2 gap-y-0.5 text-right">
-                  <span className="num text-[13px] text-muted-soft line-through decoration-muted-soft/50">
+                  <span className="num break-words text-[13px] text-muted-soft line-through decoration-muted-soft/50">
                     {formatValue(row.before)}
                   </span>
                   <span aria-hidden className="text-[13px] text-muted-foreground/60">→</span>
-                  <span className="num text-[14px] font-medium text-ink">
+                  <span className="num break-words text-[14px] font-medium text-ink">
                     {formatValue(row.after)}
                   </span>
                 </dd>
               ) : (
-                <dd className="num shrink-0 text-[13px] text-muted-foreground">
+                <dd className="num min-w-0 break-words text-[13px] text-muted-foreground">
                   {metrics.join(" · ")}
                 </dd>
               )}

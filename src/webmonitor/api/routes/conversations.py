@@ -104,14 +104,14 @@ async def approve(conversation_id: UUID, payload: ApproveRequest, session: Datab
 
 @router.get("/drafts/{draft_id}", response_model=DraftView)
 async def read_draft(draft_id: UUID, session: DatabaseSession, user: AuthenticatedUser):
-    return conversations.draft_view(await drafts.require_draft(session, user, draft_id))
+    return conversations.draft_view(await drafts.require_draft(session, user, draft_id), user)
 
 
 @router.put("/drafts/{draft_id}", response_model=DraftView)
 async def update_draft(draft_id: UUID, payload: DraftUpdate, session: DatabaseSession,
                        user: AuthenticatedUser):
     draft = await drafts.apply_update(session, user, draft_id, payload)
-    result = conversations.draft_view(draft)
+    result = conversations.draft_view(draft, user)
     await session.commit()
     return result
 
@@ -130,8 +130,17 @@ async def read_job(job_id: UUID, session: DatabaseSession, user: AuthenticatedUs
     if job is None or (job.user_id != user.user_id and user.role != "admin"):
         raise DomainError("not_found", 404)
     snapshot = await session.scalar(select(Snapshot).where(Snapshot.job_id == job.id))
+    if job.kind == "production":
+        if job.monitor_id is None or job.revision is None:
+            raise DomainError("not_found", 404)
+        spec = await monitor_service.published_spec(session, job.monitor_id, job.revision)
+    else:
+        # Preview and analysis jobs carry their own frozen execution input;
+        # conversational jobs have no collection contract.
+        spec = job.spec or {}
     return JobDetail(**conversations.job_view(job).model_dump(), result=job.result,
-        snapshot=monitor_service.snapshot_record(snapshot) if snapshot is not None else None)
+        snapshot=monitor_service.snapshot_record(snapshot) if snapshot is not None else None,
+        spec=spec)
 
 
 @router.post("/jobs/{job_id}/cancel", response_model=JobView)

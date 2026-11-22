@@ -126,13 +126,11 @@ async def test_page_pagination_collects_until_the_api_reports_empty():
                                'size': 2, 'stop': 'empty', 'max_pages': 5, 'max_items': 100})
     result = await collect_api(monitor.url, monitor,
                                transport=httpx.MockTransport(handler))
-    # The first request is the step itself (used for assertions); every stored
-    # page is then requested with the pagination parameters.
-    assert urls[0] == 'https://api.example.com/items'
-    assert urls[1] == 'https://api.example.com/items?page=1&size=2'
-    assert urls[2] == 'https://api.example.com/items?page=2&size=2'
-    assert urls[5].endswith('page=5&size=2')
-    assert len(urls) == 6
+    # Every request is a real paginated response; page one is never repeated.
+    assert urls[0] == 'https://api.example.com/items?page=1&size=2'
+    assert urls[1] == 'https://api.example.com/items?page=2&size=2'
+    assert urls[4].endswith('page=5&size=2')
+    assert len(urls) == 5
     assert [row['id'] for row in result.fields['items']] == [str(n) for n in range(1, 9)]
     assert result.analysis['source']['pages'] == 5
     assert result.analysis['source']['steps'][-1]['pages'] == 5
@@ -154,9 +152,125 @@ async def test_total_reached_stops_without_requesting_another_page():
                                'total_path': 'data.total', 'stop': 'total_reached',
                                'max_pages': 5, 'max_items': 100})
     result = await collect_api(monitor.url, monitor, transport=httpx.MockTransport(handler))
-    assert len(calls) == 5
+    assert len(calls) == 4
     assert len(result.fields['items']) == 8
     assert result.analysis['source']['pages'] == 4
+
+
+@pytest.mark.asyncio
+async def test_first_actual_page_is_asserted_and_supplies_extraction_and_evidence():
+    calls = []
+
+    def handler(request):
+        calls.append(str(request.url))
+        query = dict(httpx.QueryParams(request.url.query.decode()))
+        if 'page' not in query:
+            return json_response({'code': 200, 'data': {
+                'marker': 'preliminary', 'total': 1, 'list': [{'id': 'preliminary'}]}})
+        page = int(query['page'])
+        if page == 2:
+            return json_response({'code': 200, 'data': {'marker': 'actual', 'list': []}})
+        return json_response({'code': 200, 'data': {
+            'marker': 'actual', 'total': 1, 'list': [{'id': 'actual'}]}})
+
+    scalar = {'name': 'marker', 'type': 'text', 'semantic': 'Marker', 'path': 'data.marker'}
+    monitor = spec(steps=[step('https://api.example.com/items')], fields=[scalar, list_field()],
+                   assertions=[{'type': 'json_equals', 'path': 'code', 'equals': 200}],
+                   pagination={'kind': 'page', 'size_param': 'size', 'size': 1,
+                               'stop': 'empty', 'max_pages': 3})
+    result = await collect_api(monitor.url, monitor, transport=httpx.MockTransport(handler))
+
+    assert calls == ['https://api.example.com/items?page=1&size=1',
+                     'https://api.example.com/items?page=2&size=1']
+    assert result.fields == {'marker': 'actual', 'items': [{'id': 'actual'}]}
+    assert json.loads(result.body)['data']['list'] == [{'id': 'actual'}]
+    assert result.analysis['source']['assertions'][0]['passed'] is True
+
+
+@pytest.mark.asyncio
+async def test_business_failure_on_the_first_actual_page_is_not_hidden():
+    calls = []
+
+    def handler(request):
+        calls.append(str(request.url))
+        if 'page=' not in str(request.url):
+            return json_response(page_body(1))
+        return json_response({'code': 500, 'data': {'total': 2,
+                                  'list': [{'id': '1'}, {'id': '2'}]}})
+
+    monitor = spec(steps=[step('https://api.example.com/items')],
+                   assertions=[{'type': 'json_equals', 'path': 'code', 'equals': 200}],
+                   pagination={'kind': 'page', 'total_path': 'data.total',
+                               'stop': 'total_reached', 'max_pages': 3})
+    with pytest.raises(DomainError) as error:
+        await collect_api(monitor.url, monitor, transport=httpx.MockTransport(handler))
+    assert error.value.code == 'api_assertion_failed'
+    assert len(calls) == 1
+
+
+@pytest.mark.asyncio
+async def test_business_failure_on_the_second_page_is_not_hidden():
+    calls = []
+
+    def handler(request):
+        calls.append(str(request.url))
+        page = int(dict(httpx.QueryParams(request.url.query.decode()))['page'])
+        if page == 2:
+            return json_response({'code': 500, 'data': {'list': []}})
+        return json_response({'code': 200, 'data': {'list': [{'id': '1'}, {'id': '2'}]}})
+
+    monitor = spec(steps=[step('https://api.example.com/items')],
+                   assertions=[{'type': 'json_equals', 'path': 'code', 'equals': 200}],
+                   pagination={'kind': 'page', 'size_param': 'size', 'size': 2,
+                               'stop': 'empty', 'max_pages': 3})
+    with pytest.raises(DomainError) as error:
+        await collect_api(monitor.url, monitor, transport=httpx.MockTransport(handler))
+    assert error.value.code == 'api_assertion_failed'
+    assert len(calls) == 2
+
+
+@pytest.mark.asyncio
+async def test_graphql_errors_on_the_second_page_are_not_hidden():
+    calls = []
+
+    def handler(request):
+        calls.append(str(request.url))
+        page = int(dict(httpx.QueryParams(request.url.query.decode()))['page'])
+        if page == 2:
+            return json_response({'errors': [{'message': 'bad'}], 'data': {'list': []}})
+        return json_response({'data': {'list': [{'id': '1'}, {'id': '2'}]}})
+
+    monitor = spec(steps=[step('https://api.example.com/items')],
+                   pagination={'kind': 'page', 'size_param': 'size', 'size': 2,
+                               'stop': 'empty', 'max_pages': 3})
+    with pytest.raises(DomainError) as error:
+        await collect_api(monitor.url, monitor, transport=httpx.MockTransport(handler))
+    assert error.value.details == {'reason': 'graphql_errors'}
+    assert len(calls) == 2
+
+
+@pytest.mark.asyncio
+async def test_paginated_post_executes_once_per_real_page_with_the_same_body():
+    seen = []
+
+    def handler(request):
+        seen.append((request.method, str(request.url), request.headers.get('content-type'),
+                     request.content))
+        page = int(dict(httpx.QueryParams(request.url.query.decode()))['page'])
+        rows = [{'id': '1'}, {'id': '2'}] if page == 1 else []
+        return json_response({'data': {'list': rows}})
+
+    monitor = spec(steps=[step('https://api.example.com/items', method='POST',
+                               body={'query': 'notice'})],
+                   pagination={'kind': 'page', 'size_param': 'size', 'size': 2,
+                               'stop': 'empty', 'max_pages': 3})
+    result = await collect_api(monitor.url, monitor, transport=httpx.MockTransport(handler))
+
+    assert [item[1] for item in seen] == ['https://api.example.com/items?page=1&size=2',
+                                         'https://api.example.com/items?page=2&size=2']
+    assert all(item[0] == 'POST' and item[2] == 'application/json' for item in seen)
+    assert all(json.loads(item[3]) == {'query': 'notice'} for item in seen)
+    assert result.fields['items'] == [{'id': '1'}, {'id': '2'}]
 
 
 @pytest.mark.asyncio

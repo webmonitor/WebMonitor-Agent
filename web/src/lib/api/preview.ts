@@ -68,109 +68,160 @@ export const deliveryPreviewSchema = z.object({
   template_hash: z.string(),
   rendered_emails: z.array(renderedEmailSchema),
   recipients: z.array(z.string()),
+  recipient_count: z.number().int().nonnegative(),
   recipient_sources: z.array(recipientSourceSchema),
   warnings: z.array(z.string()),
   created_at: z.string(),
   expires_at: z.string(),
 });
 
-const ruleSchema = z.object({
-  type: z.string(),
-  field: z.string().optional(),
-  operator: z.string().optional(),
-  value: z.union([z.number(), z.string()]).optional(),
-  keyword: z.string().optional(),
-  watch_fields: z.array(z.string()).optional(),
-});
+const scalarSchema = z.union([z.number(), z.string()]);
+const ruleBase = { field: z.string().min(1) };
+const ruleSchema = z.discriminatedUnion("type", [
+  z.strictObject({ ...ruleBase, type: z.literal("text_changed") }),
+  z.strictObject({ ...ruleBase, type: z.literal("keyword_present"), keyword: z.string().min(1) }),
+  z.strictObject({ ...ruleBase, type: z.literal("keyword_absent"), keyword: z.string().min(1) }),
+  z.strictObject({
+    ...ruleBase,
+    type: z.literal("number_absolute_change"),
+    operator: z.enum(["increase_gte", "decrease_gte", "change_gte"]),
+    value: scalarSchema,
+  }),
+  z.strictObject({
+    ...ruleBase,
+    type: z.literal("number_percent_change"),
+    operator: z.enum(["increase_gte", "decrease_gte", "change_gte"]),
+    value: scalarSchema,
+  }),
+  z.strictObject({
+    ...ruleBase,
+    type: z.literal("threshold"),
+    operator: z.enum(["gt", "gte", "lt", "lte", "eq"]),
+    value: scalarSchema,
+  }),
+  z.strictObject({ ...ruleBase, type: z.literal("list_added") }),
+  z.strictObject({ ...ruleBase, type: z.literal("list_removed") }),
+  z.strictObject({
+    ...ruleBase,
+    type: z.literal("list_updated"),
+    watch_fields: z.array(z.string().min(1)).min(1),
+  }),
+]);
 
-const normalizationSchema = z.object({
-  trim: z.boolean().optional(),
-  collapse_whitespace: z.boolean().optional(),
-  decimal_separator: z.string().nullish(),
-  thousands_separator: z.string().nullish(),
-  currency: z.string().nullish(),
-  date_format: z.string().nullish(),
-  timezone: z.string().nullish(),
-  true_values: z.array(z.string()).optional(),
-  false_values: z.array(z.string()).optional(),
+const normalizationSchema = z.strictObject({
+  trim: z.boolean().default(true),
+  collapse_whitespace: z.boolean().default(false),
+  decimal_separator: z.enum([".", ","]).nullish(),
+  thousands_separator: z.enum([".", ",", " ", "'"]).nullish(),
+  currency: z.string().regex(/^[A-Z]{3}$/).nullish(),
+  date_format: z.string().min(1).max(100).nullish(),
+  timezone: z.string().min(1).nullish(),
+  true_values: z.array(z.string()).default([]),
+  false_values: z.array(z.string()).default([]),
 });
 
 const fieldShape = {
-  name: z.string(),
-  type: z.string(),
-  semantic: z.string().optional(),
-  selector: z.string().nullish(),
-  path: z.string().nullish(),
-  attribute: z.string().nullish(),
-  required: z.boolean().optional(),
-  allow_empty: z.boolean().optional(),
-  normalize: normalizationSchema.optional(),
-  min_items: z.number().nullish(),
-  max_items: z.number().nullish(),
+  name: z.string().regex(/^[A-Za-z][A-Za-z0-9_]{0,63}$/),
+  type: z.enum(["text", "number", "money", "date", "boolean", "url", "list"]),
+  semantic: z.string().min(1).max(500),
+  selector: z.string().min(1).max(1000).nullish(),
+  path: z.string().min(1).max(500).nullish(),
+  attribute: z.string().regex(/^[A-Za-z_][A-Za-z0-9_:-]*$/).nullish(),
+  required: z.boolean().default(true),
+  allow_empty: z.boolean().default(false),
+  normalize: normalizationSchema.default({ trim: true, collapse_whitespace: false, true_values: [], false_values: [] }),
+  min_items: z.number().int().nonnegative().nullish(),
+  max_items: z.number().int().nonnegative().nullish(),
 };
 
-const fieldSchema = z.object({
+const itemFieldSchema = z.strictObject({
+  ...fieldShape,
+  // Nested list fields are invalid; scalar item fields still serialize this as null.
+  item_fields: z.null().optional(),
+});
+const fieldSchema = z.strictObject({
   ...fieldShape,
   // The backend rejects nested lists, so one level covers every valid spec.
-  item_fields: z.array(z.object(fieldShape)).nullish(),
+  item_fields: z.array(itemFieldSchema).nullish(),
 });
 
-const browserStepSchema = z.object({
-  type: z.string(),
-  selector: z.string().optional(),
-  timeout_ms: z.number().optional(),
-  max_steps: z.number().optional(),
-  max_pages: z.number().optional(),
+const browserStepSchema = z.discriminatedUnion("type", [
+  z.strictObject({
+    type: z.literal("wait_for_selector"),
+    selector: z.string().min(1),
+    timeout_ms: z.number().int().positive().max(10000).default(10000),
+  }),
+  z.strictObject({
+    type: z.literal("scroll"),
+    max_steps: z.number().int().min(1).max(5),
+  }),
+  z.strictObject({
+    type: z.literal("click_next"),
+    selector: z.string().min(1),
+    max_pages: z.number().int().min(1).max(3),
+  }),
+]);
+
+const requestSchema = z.strictObject({
+  method: z.enum(["GET", "POST"]).default("GET"),
+  url: z.string().min(1).max(4096),
+  headers: z.record(z.string(), z.string()).default({}),
+  body: z.unknown().nullish(),
 });
 
-const requestSchema = z.object({
-  method: z.string().optional(),
-  url: z.string(),
-  headers: z.record(z.string(), z.string()).optional(),
-  body: z.unknown().optional(),
+const assertionSchema = z.discriminatedUnion("type", [
+  z.strictObject({
+    type: z.literal("json_equals"),
+    path: z.string().min(1).max(500),
+    equals: z.union([z.string(), z.number(), z.boolean(), z.null()]),
+  }),
+  z.strictObject({
+    type: z.literal("json_present"),
+    path: z.string().min(1).max(500),
+  }),
+]);
+
+const pagePaginationSchema = z.strictObject({
+  kind: z.literal("page").default("page"),
+  page_param: z.string().regex(/^[A-Za-z][A-Za-z0-9_]{0,31}$/).default("page"),
+  start_page: z.number().int().min(1).max(10000).default(1),
+  size_param: z.string().regex(/^[A-Za-z][A-Za-z0-9_]{0,31}$/).nullish(),
+  size: z.number().int().min(1).max(1000).nullish(),
+  total_path: z.string().min(1).max(500).nullish(),
+  stop: z.enum(["empty", "total_reached"]).default("empty"),
+  max_pages: z.number().int().min(1).max(5).default(3),
+  max_items: z.number().int().min(1).max(2000).default(500),
 });
 
-const assertionSchema = z.object({
-  type: z.string(),
-  path: z.string().optional(),
-  equals: z.union([z.string(), z.number(), z.boolean(), z.null()]).optional(),
-});
-
-const pagePaginationSchema = z.object({
-  kind: z.string().optional(),
-  page_param: z.string().optional(),
-  start_page: z.number().optional(),
-  size_param: z.string().nullish(),
-  size: z.number().nullish(),
-  total_path: z.string().nullish(),
-  stop: z.string().optional(),
-  max_pages: z.number().optional(),
-  max_items: z.number().optional(),
-});
-
-const sourceSchema = z.object({
-  kind: z.string().optional(),
-  steps: z.array(z.object({ id: z.string(), request: requestSchema })),
-  assertions: z.array(assertionSchema).optional(),
+const sourceSchema = z.strictObject({
+  kind: z.literal("json").default("json"),
+  steps: z.array(z.strictObject({
+    id: z.string().regex(/^[a-z][a-z0-9_]{0,31}$/),
+    request: requestSchema,
+  })).min(1).max(3),
+  assertions: z.array(assertionSchema).max(8).default([]),
   pagination: pagePaginationSchema.nullish(),
 });
 
 /** The collection contract only; recipients, cadence and template are settings. */
-export const monitorSpecSchema = z.object({
-  name: z.string().optional(),
-  url: z.string().optional(),
-  collection_mode: z.string().optional(),
-  fields: z.array(fieldSchema),
-  business_key: z
-    .object({ field: z.string(), item_fields: z.array(z.string()) })
-    .nullish(),
-  change_rules: z
-    .object({ mode: z.string().optional(), rules: z.array(ruleSchema) })
-    .optional(),
-  coverage: z
-    .object({ scope: z.string().optional(), description: z.string().optional() })
-    .optional(),
-  browser_steps: z.array(browserStepSchema).optional(),
+export const monitorSpecSchema = z.strictObject({
+  name: z.string().min(1).max(200),
+  url: z.string().min(1).max(4096),
+  collection_mode: z.enum(["http", "browser"]),
+  fields: z.array(fieldSchema).min(1),
+  business_key: z.strictObject({
+    field: z.string(),
+    item_fields: z.array(z.string()).min(1),
+  }).nullish(),
+  change_rules: z.strictObject({
+    mode: z.enum(["all", "any"]),
+    rules: z.array(ruleSchema).min(1),
+  }),
+  coverage: z.strictObject({
+    scope: z.enum(["full", "bounded"]),
+    description: z.string().min(1).max(2000),
+  }),
+  browser_steps: z.array(browserStepSchema).default([]),
   source: sourceSchema.nullish(),
 });
 
@@ -180,7 +231,10 @@ export const deliverySettingsSchema = z.object({
   notification_group_ids: z.array(z.string()),
   webhook_url: z.string().nullish(),
   schedule: z
-    .object({ interval_seconds: z.number(), timezone: z.string() })
+    .strictObject({
+      interval_seconds: z.number().int().min(60).max(86400),
+      timezone: z.string().min(1),
+    })
     .nullish(),
   email_template_id: z.string().nullish(),
 });

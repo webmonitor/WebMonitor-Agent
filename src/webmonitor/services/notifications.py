@@ -16,6 +16,7 @@ from webmonitor.models import (
     Event,
     Monitor,
     NotificationGroup,
+    User,
     utc_now,
 )
 from webmonitor.notifications.rendering import render_email
@@ -199,13 +200,18 @@ async def enqueue_event_deliveries(session: AsyncSession, monitor: Monitor, even
     recipients = await approved_recipients(session, monitor)
     if not recipients:
         raise DomainError("notification_recipients_empty", 409)
-    try:
-        template = (EmailTemplateConfig.model_validate(monitor.email_template)
-                    if monitor.email_template else None)
-    except ValueError:
-        # A frozen snapshot that no longer parses stays inert; the snapshot itself
-        # is still the valid record of what the monitor was approved with.
-        raise DomainError("template_unavailable", 409) from None
+    template = None
+    if monitor.email_template is not None:
+        if not isinstance(monitor.email_template, dict):
+            raise DomainError("template_unavailable", 409)
+        try:
+            # Publication freezes {id, name, config}; production never resolves
+            # the original row, so edits and soft deletion cannot change this mail.
+            template = EmailTemplateConfig.model_validate(monitor.email_template.get("config"))
+        except ValueError:
+            # A frozen snapshot that no longer parses stays inert; the snapshot itself
+            # is still the valid record of what the monitor was approved with.
+            raise DomainError("template_unavailable", 409) from None
     rendered = render_email(event.type, payload, template)
     domain = parseaddr(get_settings().mail_from)[1].split("@")[-1] or "webmonitor.local"
     for recipient in recipients:
@@ -251,6 +257,8 @@ async def authorized(session: AsyncSession, delivery: Delivery) -> bool:
     """Only this monitor's approved, still-active route authorizes a queued delivery."""
     monitor = await session.get(Monitor, delivery.monitor_id)
     if monitor is None or monitor.delivery_channel != delivery.channel:
+        return False
+    if await session.scalar(select(User.active).where(User.id == delivery.user_id)) is not True:
         return False
     if delivery.channel == "webhook":
         return bool(monitor.webhook_url) and monitor.webhook_url == delivery.recipient

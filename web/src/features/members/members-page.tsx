@@ -213,7 +213,7 @@ export function MembersPage() {
           title={t("common.members")}
           description={t("activity.members.pageDescription")}
         />
-        <div className="grid items-start gap-12 lg:grid-cols-2 lg:gap-16">
+        <div className="grid items-start gap-12 xl:grid-cols-[minmax(0,1.15fr)_minmax(20rem,0.85fr)] xl:gap-16">
           <MembersPanel />
           <InvitationsPanel />
         </div>

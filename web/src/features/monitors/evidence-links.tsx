@@ -1,4 +1,5 @@
 "use client";
+import { ExternalLink } from "lucide-react";
 import { formatBytes } from "@/lib/format";
 import { useI18n } from "@/lib/i18n";
 
@@ -7,22 +8,29 @@ type Reference = { kind: string; sha256: string; size_bytes: number };
 /** Evidence stays one click from wherever a collected value is shown. */
 export function EvidenceLinks({
   snapshotId,
+  draftId,
   references,
   full = false,
 }: {
   snapshotId?: string;
+  draftId?: string;
   references: Reference[];
   full?: boolean;
 }) {
   const { t } = useI18n();
-  if (!snapshotId || references.length === 0) return null;
+  const base = snapshotId
+    ? `/api/v1/snapshots/${snapshotId}/evidence`
+    : draftId
+      ? `/api/v1/drafts/${draftId}/evidence`
+      : null;
+  if (!base || references.length === 0) return null;
   return (
     <div className="flex flex-wrap gap-x-4 gap-y-1.5">
       {references.map((reference, index) => (
         <a
           key={reference.sha256}
           className="inline-flex items-center gap-1.5 text-[12px] text-muted-soft transition-colors hover:text-ink"
-          href={`/api/v1/snapshots/${snapshotId}/evidence/${index}`}
+          href={`${base}/${index}`}
           target="_blank"
           rel="noreferrer"
         >
@@ -34,6 +42,7 @@ export function EvidenceLinks({
               ? t("monitors.evidence.json")
               : t("monitors.evidence.archive")}
           <span className="num text-[12px]">{formatBytes(reference.size_bytes)}</span>
+          <ExternalLink className="size-3.5" strokeWidth={1.5} />
         </a>
       ))}
     </div>

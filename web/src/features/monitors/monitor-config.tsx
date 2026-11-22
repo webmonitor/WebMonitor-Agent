@@ -94,8 +94,6 @@ function stepText(
       return [labels.scroll, String(step.max_steps ?? 0)].join(" · ");
     case "click_next":
       return [labels.next, step.selector, String(step.max_pages ?? 0)].filter(Boolean).join(" · ");
-    default:
-      return step.type;
   }
 }
 
@@ -308,10 +306,19 @@ export function MonitorConfig({
             )}
             {monitor.delivery_channel !== "webhook"
               && (monitor.approved_recipients ?? []).length > 0 && (
-              <p className="meta mt-1.5 break-words">
-                {t("monitors.config.recipients")} · {(monitor.approved_recipients ?? []).join(" · ")}
-              </p>
-            )}
+                <p className="meta mt-1.5 break-words">
+                  {t("monitors.config.recipients")} · {(monitor.approved_recipients ?? []).join(" · ")}
+                </p>
+              )}
+            {monitor.delivery_channel !== "webhook"
+              && monitor.approved_recipient_count > 0
+              && (monitor.approved_recipients ?? []).length === 0 && (
+                <p className="meta mt-1.5">
+                  {t("monitors.config.recipients")} · {t("monitors.config.protectedRecipients", {
+                    count: monitor.approved_recipient_count,
+                  })}
+                </p>
+              )}
           </div>
 
           <div>

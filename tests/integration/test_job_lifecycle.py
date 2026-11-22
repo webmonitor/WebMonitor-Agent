@@ -1,4 +1,6 @@
 """One claim protocol: leases, attempt history and retry requeue."""
+
+import asyncio
 from uuid import uuid4
 
 import pytest
@@ -9,8 +11,9 @@ from webmonitor.services import jobs
 
 
 async def seed(session) -> User:
-    user = User(email=f"{uuid4().hex}@example.com", display_name="Worker",
-                password_hash="not-a-login-hash")
+    user = User(
+        email=f"{uuid4().hex}@example.com", display_name="Worker", password_hash="not-a-login-hash"
+    )
     session.add(user)
     await session.flush()
     return user
@@ -19,8 +22,13 @@ async def seed(session) -> User:
 @pytest.mark.asyncio
 async def test_claim_renew_and_finish(session):
     user = await seed(session)
-    queued = await jobs.enqueue(session, user_id=user.id, kind="analyze", url="https://8.8.8.8/",
-                                spec={"collection_mode": "http"})
+    queued = await jobs.enqueue(
+        session,
+        user_id=user.id,
+        kind="analyze",
+        url="https://8.8.8.8/",
+        spec={"collection_mode": "http"},
+    )
     await session.commit()
 
     claimed = await jobs.claim(session, kind="analyze", worker_id="w1")
@@ -48,8 +56,7 @@ async def test_claim_renew_and_finish(session):
 @pytest.mark.asyncio
 async def test_expired_lease_is_reaped_and_requeued_with_history(session):
     user = await seed(session)
-    job = await jobs.enqueue(session, user_id=user.id, kind="agent",
-                             conversation_id=None)
+    job = await jobs.enqueue(session, user_id=user.id, kind="agent", conversation_id=None)
     await session.commit()
 
     claimed = await jobs.claim(session, kind="agent", worker_id="w1")
@@ -82,8 +89,13 @@ async def test_requeue_keeps_the_attempt_and_schedules_the_next_try(session):
     draft = Draft(user_id=user.id, conversation_id=conversation.id, spec_revision=1)
     session.add(draft)
     await session.flush()
-    await jobs.enqueue(session, user_id=user.id, kind="preview", draft_id=draft.id,
-                       spec={"collection_mode": "http"})
+    await jobs.enqueue(
+        session,
+        user_id=user.id,
+        kind="preview",
+        draft_id=draft.id,
+        spec={"collection_mode": "http"},
+    )
     await session.commit()
     claimed = await jobs.claim(session, kind="preview", worker_id="w1")
     await session.commit()
@@ -122,6 +134,7 @@ async def test_wait_surfaces_job_failure(session):
     await session.commit()
 
     from webmonitor.errors import DomainError
+
     with pytest.raises(DomainError) as raised:
         await jobs.wait(job.id, timeout=1)
     assert raised.value.code == "target_unavailable"
@@ -149,3 +162,39 @@ async def test_hourly_quota_counts_the_users_own_recent_jobs(session):
         await jobs.enforce_hourly_quota(session, user_id=user.id, kind="preview", limit=3)
     assert blocked.value.code == "rate_limited"
     assert blocked.value.details["limit"] == 3
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize(
+    "entry,kind", [("agent", "agent"), ("preview", "preview"), ("manual", "production")]
+)
+async def test_hourly_quota_serializes_concurrent_count_and_enqueue(session, entry, kind):
+    from sqlalchemy import func, select
+
+    from webmonitor.db import get_session_factory
+
+    user = await seed(session)
+    await session.commit()
+    start = asyncio.Event()
+
+    async def attempt() -> str:
+        await start.wait()
+        async with get_session_factory()() as worker:
+            try:
+                await jobs.enforce_hourly_quota(worker, user_id=user.id, kind=kind, limit=1)
+                await jobs.enqueue(worker, user_id=user.id, kind=kind)
+                await worker.commit()
+                return "queued"
+            except DomainError as error:
+                await worker.rollback()
+                assert error.code == "rate_limited"
+                return error.code
+
+    tasks = [asyncio.create_task(attempt()) for _ in range(2)]
+    start.set()
+    outcomes = await asyncio.gather(*tasks)
+    assert sorted(outcomes) == ["queued", "rate_limited"], entry
+    count = await session.scalar(
+        select(func.count()).select_from(Job).where(Job.user_id == user.id, Job.kind == kind)
+    )
+    assert count == 1

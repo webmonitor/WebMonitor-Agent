@@ -14,7 +14,7 @@ from webmonitor.collection.diff import evaluate_rules
 from webmonitor.collection.validation import validate_collection
 from webmonitor.config import get_settings
 from webmonitor.errors import DomainError
-from webmonitor.models import Event, Job, Monitor, Snapshot, utc_now
+from webmonitor.models import Event, Job, Monitor, Snapshot, User, utc_now
 from webmonitor.schemas.monitors import MonitorSpec
 from webmonitor.services import jobs, notifications
 
@@ -29,11 +29,11 @@ NOTIFICATION_ERRORS = frozenset({"notification_routes_invalid", "notification_re
 
 async def schedule_due(session: AsyncSession, *, now=None, limit: int = 200) -> int:
     now = now or utc_now()
-    due = (await session.scalars(select(Monitor).where(
+    due = (await session.scalars(select(Monitor).join(User, User.id == Monitor.user_id).where(
         Monitor.status == "active", Monitor.archived_at.is_(None),
-        Monitor.next_run_at <= now)
+        User.active.is_(True), Monitor.next_run_at <= now)
         .order_by(Monitor.next_run_at, Monitor.id).limit(limit)
-        .with_for_update(skip_locked=True).execution_options(populate_existing=True))).all()
+        .with_for_update(of=Monitor, skip_locked=True).execution_options(populate_existing=True))).all()
     created = 0
     for monitor in due:
         busy = await session.scalar(select(Job.id).where(Job.monitor_id == monitor.id,
@@ -57,6 +57,10 @@ async def _locked(session: AsyncSession, job_id: UUID) -> tuple[Monitor | None, 
 def _stale(monitor: Monitor | None, job: Job) -> bool:
     return (monitor is None or monitor.status != "active"
             or job.revision != monitor.spec_version)
+
+
+async def _owner_active(session: AsyncSession, monitor: Monitor) -> bool:
+    return await session.scalar(select(User.active).where(User.id == monitor.user_id)) is True
 
 
 def _field_labels(monitor: Monitor) -> dict[str, str]:
@@ -124,7 +128,10 @@ async def commit_success(session: AsyncSession, job: Job, result: dict) -> bool:
     """First success only establishes the baseline; later ones may publish events."""
     monitor, job = await _locked(session, job.id)
     now = utc_now()
-    if job.status != "running" or job.cancel_requested_at is not None or _stale(monitor, job):
+    stale = _stale(monitor, job)
+    if not stale and monitor is not None:
+        stale = not await _owner_active(session, monitor)
+    if job.status != "running" or job.cancel_requested_at is not None or stale:
         await jobs.discard(session, job)
         return False
     spec = MonitorSpec.model_validate(monitor.spec)
@@ -171,7 +178,10 @@ async def fail_run(session: AsyncSession, job: Job, *, error_code: str,
     if job.cancel_requested_at is not None:
         await jobs.finish(session, job, "cancelled", error_code="collection_cancelled")
         return True
-    if _stale(monitor, job):
+    stale = _stale(monitor, job)
+    if not stale and monitor is not None:
+        stale = not await _owner_active(session, monitor)
+    if stale:
         await jobs.discard(session, job)
         return True
     transient = error_code in RETRYABLE or (

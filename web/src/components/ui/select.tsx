@@ -61,8 +61,19 @@ export function Select({
   }, []);
 
   const openMenu = () => {
-    setActive(selectedIndex >= 0 ? selectedIndex : 0);
+    if (options.length === 0 || options.every((option) => option.disabled)) return;
+    const firstEnabled = options.findIndex((option) => !option.disabled);
+    setActive(selectedIndex >= 0 && !options[selectedIndex]?.disabled ? selectedIndex : firstEnabled);
     setOpen(true);
+  };
+
+  const moveActive = (start: number, direction: -1 | 1) => {
+    let next = start;
+    for (let count = 0; count < options.length; count += 1) {
+      next = (next + direction + options.length) % options.length;
+      if (!options[next]?.disabled) return next;
+    }
+    return start;
   };
 
   const choose = (index: number) => {
@@ -100,19 +111,19 @@ export function Select({
     switch (event.key) {
       case "ArrowDown":
         event.preventDefault();
-        setActive((index) => Math.min(index + 1, options.length - 1));
+        setActive((index) => moveActive(index, 1));
         break;
       case "ArrowUp":
         event.preventDefault();
-        setActive((index) => Math.max(index - 1, 0));
+        setActive((index) => moveActive(index, -1));
         break;
       case "Home":
         event.preventDefault();
-        setActive(0);
+        setActive(moveActive(-1, 1));
         break;
       case "End":
         event.preventDefault();
-        setActive(options.length - 1);
+        setActive(moveActive(0, -1));
         break;
       case "Enter":
       case " ":
@@ -171,6 +182,7 @@ export function Select({
           id={`${id}-listbox`}
           role="listbox"
           aria-labelledby={`${id}-trigger`}
+          aria-activedescendant={`${id}-option-${active}`}
           tabIndex={-1}
           onKeyDown={onListKeyDown}
           className={cn(
@@ -184,6 +196,7 @@ export function Select({
             return (
               <li
                 key={option.value || `__blank-${index}`}
+                id={`${id}-option-${index}`}
                 data-index={index}
                 role="option"
                 aria-selected={isSelected}

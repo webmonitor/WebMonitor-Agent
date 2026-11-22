@@ -97,6 +97,7 @@ export function MonitorPage({
   const [settingsOpen, setSettingsOpen] = useState(false);
   const [menuOpen, setMenuOpen] = useState(false);
   const menu = useRef<HTMLDivElement>(null);
+  const menuButton = useRef<HTMLButtonElement>(null);
   const detail = useJobDetail(openJob);
 
   useEffect(() => {
@@ -104,8 +105,19 @@ export function MonitorPage({
     const close = (event: PointerEvent) => {
       if (!menu.current?.contains(event.target as Node)) setMenuOpen(false);
     };
+    const onKeyDown = (event: KeyboardEvent) => {
+      if (event.key === "Escape") {
+        event.preventDefault();
+        setMenuOpen(false);
+        menuButton.current?.focus();
+      }
+    };
     document.addEventListener("pointerdown", close);
-    return () => document.removeEventListener("pointerdown", close);
+    document.addEventListener("keydown", onKeyDown);
+    return () => {
+      document.removeEventListener("pointerdown", close);
+      document.removeEventListener("keydown", onKeyDown);
+    };
   }, [menuOpen]);
 
   if (monitor.isPending) {
@@ -134,6 +146,11 @@ export function MonitorPage({
   const fields = spec?.fields ?? [];
   const labels = fieldLabels(fields);
   const types = fieldTypes(fields);
+  // A job is a historical record too; never relabel it with the current spec.
+  const jobSpec = parseSpec(detail.data?.spec);
+  const jobFields = jobSpec?.fields ?? [];
+  const jobLabels = fieldLabels(jobFields);
+  const jobTypes = fieldTypes(jobFields);
   const archived = Boolean(row.archived_at);
   const busy = pause.isPending || resume.isPending || run.isPending;
   const monitorEvents = (events.data?.items ?? []).filter((event) => event.monitor_id === row.id);
@@ -203,17 +220,19 @@ export function MonitorPage({
               )}
               <div ref={menu} className="relative">
                 <Button
+                  ref={menuButton}
                   variant="ghost"
                   size="icon"
                   className="size-8"
                   aria-label={t("monitors.action.more")}
                   aria-expanded={menuOpen}
+                  aria-controls="monitor-action-menu"
                   onClick={() => setMenuOpen((open) => !open)}
                 >
                   <MoreHorizontal className="size-4" strokeWidth={1.5} />
                 </Button>
                 {menuOpen && (
-                  <div className="absolute top-full right-0 z-20 mt-1 w-48 rounded-lg border border-hairline bg-popover p-1.5 shadow-pop">
+                  <div id="monitor-action-menu" className="absolute top-full right-0 z-20 mt-1 w-48 origin-top-right rounded-lg border border-hairline bg-popover p-1.5 shadow-pop">
                     <button
                       type="button"
                       className="flex w-full items-center gap-2 rounded-md px-2 py-1.5 text-left text-[14px] transition-colors duration-150 hover:bg-surface-card"
@@ -379,7 +398,7 @@ export function MonitorPage({
                 {jobItems.map((job) => (
                   <li key={job.id}>
                     <button
-                      className="flex w-full items-center gap-3 border-b border-hairline py-3 text-left transition-colors duration-150 hover:bg-surface-soft/70"
+                      className="flex w-full flex-wrap items-center gap-2 border-b border-hairline py-3 text-left transition-colors duration-150 hover:bg-surface-soft/70 sm:flex-nowrap sm:gap-3"
                       onClick={() => setOpenJob(job.id)}
                     >
                       <span className="num min-w-[5.5rem] shrink-0 whitespace-nowrap text-[13px] text-muted-soft">
@@ -425,7 +444,7 @@ export function MonitorPage({
                   <li key={snapshot.id}>
                     <Link
                       href={`/app/monitors/${row.id}/snapshots/${snapshot.id}`}
-                      className="flex items-center gap-3 border-b border-hairline py-3 transition-colors duration-150 hover:bg-surface-soft/70"
+                      className="flex flex-wrap items-center gap-2 border-b border-hairline py-3 transition-colors duration-150 hover:bg-surface-soft/70 sm:flex-nowrap sm:gap-3"
                     >
                       <span className="num min-w-[5.5rem] shrink-0 whitespace-nowrap text-[13px] text-muted-soft">
                         {formatTime(snapshot.collected_at)}
@@ -528,9 +547,9 @@ export function MonitorPage({
                   <h3 className="label-line mb-1.5">{t("monitors.dialog.captured")}</h3>
                   <FieldValues
                     values={detail.data.snapshot.extracted_data}
-                    labels={labels}
-                    types={types}
-                    businessKey={spec?.business_key?.item_fields ?? []}
+                    labels={jobLabels}
+                    types={jobTypes}
+                    businessKey={jobSpec?.business_key?.item_fields ?? []}
                   />
                   <p className="meta mt-2">
                     {t("monitors.dialog.coverage", {

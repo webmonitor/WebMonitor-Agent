@@ -6,20 +6,15 @@
 # the only ones that need the browser sandbox: the seccomp profile below is the OCI
 # form of deploy/browser-seccomp.json, produced because runc ignores Docker's
 # `archMap`/`includes`/`excludes` extensions. Install it at /var/lib/kubelet/seccomp/.
-apiVersion: v1
-kind: Service
-metadata:
-  name: api
-spec:
-  selector: {app.kubernetes.io/name: webmonitor, app.kubernetes.io/component: api}
-  ports: [{name: http, port: 8000, targetPort: 8000}]
----
 apiVersion: apps/v1
 kind: Deployment
 metadata:
   name: api
 spec:
-  replicas: 2
+  # Login and template throttles are process-local. Recreate also avoids a rolling
+  # update briefly running two independent throttle buckets.
+  replicas: 1
+  strategy: {type: Recreate}
   selector: {matchLabels: {app.kubernetes.io/name: webmonitor, app.kubernetes.io/component: api}}
   template:
     metadata:
@@ -27,13 +22,34 @@ spec:
     spec:
       automountServiceAccountToken: false
       securityContext:
-        runAsUser: 10001
-        runAsGroup: 10001
         seccompProfile: {type: RuntimeDefault}
+      initContainers:
+        # Keep one routing configuration with Compose. Only the API upstream changes:
+        # the trusted proxy is a sidecar, so its peer address is always 127.0.0.1.
+        - name: prepare-proxy-conf
+          image: nginx:1.28-alpine
+          command:
+            - sh
+            - -ec
+            - |
+              sed 's#http://api:8000#http://127.0.0.1:8000#' /etc/nginx-source/nginx.conf > /etc/nginx-live/nginx.conf
+              grep -q 'proxy_pass http://127.0.0.1:8000;' /etc/nginx-live/nginx.conf
+              ! grep -q 'proxy_pass http://api:8000;' /etc/nginx-live/nginx.conf
+          securityContext:
+            runAsUser: 101
+            runAsGroup: 101
+            allowPrivilegeEscalation: false
+            readOnlyRootFilesystem: true
+            capabilities: {drop: [ALL]}
+          volumeMounts:
+            - {name: proxy-source, mountPath: /etc/nginx-source, readOnly: true}
+            - {name: proxy-conf, mountPath: /etc/nginx-live}
       containers:
         - name: api
           image: webmonitor-agent
-          imagePullPolicy: IfNotPresent
+          # kustomization.yaml intentionally publishes `latest`; never silently reuse
+          # a stale node-local copy. Production overlays should pin a digest instead.
+          imagePullPolicy: Always
           command: [webmonitor, serve]
           envFrom:
             - configMapRef: {name: webmonitor-env}
@@ -41,8 +57,15 @@ spec:
           env:
             # This pod serves HTTP only; every loop runs in the worker Deployment.
             - {name: WORKERS_ENABLED, value: "false"}
-          ports: [{name: http, containerPort: 8000}]
+            # MinIO and the application must use the same root credential source.
+            - name: S3_ACCESS_KEY_ID
+              valueFrom: {secretKeyRef: {name: webmonitor-secrets, key: S3_ROOT_USER}}
+            - name: S3_SECRET_ACCESS_KEY
+              valueFrom: {secretKeyRef: {name: webmonitor-secrets, key: S3_ROOT_PASSWORD}}
+          ports: [{name: api-http, containerPort: 8000}]
           securityContext:
+            runAsUser: 10001
+            runAsGroup: 10001
             allowPrivilegeEscalation: false
             readOnlyRootFilesystem: true
             capabilities: {drop: [ALL]}
@@ -62,10 +85,36 @@ spec:
             requests: {cpu: 250m, memory: 512Mi}
             limits: {cpu: "2", memory: 2Gi}
           volumeMounts:
-            - {name: tmp, mountPath: /tmp}
+            - {name: api-tmp, mountPath: /tmp}
+        - name: proxy
+          image: nginx:1.28-alpine
+          command: [nginx, -g, "daemon off;"]
+          ports: [{name: http, containerPort: 8080}]
+          securityContext:
+            runAsUser: 101
+            runAsGroup: 101
+            allowPrivilegeEscalation: false
+            readOnlyRootFilesystem: true
+            capabilities: {drop: [ALL]}
+          readinessProbe:
+            exec: {command: [wget, -q, -O, /dev/null, http://127.0.0.1:8080/api/v1/health/ready]}
+            periodSeconds: 5
+            failureThreshold: 30
+          resources:
+            requests: {cpu: 25m, memory: 32Mi}
+            limits: {cpu: 500m, memory: 128Mi}
+          volumeMounts:
+            - {name: proxy-conf, mountPath: /etc/nginx/nginx.conf, subPath: nginx.conf, readOnly: true}
+            - {name: proxy-tmp, mountPath: /tmp}
       volumes:
-        - name: tmp
+        - name: api-tmp
           emptyDir: {sizeLimit: 128Mi}
+        - name: proxy-tmp
+          emptyDir: {sizeLimit: 64Mi}
+        - name: proxy-source
+          configMap: {name: proxy-conf}
+        - name: proxy-conf
+          emptyDir: {sizeLimit: 1Mi}
 ---
 apiVersion: apps/v1
 kind: Deployment
@@ -86,13 +135,17 @@ spec:
       containers:
         - name: worker
           image: webmonitor-agent
-          imagePullPolicy: IfNotPresent
+          imagePullPolicy: Always
           command: [webmonitor, serve]
           envFrom:
             - configMapRef: {name: webmonitor-env}
             - secretRef: {name: webmonitor-secrets}
           env:
             - {name: WORKERS_ENABLED, value: "true"}
+            - name: S3_ACCESS_KEY_ID
+              valueFrom: {secretKeyRef: {name: webmonitor-secrets, key: S3_ROOT_USER}}
+            - name: S3_SECRET_ACCESS_KEY
+              valueFrom: {secretKeyRef: {name: webmonitor-secrets, key: S3_ROOT_PASSWORD}}
           ports: [{name: health, containerPort: 8000}]
           securityContext:
             allowPrivilegeEscalation: false
@@ -102,8 +155,8 @@ spec:
             exec: {command: [python, -c, "import urllib.request; urllib.request.urlopen('http://127.0.0.1:8000/api/v1/health/ready', timeout=3)"]}
             periodSeconds: 2
             failureThreshold: 60
-          # /ready reports 503 once the background TaskGroup has stopped, so this is the
-          # only probe that notices a dead worker. A brief database outage also fails it;
+          # /ready reports 503 once the background TaskGroup has stopped, so this is
+          # the only probe that notices a dead worker. A brief database outage also fails it;
           # restarting is safe because claims are leased and unfinished work is requeued.
           livenessProbe:
             exec: {command: [python, -c, "import urllib.request; urllib.request.urlopen('http://127.0.0.1:8000/api/v1/health/ready', timeout=3)"]}
@@ -149,7 +202,7 @@ spec:
       containers:
         - name: web
           image: webmonitor-agent
-          imagePullPolicy: IfNotPresent
+          imagePullPolicy: Always
           command: [node, /app/web/server.js]
           env:
             # The kubelet injects HOSTNAME as the pod name. Next.js binds to it and
@@ -181,53 +234,15 @@ spec:
         - name: tmp
           emptyDir: {sizeLimit: 64Mi}
 ---
-# Same routing layer as Compose: one origin for the browser, /api/v1 to the API and
-# everything else to Next.js. The ConfigMap is generated from deploy/proxy/nginx.conf.
+# One public origin. Local preserves the client source address for the sidecar's
+# X-Forwarded-For header; the API trusts only that loopback sidecar, never arbitrary
+# client-supplied forwarding headers. There is intentionally no API Service.
 apiVersion: v1
 kind: Service
 metadata:
   name: proxy
 spec:
   type: NodePort
-  selector: {app.kubernetes.io/name: webmonitor, app.kubernetes.io/component: proxy}
+  externalTrafficPolicy: Local
+  selector: {app.kubernetes.io/name: webmonitor, app.kubernetes.io/component: api}
   ports: [{name: http, port: 8080, targetPort: 8080, nodePort: 30080}]
----
-apiVersion: apps/v1
-kind: Deployment
-metadata:
-  name: proxy
-spec:
-  replicas: 1
-  selector: {matchLabels: {app.kubernetes.io/name: webmonitor, app.kubernetes.io/component: proxy}}
-  template:
-    metadata:
-      labels: {app.kubernetes.io/name: webmonitor, app.kubernetes.io/component: proxy}
-    spec:
-      automountServiceAccountToken: false
-      securityContext:
-        runAsUser: 101
-        runAsGroup: 101
-        seccompProfile: {type: RuntimeDefault}
-      containers:
-        - name: proxy
-          image: nginx:1.28-alpine
-          ports: [{name: http, containerPort: 8080}]
-          securityContext:
-            allowPrivilegeEscalation: false
-            readOnlyRootFilesystem: true
-            capabilities: {drop: [ALL]}
-          readinessProbe:
-            exec: {command: [wget, -q, -O, /dev/null, http://127.0.0.1:8080/api/v1/health/ready]}
-            periodSeconds: 5
-            failureThreshold: 30
-          resources:
-            requests: {cpu: 25m, memory: 32Mi}
-            limits: {cpu: 500m, memory: 128Mi}
-          volumeMounts:
-            - {name: conf, mountPath: /etc/nginx/nginx.conf, subPath: nginx.conf}
-            - {name: tmp, mountPath: /tmp}
-      volumes:
-        - name: conf
-          configMap: {name: proxy-conf}
-        - name: tmp
-          emptyDir: {sizeLimit: 64Mi}

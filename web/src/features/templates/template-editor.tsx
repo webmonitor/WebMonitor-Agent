@@ -1,6 +1,6 @@
 "use client";
 import { useMemo, useState } from "react";
-import { Sparkles } from "lucide-react";
+import { FilePlus2 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { Input } from "@/components/ui/input";
@@ -208,7 +208,7 @@ export function TemplateEditor({
                 disabled={!canGenerate}
                 onClick={() => void runGeneration()}
               >
-                <Sparkles strokeWidth={1.5} />
+                <FilePlus2 strokeWidth={1.5} />
                 {generate.isPending
                   ? t("templates.editor.generating")
                   : config

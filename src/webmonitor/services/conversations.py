@@ -76,7 +76,16 @@ def job_view(job: Job) -> JobView:
         error_message=job.error_message, created_at=job.created_at)
 
 
-def draft_view(draft: Draft) -> DraftView:
+def draft_view(draft: Draft, user: CurrentUser) -> DraftView:
+    delivery_preview = dict(draft.delivery_preview) if draft.delivery_preview is not None else None
+    if delivery_preview is not None:
+        recipients = delivery_preview.get("recipients") or []
+        delivery_preview["recipient_count"] = len(recipients)
+        if user.role != "admin":
+            # Approval hashes always cover the raw database snapshot. Only this
+            # response copy is redacted for ordinary members.
+            delivery_preview["recipients"] = []
+            delivery_preview["recipient_sources"] = []
     return DraftView(id=draft.id, conversation_id=draft.conversation_id,
         status=draft.status, spec=draft.spec, spec_hash=draft.spec_hash,
         spec_revision=draft.spec_revision, settings=draft.settings or {},
@@ -84,7 +93,7 @@ def draft_view(draft: Draft) -> DraftView:
         extraction_preview=draft.extraction_preview,
         extraction_preview_hash=draft.extraction_preview_hash,
         extraction_preview_expires_at=draft.extraction_preview_expires_at,
-        delivery_preview=draft.delivery_preview,
+        delivery_preview=delivery_preview,
         delivery_preview_hash=draft.delivery_preview_hash,
         delivery_preview_expires_at=draft.delivery_preview_expires_at,
         monitor_id=draft.monitor_id,
@@ -113,7 +122,7 @@ async def snapshot(session: AsyncSession, user: CurrentUser,
                               client_message_id=row.client_message_id, created_at=row.created_at)
                   for row in messages],
         jobs=[job_view(row) for row in visible_jobs],
-        drafts=[draft_view(row) for row in drafts],
+        drafts=[draft_view(row, user) for row in drafts],
         limits=Limits(message_max_chars=settings.message_max_chars,
                       preview_ttl_minutes=settings.preview_ttl_minutes))
 
