@@ -5,15 +5,14 @@
 </p>
 
 <p align="center">
-  Describe the page and the condition in your own words. The assistant reads the page, extracts the values, and shows you a real sample before anything is scheduled.<br>
-  After you confirm, it checks on time, stores the evidence, and notifies you when your condition is met.
+  Describe a public page and the change you care about. Review a real collected sample, then explicitly confirm it before monitoring starts.
 </p>
 
 <p align="center">
   <a href="#what-it-is">Overview</a> ·
   <a href="#install-in-three-steps">Quick start</a> ·
   <a href="#create-your-first-monitor">First monitor</a> ·
-  <a href="#email-alerts">Email and webhook alerts</a> ·
+  <a href="#email-and-webhook-alerts">Alerts</a> ·
   <a href="#faq">FAQ</a> ·
   <a href="#update-roll-back-and-your-data">Updates and data</a> ·
   <a href="./README.zh-CN.md">简体中文</a>
@@ -23,43 +22,35 @@
 
 ## What it is
 
-WebMonitor-Agent is a self-hosted change monitor for public web pages. You do not write selectors or cron expressions: you hold a conversation. The assistant inspects the target page, proposes what to extract, runs a real collection, and puts the result in front of you. Only your click on **Create monitor** starts the schedule.
+WebMonitor-Agent is a self-hosted change monitor for public web pages. Instead of writing selectors or cron expressions, you describe the target and condition in a conversation. The assistant inspects the page, proposes a collection definition and runs a real preview. Only your click on **Create monitor** starts the schedule.
 
-Everything runs from one Docker Compose stack — a Next.js interface, a FastAPI service with its background loops, PostgreSQL, S3-compatible evidence storage and a Squid egress proxy. There are no external accounts or hosted services beyond the model endpoint and optional SMTP account you configure.
+One Docker Compose stack runs the Next.js interface, FastAPI service and background workers, PostgreSQL, S3-compatible evidence storage and a Squid egress proxy. Apart from your model endpoint and optional notification destinations, the stack is self-contained.
 
-### What you can watch
+Rules can watch text, keywords appearing or disappearing, numeric thresholds, percentage or absolute changes, and new, updated or removed list items. Checks can run every 1 minute to 24 hours.
 
-Any public page. You say which values matter and what counts as a change; the product has no built-in notion of a page type, a product, a price or a notice board.
+### Collection boundaries
 
-A rule can watch text, a keyword appearing or disappearing, a number against a threshold, a percentage or absolute change, or new, updated and removed items in a list.
-
-It checks public `http://` and `https://` pages on ports 80 or 443, every 1 minute to 24 hours. Pages behind a sign-in, and content inside iframes or Shadow DOM, are outside what the collector can read. The preview says so when it only covers part of a page.
+- Targets must be public `http://` or `https://` pages on ports 80 or 443. Intranet and localhost addresses, other ports and pages behind a sign-in are not supported.
+- The collector reads HTML first and uses a sandboxed browser when JavaScript is required. It cannot read iframe or Shadow DOM content, and automation-blocking pages may fail. Preview coverage warnings identify partial reads.
+- Collection reaches targets only through the bundled egress proxy. If the browser sandbox is unavailable, the check fails as `browser_unavailable`; it never falls back to an unsandboxed browser.
 
 ## How it works
 
-1. **Describe the target.** Paste the URL and say what matters, how often to check, and when to notify.
-2. **Let the assistant do the reading.** It fetches the HTML first and opens the page in a sandboxed browser when the data needs JavaScript. It records which fields it found and how much of the page it covers.
-3. **Review a real sample.** The confirmation card shows the extracted values, coverage, the rule that will fire, the destination, the saved page archive, and the actual email or webhook payload. Say what is wrong and the assistant takes another sample.
-4. **Confirm to schedule.** **Create monitor** is the only action that starts checks. The preview expires after 60 minutes and a different preview must be confirmed again.
+1. **Describe the target.** Provide the URL, the values that matter, how often to check and when to notify.
+2. **Review a real preview.** The assistant collects the page and shows extracted values, coverage, saved evidence and the actual email or webhook payload. Ask for changes to take another sample.
+3. **Confirm explicitly.** **Create monitor** is the only action that starts scheduled checks. Previews expire after 60 minutes, and a replacement preview must be reviewed and confirmed again.
+4. **Inspect results.** Successful checks retain their values, coverage and page archive, and events link to the checks that produced them.
 
-What the system guarantees:
-
-- Previews never send a notification, and the first successful check only records a baseline.
-- Collection evidence is committed only after the upload succeeds; a failed check keeps the last successful baseline.
-- Every check is stored with its values, coverage and page archive, and each event links to the check that produced it.
-- The browser runs sandboxed. If the sandbox is unavailable the check fails as `browser_unavailable` instead of falling back to an unsandboxed browser.
-- Collection only reaches the target through the bundled egress proxy.
+Previews never send notifications. The first successful check records a baseline without notifying; comparisons begin with the second check. Evidence is committed only after its upload succeeds, so a failed check keeps the last successful baseline.
 
 ## Before you start
 
-- Docker Engine with Docker Compose v2, on Linux, macOS or Windows.
-- An OpenAI Chat Completions model service: API key, base URL and model name, for conversational monitor setup.
-- An SMTP account (optional), for email alerts; a webhook destination needs neither.
-- A page URL you can open in a private window without signing in.
+- Docker Engine with Docker Compose v2 on Linux, macOS or Windows.
+- An OpenAI-compatible Chat Completions endpoint, API key and model name for conversational setup.
+- An SMTP account for optional email alerts; HTTPS webhooks do not require SMTP.
+- A page URL that opens without signing in.
 
 ## Install in three steps
-
-Create a folder, download the deployment files, fill in `.env` from the template, then start.
 
 ### 1. Download the deployment files
 
@@ -88,7 +79,7 @@ do
 done
 ```
 
-If a download fails the loop stops and names the file; run it again before starting. Keep every file — `compose.yaml` mounts the nginx, seccomp and egress files, and builds two small local helper images from the Dockerfiles:
+The loop stops and names the file if a download fails; run it again before starting. Keep every file: Compose mounts the nginx, seccomp and egress configuration and builds two local helper images from the Dockerfiles.
 
 ```text
 webmonitor-agent/
@@ -109,7 +100,7 @@ webmonitor-agent/
 
 ### 2. Create `.env`
 
-Create `.env` next to `compose.yaml` with these values:
+Create `.env` next to `compose.yaml`:
 
 ```dotenv
 # :latest follows stable releases. Pin a version such as 1.1.0 for repeatable installs.
@@ -154,84 +145,69 @@ OPENAI_MODEL=replace-with-your-model-name
 # MAIL_FROM=
 ```
 
-Replace each `replace-with-...` value with your settings. Generate `SECRET_KEY` and the database password separately with `openssl rand -hex 32`. Use a 12–128 character administrator password.
+Replace every `replace-with-...` value. Generate `SECRET_KEY` and the database password separately with `openssl rand -hex 32`. Use a 12–128 character administrator password. If `ADMIN_PASSWORD` is empty, no account is created at startup; use the [FAQ](#faq) command to create one later.
 
-If you leave `ADMIN_PASSWORD` empty, no account is created at startup; create one later with the command in the [FAQ](#faq).
+Keep `DEVELOPMENT_MODE=true` for local `http://` access. If you change `WEBMONITOR_HTTP_PORT`, update the host and port in `APP_ORIGIN` too. See [`.env.example`](https://github.com/webmonitor/WebMonitor-Agent/blob/main/.env.example) for all settings.
 
-Use `DEVELOPMENT_MODE=true` for local `http://` access. When changing `WEBMONITOR_HTTP_PORT`, update the host and port in `APP_ORIGIN` too. See [`.env.example`](https://github.com/webmonitor/WebMonitor-Agent/blob/main/.env.example) for all settings.
-
-### 3. Start everything
+### 3. Start the stack
 
 ```sh
 docker compose up -d --wait
 ```
 
-The command downloads the application image, builds two helper images on the first run, starts the supporting services and waits for health checks.
+This pulls the application image, builds the helper images on the first run and waits for health checks. Open **[http://localhost:8080](http://localhost:8080/)** after `docker compose ps` shows no service restarting or exited.
 
-You should see a clean exit, and in `docker compose ps` no service restarting or exited. Then open **[http://localhost:8080](http://localhost:8080/)**.
+For startup failures, inspect `docker compose ps` and `docker compose logs` (optionally followed by a service name). The readiness check is:
 
-If startup fails, inspect service status with `docker compose ps` and errors with `docker compose logs`; append a service name to narrow the output. The health endpoint `curl --fail http://localhost:8080/api/v1/health/ready` returns `{"status":"ready"}` when ready.
+```sh
+curl --fail http://localhost:8080/api/v1/health/ready
+```
 
-The site is published on `127.0.0.1` only, on the machine running Docker. Use that machine's browser, or an SSH tunnel from yours.
+It returns `{"status":"ready"}` when ready. By default the site binds only to `127.0.0.1` on the Docker host; use that machine's browser or an SSH tunnel.
 
 ## Create your first monitor
 
-Sign in with the `ADMIN_EMAIL` and `ADMIN_PASSWORD` from `.env`. The first start creates that account automatically. If it was not created, see the [FAQ](#faq). The **EN / 中文** switch at the top of the sidebar changes the interface language.
+Sign in with the `ADMIN_EMAIL` and `ADMIN_PASSWORD` from `.env`. The **EN / 中文** switch changes the interface language.
 
-### Create a notification group
+### 1. Create a notification group
 
-**Notifications** → **Notification groups** → **New**. Give it a name, add recipients one per line (commas or spaces also work), then **Save**.
+Open **Notifications** → **Notification groups** → **New**, name the group, add recipients one per line (commas or spaces also work) and save. Every monitor delivers through a group; only administrators can create groups.
 
-Only an administrator can create groups; members ask an administrator. Every monitor sends through a group, and a group can hold several addresses; members see a group's name, enabled state and how many recipients are active, never the addresses themselves. Delivery previews and monitor details therefore show members the protected recipient count with an empty address list, and email delivery records hide the destination; administrators still see the approved snapshot. Adding recipients requires a new preview and confirmation for each monitor. Removing or deactivating a member, or disabling its approved group, revokes that source for pending and future mail. An unrelated group never restores authorization; another group approved for the same monitor may still authorize the address.
+Members see a group's name, enabled state and active recipient count, never its addresses. Their previews and monitor details show the protected count with an empty address list, and email delivery records hide destinations; administrators see the approved snapshot.
 
-**Delete** asks for confirmation first, and a group still used by a non-archived monitor is refused with the reason: point those monitors at another group, or archive them, then delete. Editing a group keeps each existing recipient's enabled state, and newly added addresses start enabled.
+Recipient authorization is part of confirmation:
 
-### Describe what you want
+- Adding recipients requires a new preview and confirmation for each monitor. Removing or deactivating a member, or disabling its approved group, revokes that source for pending and future mail. An unrelated group does not restore authorization, although another group approved for the same monitor may still authorize the address.
+- Editing a group preserves existing recipients' enabled states; new addresses start enabled. A group used by a non-archived monitor cannot be deleted until those monitors use another group or are archived.
 
-Click **New conversation** and type what you need, for example one of the sentences in [What you can watch](#what-you-can-watch). Press Enter to send, Shift+Enter for a new line, and the square button to stop a run that is taking too long.
+### 2. Describe and preview
 
-Two things happen next:
+Click **New conversation** and describe the page and condition. The assistant asks for missing collection details, reads the page and shows its work log. Channel, destination, frequency, timezone and email template are configured separately rather than collected by the chat.
 
-- The assistant opens the page and shows a work log — **View N steps** — listing what it did: read the page and saved the collection definition.
-- The assistant asks for any missing details about what to extract and when a change counts. The channel, destination, check frequency and email template are yours: you set them in the workspace beside the conversation.
+The inline confirmation card contains a real sample: monitor and schedule details, extracted values, coverage, page screenshot/archive when available, and the real email body or exact webhook JSON for each possible event. It also warns about partial coverage or fields required by the mail but missing from the page.
 
-### Check the preview, then create
+If the sample is wrong, ask for another. Queued, running and failed states are shown; failed, missing or expired samples can be retried. Creating or saving always confirms the exact preview shown, so a replacement preview requires fresh review.
 
-Before anything is scheduled, a confirmation card appears inline in the conversation. It holds one real sample, the mail that would be sent, and a single **Create monitor** button. Recipients, check frequency, timezone and the mail template are not asked for in the conversation: a new monitor starts from the deployment defaults (`DEFAULT_INTERVAL_SECONDS`, and `DEFAULT_NOTIFICATION_GROUP` or the first enabled group) and you edit them on the monitor itself under **Delivery settings**.
+### 3. Confirm and manage
 
-The card shows:
+**Create monitor** remains disabled until a valid sample exists and starts scheduled checking only when clicked. A sample is valid for 60 minutes. Creation also requires an enabled notification group.
 
-- monitor name, check frequency, page host and timezone, and how long the preview stays valid
-- **Extracted content** — the fields it read and their actual values on this page
-- **Coverage** — how much of the page this check covers
-- **Page screenshot** / **Page archive** when the sample saved them
-- **Preview notification** — the real email body, or the exact webhook JSON, for every event this monitor can produce
-- warnings such as “The check covers only part of the page”, or that the mail needs a field the page does not have
+New monitors start with `DEFAULT_INTERVAL_SECONDS` and either `DEFAULT_NOTIFICATION_GROUP` or the first enabled group. On the monitor page:
 
-If something is wrong, say so in the chat: the assistant takes a new sample and the card updates. A missing, failed or expired sample offers **Retry** on the line under the button.
+- **Delivery settings** edits recipients, channel, cadence, timezone and email template without discarding the collected baseline.
+- **Edit definition** edits the collection JSON, creates a draft and runs another real preview; only confirming that preview publishes the change. **Raw definition (JSON)** and **Definition versions** expose the executed definition and its published history.
+- **Check history** retains successful values, coverage, screenshots and archives with the collection spec used for that run. Events link to their checks.
+- **Pause** / **Resume** controls scheduling; pausing cancels queued or running collection. **Check now**, cancellation and failed-check retry are available from the monitor and check details. **Archive** stops checks while retaining history; **Restore** returns the monitor paused.
+- **Events** records detected changes. **Notifications** → **Delivery log** shows channel, destination, status, attempts, payload and errors, with retry for failed or cancelled deliveries.
+- **Email templates** provides model-assisted reusable designs with real mail previews and validated style tokens rather than custom markup. Existing monitors keep the template design they were approved with when a template is later edited or disabled.
 
-The card shows a preview's queued, running or failed status. Failed previews retain their error and can be retried. Creating or saving a monitor confirms the exact preview shown; another preview replacing it requires refreshing and confirming the new result.
-
-**Create monitor** is the click that starts scheduled checking. It stays disabled while a sample is missing, still running or expired — a sample stays valid for 60 minutes. If the instance has no enabled notification group, creation stops and asks an administrator to create one; nothing about delivery is asked for in the conversation.
-
-### After it starts
-
-- The monitor appears under **Monitors** in the left sidebar with its name and interval. Its page shows **Last check**, **Next check**, **Check frequency**, **Collection method**, and **Monitor definition**: the selectors, fields, normalization, change rules and coverage actually in use. Notification channel, destination, check frequency, timezone and the email template are separate delivery settings, edited from **Delivery settings** on the monitor; the monitor shows the channel, template name and approved recipients or webhook URL. **Raw definition (JSON)** shows the collection definition exactly as the worker executes it, and **Definition versions** lists every published version that changed it.
-- **Edit definition** edits that collection JSON directly. Saving writes a draft, starts a real preview and opens the conversation where you confirm it; only a confirmed preview updates the monitor, and editing from an older version starts a new draft from it. **Delivery settings** opens the recipients, cadence and template for this monitor; changing them keeps the collected baseline.
-- **Rename** changes the name. **Archive** stops checks and moves the monitor to **Archived**, keeping its definition and history; **Restore** brings it back, paused.
-- **Check history** stores every successful collection. Open one to see the stored values, coverage, screenshot and page archive. Snapshot and job details also include the published collection spec from that run's `spec_version` / `revision`, rather than a newer monitor definition. Events link to their check record and check details.
-- **Pause** / **Resume** stops and restarts the schedule. Pausing cancels queued or running collection; **Check now** is available while the monitor is active. An active check can be cancelled from its details, and a failed check can be retried there.
-- **Email templates** in the left sidebar stores reusable mail designs. You describe the email in one sentence — colours, type, density, what to show, where the record link goes — and the model writes both the look and the layout: a subject with `{monitor_name}`, `{event_label}` and `{event_date}` tokens, a style (five colours, font family, heading scale, density, corner radius, border, label case), an optional intro per event type, and ordered blocks (summary, all collected fields, detection time, links, dividers). The style is a set of validated tokens the server turns into CSS, so a design never carries markup of its own. The result is rendered as a real mail before you save it, and a design never names a specific field, so it fits any monitor. Editing an existing template is the same one-sentence prompt. Any member can create one; only its creator or an administrator can change or disable it. A monitor keeps the design it was approved with, so editing or disabling a template never rewrites an existing monitor.
-- **Events** lists everything detected, with **All** / **Unread** filters, monitor and event-type filters, and **Mark as read**. The filters live in the address, so a reload or a shared link opens the same list; an event that produced no email says why.
-- **Notifications** → **Delivery log** lists each notification with its channel, monitor, recipient or endpoint, status, attempts, body, and the error if it failed. Filter by status, and a failed or cancelled delivery can be **retried**, which queues it again with a fresh attempt count.
-- **Members** (administrators) enables or disables accounts and creates single-use invitation links to copy. Disabling an account revokes its sessions, pauses its monitors, and cancels its queued/running jobs and unsent deliveries in one transaction. Re-enabling it does not resume monitors or replay cancelled work.
-- Use **Load more** to reach older conversations, monitors, checks, events, groups and deliveries. Monitor detail pages show events filtered for that monitor.
-
-The first successful check only records the starting content and sends no notification; comparisons begin with the second check. Previews never send a notification. A failed check keeps the last successful content as the comparison baseline.
+Administrators can invite members and disable accounts. Disabling an account revokes its sessions, pauses its monitors and cancels queued/running jobs and unsent deliveries; re-enabling does not resume or replay them.
 
 ## Email and webhook alerts
 
-Add these to `.env` and apply them:
+### Email
+
+Add SMTP settings to `.env`, then run `docker compose up -d --wait`:
 
 ```dotenv
 SMTP_HOST=smtp.example.com
@@ -243,115 +219,93 @@ SMTP_STARTTLS=false
 MAIL_FROM=WebMonitor <alert@example.com>
 ```
 
-```sh
-docker compose up -d --wait
-```
+- Use the provider's encryption mode: exactly one of `SMTP_USE_SSL` and `SMTP_STARTTLS` must be `true`. Port 465 usually uses SSL; port 587 usually uses STARTTLS.
+- Set `MAIL_FROM` to the sender and match the authenticated account when required. Supply both `SMTP_USERNAME` and `SMTP_PASSWORD` when authentication is required.
+- `Sent` means the SMTP server accepted the message, not that it reached the inbox; check spam if necessary. Temporary failures are retried up to three times, while configuration errors are recorded as failed.
 
-Rules that matter:
+Collection results appear in **Events** and delivery status in **Delivery log**. Repeated collection failures send one alert per cause, followed by a recovery alert after success.
 
-- Choose the encryption mode documented by your provider: set one of `SMTP_USE_SSL` and `SMTP_STARTTLS` to `true` and the other to `false`. Port 465 usually uses SSL; 587 usually uses STARTTLS.
-- Set `MAIL_FROM` to your sender address and match the account when your provider requires it.
-- Set both `SMTP_USERNAME` and `SMTP_PASSWORD` when authentication is required.
+### HTTPS webhooks
 
-Configure SMTP in `.env`. Collection results appear in Events; delivery status appears in **Delivery log**.
+Each monitor uses one channel selected in **Delivery settings**. Webhook URLs must use HTTPS on a public host and port 443. They follow the same egress policy as collection, and redirects are not followed.
 
-`Sent` means the mail server accepted the message. Check spam if it has not arrived. Temporary failures are retried up to three times; configuration errors appear as failed.
-
-### Webhook alerts
-
-Each monitor uses exactly one channel, chosen in its **Delivery settings**. Selecting **Webhook** asks for an HTTPS URL on a public host and port 443; the same egress policy as collection applies, and redirects are not followed.
+To change the default for monitors created from new conversations:
 
 ```dotenv
 DEFAULT_DELIVERY_CHANNEL=webhook
 DEFAULT_WEBHOOK_URL=https://hooks.example.com/services/your-endpoint
 ```
 
-The default channel applies to monitors created from the conversation. Changing it affects new drafts; existing monitors keep their own setting. A webhook delivery POSTs the JSON payload shown in the confirmation preview — `monitor`, `event`, `change`, `fields` and `evidence_url` — with these headers:
+Changing the default affects new drafts; existing monitors keep their settings. A delivery POSTs the previewed JSON payload containing `monitor`, `event`, `change`, `fields` and `evidence_url`, with these headers:
 
 - `Content-Type: application/json`
-- `X-WebMonitor-Event`: the event type
-- `X-WebMonitor-Monitor`: the monitor ID
-- `X-WebMonitor-Delivery`: the delivery ID
+- `X-WebMonitor-Event`: event type
+- `X-WebMonitor-Monitor`: monitor ID
+- `X-WebMonitor-Delivery`: delivery ID
 
-Endpoints normally answer `2xx`; `408`, `425`, `429` and `5xx` are retried, and other responses are recorded as failed. The **Delivery log** shows the endpoint, HTTP status and error code, and a failed delivery can be retried.
+Endpoints should return `2xx`. Responses `408`, `425`, `429` and `5xx` are retried; other responses are recorded as failed. **Delivery log** shows the endpoint, HTTP status and error code and supports retrying a failed delivery.
 
 ## FAQ
 
-**The page does not load.**
-Check service status with `docker compose ps` and startup errors with `docker compose logs api web proxy`. If the port is occupied, update `WEBMONITOR_HTTP_PORT` and `APP_ORIGIN` together, then run `docker compose up -d --wait`.
+**The page does not load.**  
+Check `docker compose ps` and `docker compose logs api web proxy`. If the port is occupied, update `WEBMONITOR_HTTP_PORT` and `APP_ORIGIN` together, then run `docker compose up -d --wait`.
 
-**I cannot open it from another computer.**
-The default address binds to `127.0.0.1` on the Docker host. For remote access, change the port binding in `compose.yaml` and set `APP_ORIGIN` to your actual address. Configure an HTTPS reverse proxy for public access.
+**I cannot open it from another computer.**  
+The default binds to `127.0.0.1`. For remote access, change the port binding in `compose.yaml`, set `APP_ORIGIN` to the actual address and configure an HTTPS reverse proxy for public access.
 
-**Sign-in says the email or password is incorrect, or no administrator exists.**
-Create one now:
+**No administrator exists, or sign-in fails.**  
+Create an administrator interactively:
 
 ```sh
 docker compose exec api webmonitor admin-create --email admin@example.com
 ```
 
-It asks twice for a 12–128 character password. `ADMIN_EMAIL` and `ADMIN_PASSWORD` only take effect on the very first start with an empty users table.
+The command asks twice for a 12–128 character password. `ADMIN_EMAIL` and `ADMIN_PASSWORD` apply only on the first start with an empty users table.
 
-**How do I give a colleague access?**
+**How do I invite a colleague?**
 
 ```sh
 docker compose exec api webmonitor invite-create --email member@example.com --ttl-hours 24
 ```
 
-Send the printed link over a safe channel. It works once, is bound to that address, expires after 24 hours (1–168 allowed), and requires an existing administrator. The colleague opens it, sets a display name and a 12–128 character password.
+Send the printed link over a safe channel. It is single-use, bound to that email address and expires after 24 hours (`1`–`168` hours allowed). The recipient sets a display name and password.
 
-**The chat says the target address is not allowed.**
-Only public `http://` or `https://` pages on ports 80 or 443 are accepted. Intranet and localhost addresses, other ports, and pages that need a sign-in cannot be monitored.
+**The sample is empty or covers only part of the page.**  
+Review the preview's coverage warning and describe the target more precisely or choose another public page/value. iframe, Shadow DOM, authenticated and automation-blocking content cannot be collected. A genuinely empty page can represent a real state, such as all notices being removed; explicitly ask the assistant to treat it that way. Otherwise an empty read is a failed check, not a deletion.
 
-**The sample is empty, or only part of the page.**
-The assistant reads the HTML first and opens the page in a real browser when the data needs JavaScript. It still cannot read iframe or Shadow DOM content, anything behind a login, or pages that block automation. Coverage warnings on the preview card say when the read was partial; if the values there are empty, the monitor would have nothing to compare — describe the target more precisely, or choose another page or another value on it. A genuinely empty page can be a real state, such as every notice removed: ask the assistant to treat it that way. Otherwise an empty read is a failed check, not a deletion.
+**Create monitor is unavailable.**  
+Wait for the sample or use **Retry**. If no recipient group is configured, an administrator must create one under **Notifications** → **Notification groups**.
 
-**Create monitor is greyed out.**
-There is no valid sample yet: use **Retry** on the line under the button, or wait for the running sample. If the line says no recipient group is configured, an administrator has to create one under **Notifications** → **Notification groups**.
-
-**No notification arrived.**
-Open **Notifications** → **Delivery log** to check the channel, destination, status and errors. For `Sent`, check spam; for `Failed`, review the SMTP settings using the error shown. The first check establishes a baseline; later changes trigger the configured rules. Repeated collection failures send one alert per cause, followed by a recovery alert after success.
-
-**I changed the recipients but nothing happened.**
-Recipients come from notification groups. Editing a group changes who a future mail reaches; open the monitor's **Delivery settings** and save to approve the current set. The collected baseline is kept, so checks continue from the last known values.
-
-**How often can a monitor check?**
-Between 1 minute and 24 hours. Short intervals mean more requests to the target site and more load on this machine.
-
-**Can it watch a page I have to log in to?**
-Currently supported targets are public pages accessible without signing in.
+**No notification arrived, or recipients changed without effect.**  
+Check **Delivery log** for the destination, status and error. For email marked `Sent`, check spam. After changing group recipients, open the monitor's **Delivery settings** and save to approve the current set; this keeps the baseline. Also remember that the first successful check only establishes a baseline.
 
 ## Kubernetes (local development)
 
-See [the Kubernetes guide](docs/kubernetes.md) for the single-node topology, one API replica, separate worker, required CNI and seccomp setup, Secret creation, public model/SMTP boundaries, and real-cluster acceptance. Compose remains the standard single-host deployment.
+See [the Kubernetes guide](docs/kubernetes.md) for the single-node topology, one API replica, separate worker, required CNI and seccomp setup, Secret creation, public model/SMTP boundaries and real-cluster acceptance. Compose remains the standard single-host deployment.
 
 ## Update, roll back, and your data
 
 ### Update
 
-Set `WEBMONITOR_IMAGE` in `.env` to the new tag, for example `ghcr.io/webmonitor/webmonitor-agent:1.1.0`, then apply it:
+Record the current image version, set `WEBMONITOR_IMAGE` in `.env` to the new tag (for example `ghcr.io/webmonitor/webmonitor-agent:1.1.0`), then update only the application services:
 
 ```sh
 docker compose pull api web
 docker compose up -d --wait --no-deps api web
 ```
 
-`:latest` follows stable releases; a pinned version keeps an install repeatable. Deployment files come from `main`, so keep the copies you actually started with.
-
-Record the current image version before updating. The commands above update only the application services while leaving the running database and evidence services in place.
+`:latest` follows stable releases; a pinned version makes an install repeatable. Deployment files download from `main`, so retain the copies you actually started with. These commands leave the running database and evidence services in place.
 
 ### Roll back
 
-Set `WEBMONITOR_IMAGE` to the previous tag and repeat the commands above.
+Set `WEBMONITOR_IMAGE` to the previous tag and repeat the update commands.
 
-The default database and evidence store use temporary memory-backed directories. Stopping, restarting or recreating `postgres` or `s3`, or running `docker compose down`, clears accounts, monitors, events and saved pages. `docker compose restart api` preserves the running data services. Configure persistent storage and backups for long-term use, and retain `.env` and deployment files.
+> **The default PostgreSQL and S3 stores are ephemeral.** They use memory-backed temporary directories. Stopping, restarting or recreating `postgres` or `s3`, or running `docker compose down`, clears accounts, monitors, events and saved pages. `docker compose restart api` preserves the running data services. Configure persistent storage and backups for long-term use, and retain `.env` and the deployment files.
 
 ## Development
 
 <details>
-<summary>Build from source, image releases, internals</summary>
-
-To develop from source:
+<summary>Build from source, image releases and internals</summary>
 
 ```sh
 git clone https://github.com/webmonitor/WebMonitor-Agent.git
@@ -360,13 +314,13 @@ cp .env.example .env
 docker compose -f compose.yaml -f compose.build.yaml up --build -d --wait
 ```
 
-Fill `.env` with the same values as above; `.env.example` lists every development setting. Keep both `-f` flags on later commands. The build installs Chromium and takes several minutes. The running `web` container contains only the compiled frontend server, so run frontend tooling outside it.
+Fill `.env` as above; [`.env.example`](./.env.example) lists every development setting. Keep both `-f` flags on later Compose commands. The build installs Chromium and takes several minutes. Run frontend tooling outside the `web` container, which contains only the compiled frontend server. See [DESIGN.md](./DESIGN.md) for internals.
 
-The OpenAPI document is served only with `DEVELOPMENT_MODE=true`, which is what the frontend's `generate:api` script needs: it regenerates `web/src/lib/api/schema.d.ts` from the running API, so that file is never edited by hand.
+The OpenAPI document is served only with `DEVELOPMENT_MODE=true`. The frontend's `generate:api` script uses it to regenerate `web/src/lib/api/schema.d.ts`; do not edit that file by hand.
 
-Push a `vX.Y.Z` tag to publish a release. The workflow checks the declared application versions, builds `linux/amd64` and `linux/arm64` images, publishes `:X.Y.Z` and `:X.Y`, and creates a GitHub Release. Stable releases also update `:latest`. Pull requests build without publishing; ordinary branch pushes do not run the image workflow. The two helper images are built locally from `deploy/`.
+Push a `vX.Y.Z` tag to publish a release. The workflow checks application versions, builds `linux/amd64` and `linux/arm64` images, publishes `:X.Y.Z` and `:X.Y`, and creates a GitHub Release. Stable releases also update `:latest`. Pull requests build without publishing; ordinary branch pushes do not run the image workflow. The two helper images are built locally from `deploy/`.
 
-The stack is meant for local use — it binds to `127.0.0.1`, terminates no TLS, and keeps no durable state.
+The default stack is for local use: it binds to `127.0.0.1`, terminates no TLS and keeps no durable state.
 
 </details>
 
