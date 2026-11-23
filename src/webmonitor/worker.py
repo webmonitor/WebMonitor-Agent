@@ -17,6 +17,7 @@ from webmonitor.agent.orchestration import execute_job as execute_agent_job
 from webmonitor.collection.api import collect_api
 from webmonitor.collection.browser import collect_browser
 from webmonitor.collection.http import collect_http
+from webmonitor.collection.probe import probe, replay
 from webmonitor.config import get_settings
 from webmonitor.db import get_session_factory
 from webmonitor.errors import DomainError
@@ -24,7 +25,7 @@ from webmonitor.models import Delivery, Draft, Job
 from webmonitor.notifications.delivery import send_email
 from webmonitor.notifications.errors import DeliveryFailure
 from webmonitor.notifications.webhook import send_webhook
-from webmonitor.schemas.monitors import MonitorSpec
+from webmonitor.schemas.monitors import ApiRequest, MonitorSpec
 from webmonitor.services import accounts, drafts, jobs, notifications, runs
 from webmonitor.storage.evidence import delete_evidence, upload_evidence
 
@@ -117,23 +118,31 @@ async def _collect(job_id: UUID, worker_id: str) -> None:
     renewal = asyncio.create_task(_renew(job_id, worker_id, current))
     uploaded: list[dict] = []
     try:
-        if op == "network":
-            result = await collect_browser(url, network=True)
-        elif spec is not None and spec.source is not None:
-            result = await collect_api(url, spec)
+        if op == "probe":
+            report = await probe(url)
+            payload = {"final_url": report.get("final_url"), "probe": report, "warnings": []}
+        elif op == "replay":
+            req = ApiRequest.model_validate((stored or {}).get("request"))
+            report = await replay(req)
+            payload = {"final_url": report.get("final_url"), "replay": report, "warnings": []}
         else:
-            collector = collect_browser if mode == "browser" else collect_http
-            result = await collector(url, spec)
-        if result.body is not None:
-            uploaded.append(await upload_evidence(prefix=_prefix(job), kind=result.body_kind,
-                                                  data=result.body.encode("utf-8")))
-        if result.screenshot is not None:
-            uploaded.append(await upload_evidence(prefix=_prefix(job), kind="screenshot",
-                                                  data=result.screenshot))
-        payload = {"final_url": result.final_url, "fields": result.fields,
-                   "coverage": result.coverage, "evidence_refs": uploaded,
-                   "duration_ms": result.duration_ms, "warnings": result.warnings,
-                   "analysis": result.analysis}
+            if op == "network":
+                result = await collect_browser(url, network=True)
+            elif spec is not None and spec.source is not None:
+                result = await collect_api(url, spec)
+            else:
+                collector = collect_browser if mode == "browser" else collect_http
+                result = await collector(url, spec)
+            if result.body is not None:
+                uploaded.append(await upload_evidence(prefix=_prefix(job), kind=result.body_kind,
+                                                      data=result.body.encode("utf-8")))
+            if result.screenshot is not None:
+                uploaded.append(await upload_evidence(prefix=_prefix(job), kind="screenshot",
+                                                      data=result.screenshot))
+            payload = {"final_url": result.final_url, "fields": result.fields,
+                       "coverage": result.coverage, "evidence_refs": uploaded,
+                       "duration_ms": result.duration_ms, "warnings": result.warnings,
+                       "analysis": result.analysis}
         async with _session() as session, session.begin():
             live = await _locked(session, job_id)
             if not _owned(live, worker_id, terminal=True):

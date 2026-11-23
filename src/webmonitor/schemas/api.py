@@ -513,3 +513,32 @@ class DerivedDraft(BaseModel):
     draft_id: UUID
     spec_revision: int
     settings_revision: int
+
+
+class ApiTokenCreate(Input):
+    name: str = Field(min_length=1, max_length=200)
+    scopes: list[str] | None = None
+    ttl_days: int | None = Field(default=90, ge=1, le=3650, strict=True)
+
+    @field_validator("name")
+    @classmethod
+    def trimmed_name(cls, value: str) -> str:
+        value = value.strip()
+        if not value:
+            raise ValueError("name must not be blank")
+        return value
+
+
+class ApiTokenView(BaseModel):
+    id: UUID
+    name: str
+    token_prefix: str
+    scopes: list[str]
+    expires_at: datetime | None
+    last_used_at: datetime | None
+    revoked_at: datetime | None
+    created_at: datetime
+
+
+class ApiTokenCreated(ApiTokenView):
+    token: str

@@ -47,6 +47,9 @@ x-app-env: &app-env
   TARGET_ALLOWED_ORIGINS: ${TARGET_ALLOWED_ORIGINS:-}
   TRUSTED_PROXY_IP: 172.30.80.10
   WORKERS_ENABLED: "true"
+  MCP_ENABLED: ${MCP_ENABLED:-false}
+  MCP_ALLOWED_ORIGINS: ${MCP_ALLOWED_ORIGINS:-}
+  ANALYZE_RUNS_PER_HOUR: ${ANALYZE_RUNS_PER_HOUR:-60}
 
 x-started: &started
   postgres: {condition: service_healthy}

@@ -98,3 +98,4 @@ def test_readiness_derives_its_table_list_from_the_model():
 
     assert "email_templates" in EXPECTED_TABLES
     assert "deliveries" in EXPECTED_TABLES
+    assert "api_tokens" in EXPECTED_TABLES

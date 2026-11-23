@@ -1,13 +1,14 @@
 """FastAPI factory: one process serves HTTP and runs every background loop."""
 import asyncio
 import logging
-from contextlib import asynccontextmanager
+from contextlib import AsyncExitStack, asynccontextmanager
 
 from fastapi import FastAPI, Request
 from fastapi.exceptions import RequestValidationError
 from fastapi.responses import JSONResponse
 from sqlalchemy.exc import OperationalError
 from starlette.exceptions import HTTPException
+from starlette.types import ASGIApp, Receive, Scope, Send
 
 from webmonitor.api.routes import (
     auth,
@@ -18,6 +19,7 @@ from webmonitor.api.routes import (
     monitors,
     notifications,
     templates,
+    tokens,
 )
 from webmonitor.config import get_settings
 from webmonitor.db import database_ready, get_engine, initialize_database
@@ -45,16 +47,34 @@ async def lifespan(app: FastAPI):
                 logger.critical("Background worker stopped", exc_info=done.exception())
 
         task.add_done_callback(report)
-    try:
-        yield
-    finally:
-        if task is not None:
-            task.cancel()
-            try:
-                await task
-            except (asyncio.CancelledError, Exception):
-                pass
-        await get_engine().dispose()
+    async with AsyncExitStack() as stack:
+        mcp_session_manager = getattr(app.state, "mcp_session_manager", None)
+        if mcp_session_manager is not None:
+            await stack.enter_async_context(mcp_session_manager.run())
+        try:
+            yield
+        finally:
+            if task is not None:
+                task.cancel()
+                try:
+                    await task
+                except (asyncio.CancelledError, Exception):
+                    pass
+            await get_engine().dispose()
+
+
+class _McpDispatchMiddleware:
+    """Dispatch /mcp directly without Starlette Mount trailing-slash redirects."""
+
+    def __init__(self, app: ASGIApp, mcp_app: ASGIApp):
+        self.app = app
+        self.mcp_app = mcp_app
+
+    async def __call__(self, scope: Scope, receive: Receive, send: Send) -> None:
+        if scope["type"] == "http" and scope.get("path") in {"/mcp", "/mcp/"}:
+            await self.mcp_app(scope, receive, send)
+            return
+        await self.app(scope, receive, send)
 
 
 def create_app() -> FastAPI:
@@ -63,11 +83,16 @@ def create_app() -> FastAPI:
                   openapi_url="/api/v1/openapi.json" if settings.development_mode else None,
                   docs_url=None, redoc_url=None)
     app.add_exception_handler(DomainError, domain_error_handler)
+    if settings.mcp_enabled:
+        from webmonitor.mcp import build_mcp_runtime
+        mcp_asgi, mcp_session_manager = build_mcp_runtime()
+        app.state.mcp_session_manager = mcp_session_manager
+        app.add_middleware(_McpDispatchMiddleware, mcp_app=mcp_asgi)
     app.add_middleware(CSRFMiddleware)
     # Outermost, so an oversized body is refused before CSRF and routing see it.
     app.add_middleware(MaxBodyMiddleware)
     for module in (auth, members, conversations, monitors, events, notifications, templates,
-                   evidence):
+                   evidence, tokens):
         app.include_router(module.router)
 
     @app.middleware("http")

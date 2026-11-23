@@ -26,6 +26,7 @@ dependencies = [
   "boto3==1.43.107",
   "openai==3.23.0",
   "openai-agents==0.22.3",
+  "mcp==2.2.0",
   "argon2-cffi==25.1.0",
   "beautifulsoup4==4.15.0",
   "lxml==6.1.3",

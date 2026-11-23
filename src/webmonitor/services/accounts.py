@@ -18,7 +18,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from webmonitor.config import get_settings
 from webmonitor.errors import DomainError
-from webmonitor.models import Delivery, Invitation, Monitor, Session, User, utc_now
+from webmonitor.models import ApiToken, Delivery, Invitation, Monitor, Session, User, utc_now
 from webmonitor.schemas.api import InvitationView, Page
 from webmonitor.security.auth import CurrentUser
 
@@ -137,6 +137,9 @@ async def set_availability(session: AsyncSession, user: User, active: bool) -> N
     now = utc_now()
     await session.execute(update(Session).where(Session.user_id == user.id,
         Session.revoked_at.is_(None)).values(revoked_at=now).execution_options(
+            synchronize_session="fetch"))
+    await session.execute(update(ApiToken).where(ApiToken.user_id == user.id,
+        ApiToken.revoked_at.is_(None)).values(revoked_at=now).execution_options(
             synchronize_session="fetch"))
     owned_monitors = (await session.scalars(select(Monitor).where(
         Monitor.user_id == user.id).with_for_update())).all()

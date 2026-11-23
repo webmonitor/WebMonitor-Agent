@@ -71,10 +71,14 @@ class Settings(BaseSettings):
     agent_history_chars: int = 60000
     preview_runs_per_hour: int = 60
     manual_runs_per_hour: int = 120
+    analyze_runs_per_hour: int = 60
     template_generation_per_hour: int = 10
     agent_concurrency: int = 2
     http_concurrency: int = 8
     browser_concurrency: int = 4
+
+    mcp_enabled: bool = False
+    mcp_allowed_origins: str = ""
 
     preview_ttl_minutes: int = 60
     message_max_chars: int = 32000
@@ -117,11 +121,16 @@ class Settings(BaseSettings):
                      "login_attempts", "login_window_minutes", "agent_max_turns",
                      "agent_max_tokens", "agent_timeout_seconds", "agent_history_messages",
                      "agent_history_chars", "preview_runs_per_hour", "manual_runs_per_hour",
-                     "template_generation_per_hour",
+                     "analyze_runs_per_hour", "template_generation_per_hour",
                      "agent_max_attempts", "message_max_chars", "agent_runs_per_hour"):
             if getattr(self, name) < 1:
                 raise ValueError(f"{name.upper()} must be at least 1")
+        _ = parse_mcp_allowed_origins(self.mcp_allowed_origins)
         return self
+
+    @property
+    def allowed_mcp_origins(self) -> frozenset[str]:
+        return frozenset({self.app_origin}) | parse_mcp_allowed_origins(self.mcp_allowed_origins)
 
     @property
     def database_url(self) -> URL:
@@ -167,6 +176,14 @@ def parse_target_origins(value: str) -> frozenset[str]:
             raise ValueError("TARGET_ALLOWED_ORIGINS contains an invalid port") from exc
         origins.add(f"{parsed.scheme}://{parsed.netloc}")
     return frozenset(origins)
+
+
+def parse_mcp_allowed_origins(value: str) -> frozenset[str]:
+    """Explicit scheme://host[:port] entries permitted for browser-hosted MCP clients."""
+    try:
+        return parse_target_origins(value)
+    except ValueError as exc:
+        raise ValueError(str(exc).replace("TARGET_ALLOWED_ORIGINS", "MCP_ALLOWED_ORIGINS")) from exc
 
 
 def allowed_target_origins() -> frozenset[str]:

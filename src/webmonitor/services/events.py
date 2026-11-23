@@ -1,0 +1,96 @@
+"""Event queries and acknowledgement shared by REST routes and MCP tools."""
+from uuid import UUID
+
+from sqlalchemy import func, select
+from sqlalchemy.ext.asyncio import AsyncSession
+
+from webmonitor.errors import DomainError
+from webmonitor.models import Event, Monitor, utc_now
+from webmonitor.schemas.api import EventView, Page
+from webmonitor.schemas.notifications import EventType
+from webmonitor.security.auth import CurrentUser
+
+
+def event_view(event: Event, monitor_name: str) -> EventView:
+    return EventView(
+        id=event.id,
+        monitor_id=event.monitor_id,
+        monitor_name=monitor_name,
+        job_id=event.job_id,
+        snapshot_id=event.snapshot_id,
+        type=event.type,
+        change=event.change or {},
+        created_at=event.created_at,
+        acknowledged_at=event.acknowledged_at,
+        notifications_skipped=(event.payload or {}).get("skipped"),
+    )
+
+
+async def list_events(
+    session: AsyncSession,
+    user: CurrentUser,
+    *,
+    limit: int = 50,
+    offset: int = 0,
+    monitor_id: UUID | None = None,
+    event_type: EventType | None = None,
+    acknowledged: bool | None = None,
+) -> Page[EventView]:
+    query = select(Event)
+    if monitor_id is not None:
+        query = query.where(Event.monitor_id == monitor_id)
+    if event_type is not None:
+        query = query.where(Event.type == event_type)
+    if acknowledged is not None:
+        query = query.where(
+            Event.acknowledged_at.is_not(None) if acknowledged else Event.acknowledged_at.is_(None)
+        )
+    if user.role != "admin":
+        query = query.join(Monitor, Monitor.id == Event.monitor_id).where(
+            Monitor.user_id == user.user_id
+        )
+    rows = (
+        await session.scalars(
+            query.order_by(Event.created_at.desc(), Event.id.desc())
+            .limit(limit)
+            .offset(offset)
+        )
+    ).all()
+    total = await session.scalar(select(func.count()).select_from(query.subquery()))
+    names = (
+        {
+            row.id: row.name
+            for row in (
+                await session.scalars(
+                    select(Monitor).where(Monitor.id.in_({row.monitor_id for row in rows}))
+                )
+            ).all()
+        }
+        if rows
+        else {}
+    )
+    return Page[EventView](
+        items=[event_view(row, names.get(row.monitor_id, "")) for row in rows],
+        total=total or 0,
+    )
+
+
+async def acknowledge_event(
+    session: AsyncSession, user: CurrentUser, event_id: UUID
+) -> EventView:
+    event = await session.scalar(
+        select(Event).where(Event.id == event_id).with_for_update()
+        .execution_options(populate_existing=True)
+    )
+    if event is None:
+        raise DomainError("not_found", 404)
+    monitor = await session.get(Monitor, event.monitor_id)
+    if monitor is None:
+        raise DomainError("not_found", 404)
+    if monitor.user_id != user.user_id and user.role != "admin":
+        raise DomainError("not_found", 404)
+    if event.acknowledged_at is None:
+        event.acknowledged_at = utc_now()
+        event.acknowledged_by_user_id = user.user_id
+    await session.flush()
+    return event_view(event, monitor.name)

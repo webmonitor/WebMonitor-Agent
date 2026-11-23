@@ -20,6 +20,7 @@ from webmonitor.models import (
     utc_now,
 )
 from webmonitor.notifications.rendering import render_email
+from webmonitor.schemas.api import Delivery as DeliveryView
 from webmonitor.schemas.api import Group, MemberSpec, Page
 from webmonitor.schemas.templates import EmailTemplateConfig
 from webmonitor.security.auth import CurrentUser, require_admin
@@ -297,3 +298,95 @@ async def cancel_delivery(session: AsyncSession, delivery: Delivery, *,
     delivery.lease_owner = delivery.lease_expires_at = None
     delivery.error_code, delivery.error_message = code, message
     await session.flush()
+
+
+def delivery_view(
+    row: Delivery, monitor_name: str = "", *, include_recipient: bool = True
+) -> DeliveryView:
+    recipient = row.recipient if include_recipient or row.channel == "webhook" else None
+    return DeliveryView(
+        id=row.id,
+        monitor_id=row.monitor_id,
+        monitor_name=monitor_name,
+        event_id=row.event_id,
+        channel=row.channel,
+        recipient=recipient,
+        subject=row.subject,
+        body_text=row.body_text,
+        status=row.status,
+        attempt_count=row.attempt_count,
+        error_code=row.error_code,
+        error_message=row.error_message,
+        response_code=row.response_code,
+        created_at=row.created_at,
+        sent_at=row.sent_at,
+        failed_at=row.failed_at,
+    )
+
+
+async def list_deliveries(
+    session: AsyncSession,
+    user: CurrentUser,
+    *,
+    limit: int = 50,
+    offset: int = 0,
+    status: str | None = None,
+    monitor_id: UUID | None = None,
+) -> Page[DeliveryView]:
+    query = select(Delivery)
+    if user.role != "admin":
+        query = query.where(Delivery.user_id == user.user_id)
+    if status is not None:
+        query = query.where(Delivery.status == status)
+    if monitor_id is not None:
+        query = query.where(Delivery.monitor_id == monitor_id)
+    rows = (
+        await session.scalars(
+            query.order_by(Delivery.created_at.desc(), Delivery.id.desc())
+            .limit(limit)
+            .offset(offset)
+        )
+    ).all()
+    total = await session.scalar(select(func.count()).select_from(query.subquery()))
+    names = (
+        {
+            row.id: row.name
+            for row in (
+                await session.scalars(
+                    select(Monitor).where(Monitor.id.in_({row.monitor_id for row in rows}))
+                )
+            ).all()
+        }
+        if rows
+        else {}
+    )
+    include_recipient = user.role == "admin"
+    return Page[DeliveryView](
+        items=[
+            delivery_view(row, names.get(row.monitor_id, ""), include_recipient=include_recipient)
+            for row in rows
+        ],
+        total=total or 0,
+    )
+
+
+async def retry_delivery(
+    session: AsyncSession, user: CurrentUser, delivery_id: UUID
+) -> DeliveryView:
+    row = await session.get(Delivery, delivery_id, with_for_update=True, populate_existing=True)
+    if row is None or (row.user_id != user.user_id and user.role != "admin"):
+        raise DomainError("not_found", 404)
+    if row.status not in ("failed", "cancelled"):
+        raise DomainError("delivery_not_retryable", 409, details={"status": row.status})
+    row.status, row.available_at = "queued", utc_now()
+    row.attempt_count = 0
+    row.lease_owner = row.lease_expires_at = None
+    row.error_code = row.error_message = row.response_code = None
+    row.failed_at = row.cancelled_at = None
+    await session.flush()
+    monitor = await session.get(Monitor, row.monitor_id)
+    return delivery_view(
+        row,
+        monitor.name if monitor is not None else "",
+        include_recipient=user.role == "admin",
+    )

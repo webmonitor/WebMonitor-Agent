@@ -83,6 +83,22 @@ class Session(UUIDPrimaryKey, Created, Base):
     revoked_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
 
 
+class ApiToken(UUIDPrimaryKey, Created, Base):
+    __tablename__ = "api_tokens"
+    __table_args__ = (
+        Index("ix_api_tokens_live_user", "user_id", "created_at",
+              postgresql_where=text("revoked_at IS NULL")),
+    )
+    user_id: Mapped[UUID] = mapped_column(ForeignKey("users.id", ondelete="CASCADE"))
+    name: Mapped[str] = mapped_column(String(200))
+    token_prefix: Mapped[str] = mapped_column(String(24))
+    token_hash: Mapped[str] = mapped_column(String(64), unique=True)
+    scopes: Mapped[list[str]] = mapped_column(JSONB, default=list, server_default="[]")
+    expires_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    last_used_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    revoked_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+
+
 class Invitation(UUIDPrimaryKey, Created, Base):
     __tablename__ = "invitations"
     __table_args__ = (
