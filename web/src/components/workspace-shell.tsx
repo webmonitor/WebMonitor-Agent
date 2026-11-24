@@ -6,6 +6,8 @@ import {
   Activity,
   Archive,
   Bell,
+  Gauge,
+  KeyRound,
   LogOut,
   Mail,
   Menu,
@@ -207,11 +209,16 @@ export function WorkspaceShell({ children }: { children: ReactNode }) {
   const { errorText } = useFormat();
 
   const links = [
+    { href: "/app/monitors", label: t("common.monitors"), icon: Radar },
     { href: "/app/events", label: t("common.events"), icon: Activity },
     { href: "/app/notifications", label: t("common.notifications"), icon: Bell },
     { href: "/app/templates", label: t("common.templates"), icon: Mail },
+    { href: "/app/tokens", label: t("common.tokens"), icon: KeyRound },
     ...(user?.role === "admin"
-      ? [{ href: "/app/members", label: t("common.members"), icon: Users }]
+      ? [
+          { href: "/app/members", label: t("common.members"), icon: Users },
+          { href: "/app/system", label: t("system.title"), icon: Gauge },
+        ]
       : []),
   ];
 
@@ -308,6 +315,10 @@ export function WorkspaceShell({ children }: { children: ReactNode }) {
       ? t("common.events")
       : pathname.startsWith("/app/notifications")
         ? t("common.notifications")
+        : pathname.startsWith("/app/tokens")
+          ? t("common.tokens")
+          : pathname.startsWith("/app/system")
+            ? t("system.title")
         : pathname.startsWith("/app/templates")
           ? t("common.title.templates")
         : pathname.startsWith("/app/members")

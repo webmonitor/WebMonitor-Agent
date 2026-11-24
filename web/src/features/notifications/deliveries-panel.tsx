@@ -10,6 +10,7 @@ import { useDeliveries, useRetryDelivery } from "@/lib/api/hooks";
 import { useFormat } from "@/lib/format";
 import { useI18n } from "@/lib/i18n";
 import { ListPagination } from "@/components/list-pagination";
+import { TestDelivery } from "@/features/notifications/test-delivery";
 
 const TONES = { sent: "success", failed: "error", retrying: "warning", sending: "warning" } as const;
 
@@ -51,6 +52,8 @@ export function DeliveriesPanel() {
         </div>
         <p className="meta">{t("activity.deliveries.description")}</p>
       </header>
+
+      <TestDelivery />
 
       {retry.error && <p role="alert" className="text-[13px] text-error">{errorText(retry.error)}</p>}
 

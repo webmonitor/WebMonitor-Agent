@@ -21,6 +21,8 @@ import { useAuth } from "@/lib/providers";
 const PRESETS = [60, 300, 900, 3600, 21600, 86400];
 const MIN_INTERVAL = 60;
 const MAX_INTERVAL = 86400;
+const MAX_COOLDOWN = 2_147_483_647;
+const CLOCK_TIME = /^(?:[01]\d|2[0-3]):[0-5]\d$/;
 
 /**
  * Delivery is set by hand, on the monitor: who receives the mail, how often the
@@ -43,44 +45,72 @@ export function DeliverySettingsDialog({
   const templates = useEmailTemplates();
   const update = useUpdateMonitorSettings();
 
-  const storedChannel: "email" | "webhook" =
-    monitor.delivery_channel === "webhook" ? "webhook" : "email";
-  const [channel, setChannel] = useState<"email" | "webhook">(storedChannel);
+  const storedChannel: "email" | "webhook" | "both" =
+    monitor.delivery_channel === "both" ? "both" : monitor.delivery_channel === "webhook" ? "webhook" : "email";
+  const [channel, setChannel] = useState<"email" | "webhook" | "both">(storedChannel);
+  const storedFailure = monitor.event_channels?.run_failed;
+  const storedFailureChannel = storedFailure === "email" || storedFailure === "webhook"
+    ? storedFailure : "";
+  const [failureChannel, setFailureChannel] = useState<"" | "email" | "webhook">(storedFailureChannel);
   const [selectedGroups, setSelectedGroups] = useState<string[]>(monitor.notification_group_ids);
   const [webhookUrl, setWebhookUrl] = useState(monitor.webhook_url ?? "");
   const [interval, setInterval] = useState<number | null>(monitor.interval_seconds);
   const [timezone, setTimezone] = useState(monitor.timezone);
   const storedTemplate = monitor.email_template_id ?? null;
   const [templateId, setTemplateId] = useState<string | null>(storedTemplate);
+  const storedCooldown = monitor.notification_cooldown_seconds ?? 0;
+  const storedQuietEnabled = monitor.quiet_hours != null;
+  const storedQuietStart = monitor.quiet_hours?.start ?? "22:00";
+  const storedQuietEnd = monitor.quiet_hours?.end ?? "07:00";
+  const [cooldown, setCooldown] = useState<number | null>(storedCooldown);
+  const [quietEnabled, setQuietEnabled] = useState(storedQuietEnabled);
+  const [quietStart, setQuietStart] = useState(storedQuietStart);
+  const [quietEnd, setQuietEnd] = useState(storedQuietEnd);
   const [error, setError] = useState<string | null>(null);
 
   // Every open starts from the monitor as stored, so a cancelled edit leaves nothing.
   useEffect(() => {
     if (!open) return;
     setChannel(storedChannel);
+    setFailureChannel(storedFailureChannel);
     setSelectedGroups(monitor.notification_group_ids);
     setWebhookUrl(monitor.webhook_url ?? "");
     setInterval(monitor.interval_seconds);
     setTimezone(monitor.timezone);
     setTemplateId(storedTemplate);
+    setCooldown(storedCooldown);
+    setQuietEnabled(storedQuietEnabled);
+    setQuietStart(storedQuietStart);
+    setQuietEnd(storedQuietEnd);
     setError(null);
   }, [open, storedChannel, monitor.notification_group_ids, monitor.webhook_url,
-      monitor.interval_seconds, monitor.timezone, storedTemplate]);
+      monitor.interval_seconds, monitor.timezone, storedTemplate, storedCooldown,
+      storedQuietEnabled, storedQuietStart, storedQuietEnd, storedFailureChannel]);
 
   const dirty =
     channel !== storedChannel ||
+    failureChannel !== storedFailureChannel ||
     [...selectedGroups].sort().join() !== [...monitor.notification_group_ids].sort().join() ||
     webhookUrl.trim() !== (monitor.webhook_url ?? "") ||
     interval !== monitor.interval_seconds ||
     timezone.trim() !== monitor.timezone ||
-    templateId !== storedTemplate;
+    templateId !== storedTemplate ||
+    cooldown !== storedCooldown ||
+    quietEnabled !== storedQuietEnabled ||
+    (quietEnabled && (quietStart !== storedQuietStart || quietEnd !== storedQuietEnd));
   const intervalValid =
     interval !== null && Number.isInteger(interval) &&
     interval >= MIN_INTERVAL && interval <= MAX_INTERVAL;
   const timezoneValid = timezone.trim().length > 0;
   const routeValid =
-    channel === "webhook" ? webhookUrl.trim().length > 0 : selectedGroups.length > 0;
-  const incomplete = !routeValid || !intervalValid;
+    (channel === "email" || webhookUrl.trim().length > 0) &&
+    (channel === "webhook" || selectedGroups.length > 0);
+  const cooldownValid = cooldown !== null && Number.isInteger(cooldown) &&
+    cooldown >= 0 && cooldown <= MAX_COOLDOWN;
+  const quietValid = !quietEnabled || (
+    CLOCK_TIME.test(quietStart) && CLOCK_TIME.test(quietEnd) && quietStart !== quietEnd
+  );
+  const incomplete = !routeValid || !intervalValid || !cooldownValid || !quietValid;
 
   function toggleGroup(id: string) {
     setSelectedGroups((current) =>
@@ -90,16 +120,19 @@ export function DeliverySettingsDialog({
 
   async function save() {
     setError(null);
-    if (!intervalValid || !timezoneValid || !routeValid) return;
+    if (!intervalValid || !timezoneValid || !routeValid || !cooldownValid || !quietValid) return;
     try {
       await update.mutateAsync({
         monitorId: monitor.id,
         settings: {
           channel,
+          event_channels: failureChannel ? { run_failed: failureChannel } : {},
           notification_group_ids: selectedGroups,
           webhook_url: webhookUrl.trim() || null,
           schedule: { interval_seconds: interval, timezone: timezone.trim() },
           email_template_id: templateId,
+          notification_cooldown_seconds: cooldown,
+          quiet_hours: quietEnabled ? { start: quietStart, end: quietEnd } : null,
         },
       });
       onOpenChange(false);
@@ -141,15 +174,43 @@ export function DeliverySettingsDialog({
                 <Webhook strokeWidth={1.5} />
                 {t("settings.channel.webhook")}
               </Button>
+              <Button
+                type="button"
+                size="sm"
+                variant={channel === "both" ? "secondary" : "outline"}
+                onClick={() => setChannel("both")}
+              >
+                <Bell strokeWidth={1.5} />
+                {t("settings.channel.both")}
+              </Button>
             </div>
             <p className="meta">
-              {channel === "webhook"
-                ? t("settings.channel.webhookBody")
-                : t("settings.channel.emailBody")}
+              {channel === "both"
+                ? t("settings.channel.bothBody")
+                : channel === "webhook"
+                  ? t("settings.channel.webhookBody")
+                  : t("settings.channel.emailBody")}
             </p>
           </div>
 
-          {channel === "email" ? (
+          {channel === "both" && (
+            <div className="space-y-1.5">
+              <Label htmlFor="failure-channel">{t("settings.routing.failure")}</Label>
+              <select
+                id="failure-channel"
+                className="flex h-9 w-full rounded-md border border-input bg-canvas px-3 text-sm"
+                value={failureChannel}
+                onChange={(event) => setFailureChannel(event.target.value as "" | "email" | "webhook")}
+              >
+                <option value="">{t("settings.routing.default")}</option>
+                <option value="email">{t("settings.routing.email")}</option>
+                <option value="webhook">{t("settings.routing.webhook")}</option>
+              </select>
+              <p className="meta">{t("settings.routing.hint")}</p>
+            </div>
+          )}
+
+          {channel !== "webhook" && (
           <div className="space-y-2">
             <div className="flex items-baseline justify-between gap-2">
               <h3 className="label-line flex items-center gap-1.5">
@@ -216,7 +277,9 @@ export function DeliverySettingsDialog({
               <p className="text-[13px] text-warning-ink">{t("settings.groups.required")}</p>
             )}
           </div>
-          ) : (
+          )}
+
+          {channel !== "email" && (
           <div className="space-y-2">
             <h3 className="label-line flex items-center gap-1.5">
               <Webhook className="size-3.5" strokeWidth={1.5} />
@@ -285,7 +348,73 @@ export function DeliverySettingsDialog({
             />
           </div>
 
-          {channel === "email" && (
+          <div className="space-y-3">
+            <h3 className="label-line">{t("settings.noise.title")}</h3>
+            <div className="space-y-2">
+              <Label htmlFor="monitor-cooldown" className="text-[13px] text-muted-soft">
+                {t("settings.noise.cooldown")}
+              </Label>
+              <Input
+                id="monitor-cooldown"
+                type="number"
+                min={0}
+                max={MAX_COOLDOWN}
+                step={1}
+                value={cooldown ?? ""}
+                onChange={(event) => {
+                  const parsed = event.target.valueAsNumber;
+                  setCooldown(Number.isFinite(parsed) ? parsed : null);
+                }}
+              />
+              <p className="meta">{t("settings.noise.cooldownHint")}</p>
+              {!cooldownValid && (
+                <p className="text-[13px] text-warning-ink">{t("settings.noise.cooldownRequired")}</p>
+              )}
+            </div>
+            <label className="flex items-center gap-2 text-[14px]">
+              <input
+                type="checkbox"
+                className="size-3.5 accent-[var(--primary)]"
+                checked={quietEnabled}
+                onChange={(event) => setQuietEnabled(event.target.checked)}
+              />
+              {t("settings.noise.quietEnabled")}
+            </label>
+            {quietEnabled && (
+              <div className="space-y-2">
+                <div className="grid grid-cols-2 gap-3">
+                  <div className="space-y-1.5">
+                    <Label htmlFor="monitor-quiet-start" className="text-[13px] text-muted-soft">
+                      {t("settings.noise.quietStart")}
+                    </Label>
+                    <Input
+                      id="monitor-quiet-start"
+                      type="time"
+                      value={quietStart}
+                      onChange={(event) => setQuietStart(event.target.value)}
+                    />
+                  </div>
+                  <div className="space-y-1.5">
+                    <Label htmlFor="monitor-quiet-end" className="text-[13px] text-muted-soft">
+                      {t("settings.noise.quietEnd")}
+                    </Label>
+                    <Input
+                      id="monitor-quiet-end"
+                      type="time"
+                      value={quietEnd}
+                      onChange={(event) => setQuietEnd(event.target.value)}
+                    />
+                  </div>
+                </div>
+                <p className="meta">{t("settings.noise.quietHint")}</p>
+                {!quietValid && (
+                  <p className="text-[13px] text-warning-ink">{t("settings.noise.quietInvalid")}</p>
+                )}
+              </div>
+            )}
+          </div>
+
+          {channel !== "webhook" && (
           <div className="space-y-2">
             <div className="flex items-baseline justify-between gap-2">
               <h3 className="label-line flex items-center gap-1.5">

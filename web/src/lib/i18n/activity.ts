@@ -103,6 +103,19 @@ export const en = {
   "activity.deliveries.sentAt": "Sent",
   "activity.deliveries.body": "Body",
   "activity.deliveries.errorDetail": "{code}: {message}",
+
+  "activity.testDelivery.email": "Test email",
+  "activity.testDelivery.webhook": "Test webhook",
+  "activity.testDelivery.emailTitle": "Send a test email",
+  "activity.testDelivery.webhookTitle": "Send a test webhook",
+  "activity.testDelivery.description":
+    "Send now through the configured transport. This does not create a monitoring event or a delivery-log entry.",
+  "activity.testDelivery.emailDestination": "Recipient email",
+  "activity.testDelivery.webhookDestination": "Webhook URL",
+  "activity.testDelivery.send": "Send test",
+  "activity.testDelivery.sending": "Sending…",
+  "activity.testDelivery.cancel": "Cancel",
+  "activity.testDelivery.success": "Test delivery succeeded with response code {code}.",
 } as const;
 
 export const zh: Record<keyof typeof en, string> = {
@@ -202,4 +215,17 @@ export const zh: Record<keyof typeof en, string> = {
   "activity.deliveries.sentAt": "发送时间",
   "activity.deliveries.body": "正文",
   "activity.deliveries.errorDetail": "{code}：{message}",
+
+  "activity.testDelivery.email": "测试邮件",
+  "activity.testDelivery.webhook": "测试 Webhook",
+  "activity.testDelivery.emailTitle": "发送测试邮件",
+  "activity.testDelivery.webhookTitle": "发送测试 Webhook",
+  "activity.testDelivery.description":
+    "通过当前配置立即发送，不会创建监控事件，也不会写入投递记录。",
+  "activity.testDelivery.emailDestination": "收件邮箱",
+  "activity.testDelivery.webhookDestination": "Webhook 地址",
+  "activity.testDelivery.send": "发送测试",
+  "activity.testDelivery.sending": "正在发送…",
+  "activity.testDelivery.cancel": "取消",
+  "activity.testDelivery.success": "测试投递成功，响应码为 {code}。",
 };

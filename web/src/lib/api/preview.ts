@@ -79,6 +79,12 @@ const scalarSchema = z.union([z.number(), z.string()]);
 const ruleBase = { field: z.string().min(1) };
 const ruleSchema = z.discriminatedUnion("type", [
   z.strictObject({ ...ruleBase, type: z.literal("text_changed") }),
+  z.strictObject({ ...ruleBase, type: z.literal("value_changed") }),
+  z.strictObject({
+    ...ruleBase,
+    type: z.literal("regex_match"),
+    pattern: z.string().min(1).max(1000),
+  }),
   z.strictObject({ ...ruleBase, type: z.literal("keyword_present"), keyword: z.string().min(1) }),
   z.strictObject({ ...ruleBase, type: z.literal("keyword_absent"), keyword: z.string().min(1) }),
   z.strictObject({
@@ -181,10 +187,8 @@ const assertionSchema = z.discriminatedUnion("type", [
   }),
 ]);
 
-const pagePaginationSchema = z.strictObject({
-  kind: z.literal("page").default("page"),
-  page_param: z.string().regex(/^[A-Za-z][A-Za-z0-9_]{0,31}$/).default("page"),
-  start_page: z.number().int().min(1).max(10000).default(1),
+const paginationBaseSchema = z.strictObject({
+  location: z.enum(["query", "body"]).default("query"),
   size_param: z.string().regex(/^[A-Za-z][A-Za-z0-9_]{0,31}$/).nullish(),
   size: z.number().int().min(1).max(1000).nullish(),
   total_path: z.string().min(1).max(500).nullish(),
@@ -193,6 +197,25 @@ const pagePaginationSchema = z.strictObject({
   max_items: z.number().int().min(1).max(2000).default(500),
 });
 
+const paginationSchema = z.discriminatedUnion("kind", [
+  paginationBaseSchema.extend({
+    kind: z.literal("page").default("page"),
+    page_param: z.string().regex(/^[A-Za-z][A-Za-z0-9_]{0,31}$/).default("page"),
+    start_page: z.number().int().min(1).max(10000).default(1),
+  }),
+  paginationBaseSchema.extend({
+    kind: z.literal("cursor"),
+    cursor_param: z.string().regex(/^[A-Za-z][A-Za-z0-9_]{0,31}$/).default("cursor"),
+    start_cursor: z.union([z.string(), z.number()]).nullish(),
+    next_cursor_path: z.string().min(1).max(500),
+  }),
+  paginationBaseSchema.extend({
+    kind: z.literal("offset"),
+    offset_param: z.string().regex(/^[A-Za-z][A-Za-z0-9_]{0,31}$/).default("offset"),
+    start_offset: z.number().int().min(0).max(1000000).default(0),
+  }),
+]);
+
 const sourceSchema = z.strictObject({
   kind: z.literal("json").default("json"),
   steps: z.array(z.strictObject({
@@ -200,7 +223,7 @@ const sourceSchema = z.strictObject({
     request: requestSchema,
   })).min(1).max(3),
   assertions: z.array(assertionSchema).max(8).default([]),
-  pagination: pagePaginationSchema.nullish(),
+  pagination: paginationSchema.nullish(),
 });
 
 /** The collection contract only; recipients, cadence and template are settings. */
@@ -216,6 +239,7 @@ export const monitorSpecSchema = z.strictObject({
   change_rules: z.strictObject({
     mode: z.enum(["all", "any"]),
     rules: z.array(ruleSchema).min(1),
+    consecutive_hits: z.number().int().min(1).max(10).default(1),
   }),
   coverage: z.strictObject({
     scope: z.enum(["full", "bounded"]),
@@ -226,8 +250,16 @@ export const monitorSpecSchema = z.strictObject({
 });
 
 /** User-owned delivery settings; a draft may still be empty here. */
+const clockTimeSchema = z.string().regex(/^(?:[01]\d|2[0-3]):[0-5]\d$/);
+const quietHoursSchema = z.strictObject({
+  start: clockTimeSchema,
+  end: clockTimeSchema,
+}).refine((value) => value.start !== value.end);
+
 export const deliverySettingsSchema = z.object({
-  channel: z.enum(["email", "webhook"]).default("email"),
+  channel: z.enum(["email", "webhook", "both"]).default("email"),
+  event_channels: z.partialRecord(z.enum(["content_changed", "list_changed", "run_failed", "recovered"]),
+    z.enum(["email", "webhook"])).default({}),
   notification_group_ids: z.array(z.string()),
   webhook_url: z.string().nullish(),
   schedule: z
@@ -237,6 +269,8 @@ export const deliverySettingsSchema = z.object({
     })
     .nullish(),
   email_template_id: z.string().nullish(),
+  notification_cooldown_seconds: z.number().int().nonnegative().max(2_147_483_647).default(0),
+  quiet_hours: quietHoursSchema.nullish(),
 });
 
 const templateBlockSchema = z.discriminatedUnion("type", [

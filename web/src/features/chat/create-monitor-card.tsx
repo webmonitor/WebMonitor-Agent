@@ -154,9 +154,8 @@ export function CreateMonitorCard({
   const settingsComplete = Boolean(
     settings &&
       settings.schedule &&
-      (channel === "webhook"
-        ? Boolean(settings.webhook_url)
-        : settings.notification_group_ids.length > 0),
+      (channel === "email" || Boolean(settings.webhook_url)) &&
+      (channel === "webhook" || settings.notification_group_ids.length > 0),
   );
   const extractionCurrent = Boolean(
     extraction && extraction.spec_revision === draft.spec_revision && draft.extraction_preview_hash,
@@ -208,7 +207,7 @@ export function CreateMonitorCard({
             : !settingsComplete
               ? {
                   tone: "warning" as const,
-                  text: channel === "webhook"
+                  text: (channel === "webhook" || channel === "both") && !settings?.webhook_url
                     ? t("chat.approve.noWebhook")
                     : t("chat.approve.noRecipients"),
                 }
@@ -363,7 +362,7 @@ export function CreateMonitorCard({
           </div>
         )}
 
-        {delivery?.channel === "webhook" && delivery.webhook_url && (
+        {delivery?.webhook_url && delivery.webhook_body && (
           <details className="group border-t border-hairline pt-4" open>
             <summary className="flex cursor-pointer list-none flex-wrap items-center gap-1.5 text-[13px] text-muted-foreground transition-colors duration-150 hover:text-ink [&::-webkit-details-marker]:hidden">
               <Webhook className="size-3.5 shrink-0" strokeWidth={1.5} />

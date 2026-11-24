@@ -177,6 +177,7 @@ type Rule = {
   operator?: string;
   value?: number | string;
   keyword?: string;
+  pattern?: string;
   watch_fields?: string[];
 };
 
@@ -419,6 +420,10 @@ export function useFormat() {
           });
         case "text_changed":
           return t("format.rule.text", { field });
+        case "value_changed":
+          return t("format.rule.value", { field });
+        case "regex_match":
+          return t("format.rule.regex", { field, pattern: rule.pattern ?? "" });
         case "keyword_present":
           return t("format.rule.keywordPresent", { keyword: rule.keyword ?? "" });
         case "keyword_absent":

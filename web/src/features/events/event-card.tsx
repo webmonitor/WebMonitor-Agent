@@ -3,6 +3,7 @@ import Link from "next/link";
 import { Check, CheckCheck } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
+import { DiagnoseButton } from "@/features/monitors/diagnose-button";
 import type { EventView } from "@/lib/api/hooks";
 import { useFormat } from "@/lib/format";
 import { useI18n } from "@/lib/i18n";
@@ -231,6 +232,11 @@ export function EventCard({
       <div className="mt-2">
         <ChangeRows change={event.change} type={event.type} />
       </div>
+      {event.type === "run_failed" && (
+        <div className="mt-2">
+          <DiagnoseButton monitorId={event.monitor_id} jobId={event.job_id} />
+        </div>
+      )}
       {event.notifications_skipped && (
         <p role="status" className="mt-2 text-[13px] leading-5 text-warning-ink">
           {t("activity.eventCard.notificationsSkipped")}{" "}

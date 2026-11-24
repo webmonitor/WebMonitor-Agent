@@ -1,0 +1,33 @@
+export const en = {
+  "history.title": "Snapshot history",
+  "history.description": "Trends and changes across stored checks.",
+  "history.loading": "Loading snapshot history…",
+  "history.error": "Snapshot history could not be loaded.",
+  "history.trends": "Number and money trends",
+  "history.changes": "Text and list changes",
+  "history.comparison": "Compared with the previous stored check at {time}.",
+  "history.noPrior": "No earlier stored check is available for comparison.",
+  "history.noChanges": "No text or list values changed from the previous stored check.",
+  "history.noValues": "No numeric values are stored for this field.",
+  "history.valueCount": "{count} values",
+  "history.chart": "Historical values for {field}",
+  "history.added": "Added",
+  "history.removed": "Removed",
+} as const;
+
+export const zh: Record<keyof typeof en, string> = {
+  "history.title": "采集历史趋势",
+  "history.description": "查看历次保存记录中的趋势和变化。",
+  "history.loading": "正在读取采集历史…",
+  "history.error": "无法读取采集历史。",
+  "history.trends": "数值与金额趋势",
+  "history.changes": "文本与列表变化",
+  "history.comparison": "与 {time} 保存的上一条记录比较。",
+  "history.noPrior": "没有可用于比较的更早采集记录。",
+  "history.noChanges": "与上一条保存记录相比，文本和列表取值没有变化。",
+  "history.noValues": "这个字段没有保存可用的数值。",
+  "history.valueCount": "{count} 个取值",
+  "history.chart": "{field}的历史取值",
+  "history.added": "新增",
+  "history.removed": "移除",
+};

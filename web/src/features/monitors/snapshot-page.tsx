@@ -4,6 +4,7 @@ import { ArrowLeft, ExternalLink } from "lucide-react";
 import { PageBody, PageHeader } from "@/components/page-header";
 import { EvidenceLinks } from "@/features/monitors/evidence-links";
 import { FieldValues, fieldTypes } from "@/features/monitors/field-values";
+import { SnapshotHistory } from "@/features/monitors/snapshot-history";
 import { useMonitor, useSnapshot } from "@/lib/api/hooks";
 import { parseSpec } from "@/lib/api/preview";
 import { useFormat } from "@/lib/format";
@@ -111,6 +112,8 @@ export function SnapshotPage({
             </div>
           )}
         </section>
+
+        <SnapshotHistory monitorId={monitorId} current={row} spec={spec} />
       </PageBody>
     </div>
   );

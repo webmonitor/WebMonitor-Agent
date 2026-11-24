@@ -41,6 +41,8 @@ import { useFormat } from "@/lib/format";
 import { useI18n } from "@/lib/i18n";
 import { ChangeRows } from "@/features/events/event-card";
 import { EvidenceLinks } from "@/features/monitors/evidence-links";
+import { SnapshotHistory } from "@/features/monitors/snapshot-history";
+import { DiagnoseButton } from "@/features/monitors/diagnose-button";
 import { FieldValues, fieldTypes } from "@/features/monitors/field-values";
 import { MonitorConfig } from "@/features/monitors/monitor-config";
 import { DeliverySettingsDialog } from "@/features/monitors/delivery-settings-dialog";
@@ -273,6 +275,11 @@ export function MonitorPage({
             {row.baseline_status !== "ready" && <Badge tone="warning">{t("monitors.badge.baselinePending")}</Badge>}
           </div>
         </PageHeader>
+        {row.health_status === "failed" && !archived && (
+          <div className="mb-4">
+            <DiagnoseButton monitorId={row.id} />
+          </div>
+        )}
         {(pause.error || resume.error || run.error || rename.error || archive.error
           || restore.error) && (
           <p role="alert" className="mb-4 text-sm text-error">
@@ -498,6 +505,9 @@ export function MonitorPage({
             )}
           </aside>
         </div>
+        {row.baseline && (
+          <SnapshotHistory monitorId={row.id} current={row.baseline} spec={spec} />
+        )}
       </PageBody>
 
       <Dialog

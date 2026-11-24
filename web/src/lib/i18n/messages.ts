@@ -1,8 +1,12 @@
 import { en as activityEn, zh as activityZh } from "./activity";
 import { en as chatEn, zh as chatZh } from "./chat";
 import { en as commonEn, zh as commonZh } from "./common";
+import { en as diagnosisEn, zh as diagnosisZh } from "./diagnosis";
+import { en as historyEn, zh as historyZh } from "./history";
+import { en as managementEn, zh as managementZh } from "./management";
 import { en as monitorEn, zh as monitorZh } from "./monitors";
 import { en as publicEn, zh as publicZh } from "./public";
+import { en as systemEn, zh as systemZh } from "./system";
 import { en as templateEn, zh as templateZh } from "./templates";
 
 export type Locale = "en" | "zh-CN";
@@ -14,8 +18,12 @@ export const en = {
   ...publicEn,
   ...chatEn,
   ...monitorEn,
+  ...historyEn,
+  ...managementEn,
   ...activityEn,
   ...templateEn,
+  ...diagnosisEn,
+  ...systemEn,
 };
 
 export const zh = {
@@ -23,8 +31,12 @@ export const zh = {
   ...publicZh,
   ...chatZh,
   ...monitorZh,
+  ...historyZh,
+  ...managementZh,
   ...activityZh,
   ...templateZh,
+  ...diagnosisZh,
+  ...systemZh,
 } as Record<keyof typeof en, string>;
 
 export type MessageKey = keyof typeof en;

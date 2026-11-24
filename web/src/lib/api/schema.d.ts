@@ -333,6 +333,23 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v1/monitors/{monitor_id}/diagnosis": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Diagnose Monitor */
+        post: operations["diagnose_monitor_api_v1_monitors__monitor_id__diagnosis_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/v1/monitors/{monitor_id}/drafts": {
         parameters: {
             query?: never;
@@ -367,6 +384,40 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v1/monitors/import": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Import Monitor Spec */
+        post: operations["import_monitor_spec_api_v1_monitors_import_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/monitors/bulk": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Bulk Update Monitors */
+        post: operations["bulk_update_monitors_api_v1_monitors_bulk_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/v1/monitors/{monitor_id}": {
         parameters: {
             query?: never;
@@ -383,6 +434,23 @@ export interface paths {
         head?: never;
         /** Rename Monitor */
         patch: operations["rename_monitor_api_v1_monitors__monitor_id__patch"];
+        trace?: never;
+    };
+    "/api/v1/monitors/{monitor_id}/export": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Export Monitor Spec */
+        get: operations["export_monitor_spec_api_v1_monitors__monitor_id__export_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
         trace?: never;
     };
     "/api/v1/monitors/{monitor_id}/snapshots": {
@@ -434,6 +502,23 @@ export interface paths {
         options?: never;
         head?: never;
         patch?: never;
+        trace?: never;
+    };
+    "/api/v1/monitors/{monitor_id}/tags": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        /** Update Monitor Tags */
+        patch: operations["update_monitor_tags_api_v1_monitors__monitor_id__tags_patch"];
         trace?: never;
     };
     "/api/v1/monitors/{monitor_id}/settings": {
@@ -625,6 +710,40 @@ export interface paths {
         patch: operations["patch_group_api_v1_notification_groups__group_id__patch"];
         trace?: never;
     };
+    "/api/v1/notifications/test/email": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Test Email */
+        post: operations["test_email_api_v1_notifications_test_email_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/notifications/test/webhook": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Test Webhook */
+        post: operations["test_webhook_api_v1_notifications_test_webhook_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/v1/deliveries": {
         parameters: {
             query?: never;
@@ -789,6 +908,75 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v1/tokens": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** List Tokens */
+        get: operations["list_tokens_api_v1_tokens_get"];
+        put?: never;
+        /** Create Token */
+        post: operations["create_token_api_v1_tokens_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/tokens/{token_id}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post?: never;
+        /** Revoke Token */
+        delete: operations["revoke_token_api_v1_tokens__token_id__delete"];
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/conversations/{conversation_id}/stream": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Stream Conversation */
+        get: operations["stream_conversation_api_v1_conversations__conversation_id__stream_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/admin/metrics": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Read System Metrics */
+        get: operations["read_system_metrics_api_v1_admin_metrics_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/v1/health/live": {
         parameters: {
             query?: never;
@@ -866,7 +1054,72 @@ export interface components {
             steps: components["schemas"]["SourceStep"][];
             /** Assertions */
             assertions?: (components["schemas"]["JsonEqualsAssertion"] | components["schemas"]["JsonPresentAssertion"])[];
-            pagination?: components["schemas"]["PagePagination"] | null;
+            /** Pagination */
+            pagination?: (components["schemas"]["PagePagination"] | components["schemas"]["CursorPagination"] | components["schemas"]["OffsetPagination"]) | null;
+        };
+        /** ApiTokenCreate */
+        ApiTokenCreate: {
+            /** Name */
+            name: string;
+            /** Scopes */
+            scopes?: string[] | null;
+            /**
+             * Ttl Days
+             * @default 90
+             */
+            ttl_days: number | null;
+        };
+        /** ApiTokenCreated */
+        ApiTokenCreated: {
+            /**
+             * Id
+             * Format: uuid
+             */
+            id: string;
+            /** Name */
+            name: string;
+            /** Token Prefix */
+            token_prefix: string;
+            /** Scopes */
+            scopes: string[];
+            /** Expires At */
+            expires_at: string | null;
+            /** Last Used At */
+            last_used_at: string | null;
+            /** Revoked At */
+            revoked_at: string | null;
+            /**
+             * Created At
+             * Format: date-time
+             */
+            created_at: string;
+            /** Token */
+            token: string;
+        };
+        /** ApiTokenView */
+        ApiTokenView: {
+            /**
+             * Id
+             * Format: uuid
+             */
+            id: string;
+            /** Name */
+            name: string;
+            /** Token Prefix */
+            token_prefix: string;
+            /** Scopes */
+            scopes: string[];
+            /** Expires At */
+            expires_at: string | null;
+            /** Last Used At */
+            last_used_at: string | null;
+            /** Revoked At */
+            revoked_at: string | null;
+            /**
+             * Created At
+             * Format: date-time
+             */
+            created_at: string;
         };
         /** ApproveRequest */
         ApproveRequest: {
@@ -904,14 +1157,34 @@ export interface components {
             expires_at: number;
         };
         /** ChangeRules */
-        ChangeRules: {
+        "ChangeRules-Input": {
             /**
              * Mode
              * @enum {string}
              */
             mode: "all" | "any";
             /** Rules */
-            rules: (components["schemas"]["TextChanged"] | components["schemas"]["KeywordPresent"] | components["schemas"]["KeywordAbsent"] | components["schemas"]["NumberAbsoluteChange"] | components["schemas"]["NumberPercentChange"] | components["schemas"]["Threshold"] | components["schemas"]["ListAdded"] | components["schemas"]["ListRemoved"] | components["schemas"]["ListUpdated"])[];
+            rules: (components["schemas"]["TextChanged"] | components["schemas"]["ValueChanged"] | components["schemas"]["RegexMatch"] | components["schemas"]["KeywordPresent"] | components["schemas"]["KeywordAbsent"] | components["schemas"]["NumberAbsoluteChange-Input"] | components["schemas"]["NumberPercentChange-Input"] | components["schemas"]["Threshold-Input"] | components["schemas"]["ListAdded"] | components["schemas"]["ListRemoved"] | components["schemas"]["ListUpdated"])[];
+            /**
+             * Consecutive Hits
+             * @default 1
+             */
+            consecutive_hits: number;
+        };
+        /** ChangeRules */
+        "ChangeRules-Output": {
+            /**
+             * Mode
+             * @enum {string}
+             */
+            mode: "all" | "any";
+            /** Rules */
+            rules: (components["schemas"]["TextChanged"] | components["schemas"]["ValueChanged"] | components["schemas"]["RegexMatch"] | components["schemas"]["KeywordPresent"] | components["schemas"]["KeywordAbsent"] | components["schemas"]["NumberAbsoluteChange-Output"] | components["schemas"]["NumberPercentChange-Output"] | components["schemas"]["Threshold-Output"] | components["schemas"]["ListAdded"] | components["schemas"]["ListRemoved"] | components["schemas"]["ListUpdated"])[];
+            /**
+             * Consecutive Hits
+             * @default 1
+             */
+            consecutive_hits: number;
         };
         /** ClickNext */
         ClickNext: {
@@ -924,6 +1197,19 @@ export interface components {
             selector: string;
             /** Max Pages */
             max_pages: number;
+        };
+        /** CollectionMetric */
+        CollectionMetric: {
+            /** Mode */
+            mode: string;
+            /** Succeeded */
+            succeeded: number;
+            /** Failed */
+            failed: number;
+            /** Success Rate */
+            success_rate: number | null;
+            /** Average Duration Ms */
+            average_duration_ms: number | null;
         };
         /** ConversationCreate */
         ConversationCreate: {
@@ -989,6 +1275,51 @@ export interface components {
              */
             next_run_at: string;
         };
+        /** CursorPagination */
+        CursorPagination: {
+            /**
+             * Location
+             * @default query
+             * @enum {string}
+             */
+            location: "query" | "body";
+            /** Size Param */
+            size_param?: string | null;
+            /** Size */
+            size?: number | null;
+            /** Total Path */
+            total_path?: string | null;
+            /**
+             * Stop
+             * @default empty
+             * @enum {string}
+             */
+            stop: "empty" | "total_reached";
+            /**
+             * Max Pages
+             * @default 3
+             */
+            max_pages: number;
+            /**
+             * Max Items
+             * @default 500
+             */
+            max_items: number;
+            /**
+             * @description discriminator enum property added by openapi-typescript
+             * @enum {string}
+             */
+            kind: "cursor";
+            /**
+             * Cursor Param
+             * @default cursor
+             */
+            cursor_param: string;
+            /** Start Cursor */
+            start_cursor?: string | number | null;
+            /** Next Cursor Path */
+            next_cursor_path: string;
+        };
         /** Delivery */
         Delivery: {
             /**
@@ -1036,6 +1367,19 @@ export interface components {
             /** Failed At */
             failed_at: string | null;
         };
+        /** DeliveryMetric */
+        DeliveryMetric: {
+            /** Active */
+            active: number;
+            /** Sent */
+            sent: number;
+            /** Failed */
+            failed: number;
+            /** Cancelled */
+            cancelled: number;
+            /** Failure Rate */
+            failure_rate: number;
+        };
         /**
          * DeliverySettings
          * @description Who is told, how often, and through which channel.
@@ -1051,7 +1395,11 @@ export interface components {
              * @default email
              * @enum {string}
              */
-            channel: "email" | "webhook";
+            channel: "email" | "webhook" | "both";
+            /** Event Channels */
+            event_channels?: {
+                [key: string]: "email" | "webhook";
+            };
             /** Notification Group Ids */
             notification_group_ids?: string[];
             /** Webhook Url */
@@ -1059,6 +1407,12 @@ export interface components {
             schedule?: components["schemas"]["Schedule"] | null;
             /** Email Template Id */
             email_template_id?: string | null;
+            /**
+             * Notification Cooldown Seconds
+             * @default 0
+             */
+            notification_cooldown_seconds: number;
+            quiet_hours?: components["schemas"]["QuietHours"] | null;
         };
         /** DerivedDraft */
         DerivedDraft: {
@@ -1094,7 +1448,7 @@ export interface components {
             spec_revision?: number | null;
             /** Settings Revision */
             settings_revision?: number | null;
-            spec?: components["schemas"]["MonitorSpec"] | null;
+            spec?: components["schemas"]["MonitorSpec-Input"] | null;
             settings?: components["schemas"]["DeliverySettings"] | null;
         };
         /** DraftView */
@@ -1249,6 +1603,14 @@ export interface components {
              */
             updated_at: string;
         };
+        /** EmailTestRequest */
+        EmailTestRequest: {
+            /**
+             * Recipient
+             * Format: email
+             */
+            recipient: string;
+        };
         /** EventTimeBlock */
         EventTimeBlock: {
             /**
@@ -1341,7 +1703,7 @@ export interface components {
             label?: string | null;
         };
         /** FieldSpec */
-        FieldSpec: {
+        "FieldSpec-Input": {
             /** Name */
             name: string;
             /**
@@ -1369,7 +1731,42 @@ export interface components {
             allow_empty: boolean;
             normalize?: components["schemas"]["Normalization"];
             /** Item Fields */
-            item_fields?: components["schemas"]["FieldSpec"][] | null;
+            item_fields?: components["schemas"]["FieldSpec-Input"][] | null;
+            /** Min Items */
+            min_items?: number | null;
+            /** Max Items */
+            max_items?: number | null;
+        };
+        /** FieldSpec */
+        "FieldSpec-Output": {
+            /** Name */
+            name: string;
+            /**
+             * Type
+             * @enum {string}
+             */
+            type: "text" | "number" | "money" | "date" | "boolean" | "url" | "list";
+            /** Semantic */
+            semantic: string;
+            /** Selector */
+            selector?: string | null;
+            /** Path */
+            path?: string | null;
+            /** Attribute */
+            attribute?: string | null;
+            /**
+             * Required
+             * @default true
+             */
+            required: boolean;
+            /**
+             * Allow Empty
+             * @default false
+             */
+            allow_empty: boolean;
+            normalize?: components["schemas"]["Normalization"];
+            /** Item Fields */
+            item_fields?: components["schemas"]["FieldSpec-Output"][] | null;
             /** Min Items */
             min_items?: number | null;
             /** Max Items */
@@ -1771,6 +2168,40 @@ export interface components {
              */
             created_at: string;
         };
+        /** MonitorBulkItemResult */
+        MonitorBulkItemResult: {
+            /**
+             * Monitor Id
+             * Format: uuid
+             */
+            monitor_id: string;
+            /** Ok */
+            ok: boolean;
+            monitor?: components["schemas"]["MonitorView"] | null;
+            error?: components["schemas"]["MonitorCommandError"] | null;
+        };
+        /** MonitorBulkResult */
+        MonitorBulkResult: {
+            /** Items */
+            items: components["schemas"]["MonitorBulkItemResult"][];
+        };
+        /** MonitorBulkUpdate */
+        MonitorBulkUpdate: {
+            /** Monitor Ids */
+            monitor_ids: string[];
+            /**
+             * Action
+             * @enum {string}
+             */
+            action: "pause" | "resume";
+        };
+        /** MonitorCommandError */
+        MonitorCommandError: {
+            /** Code */
+            code: string;
+            /** Message */
+            message: string;
+        };
         /** MonitorDetail */
         MonitorDetail: {
             /**
@@ -1796,13 +2227,25 @@ export interface components {
             baseline_status: string;
             /** Health Status */
             health_status: string;
+            /** Tags */
+            tags?: string[];
             /** Notification Group Ids */
             notification_group_ids: string[];
+            /**
+             * Notification Cooldown Seconds
+             * @default 0
+             */
+            notification_cooldown_seconds: number;
+            quiet_hours?: components["schemas"]["QuietHours"] | null;
             /**
              * Delivery Channel
              * @default email
              */
             delivery_channel: string;
+            /** Event Channels */
+            event_channels?: {
+                [key: string]: string;
+            };
             /** Webhook Url */
             webhook_url?: string | null;
             /** Email Template Id */
@@ -1861,7 +2304,7 @@ export interface components {
          * MonitorSpec
          * @description The collection contract only; recipients, cadence and mail are user settings.
          */
-        MonitorSpec: {
+        "MonitorSpec-Input": {
             /** Name */
             name: string;
             /** Url */
@@ -1872,13 +2315,71 @@ export interface components {
              */
             collection_mode: "http" | "browser";
             /** Fields */
-            fields: components["schemas"]["FieldSpec"][];
+            fields: components["schemas"]["FieldSpec-Input"][];
             business_key?: components["schemas"]["BusinessKey"] | null;
-            change_rules: components["schemas"]["ChangeRules"];
+            change_rules: components["schemas"]["ChangeRules-Input"];
             coverage: components["schemas"]["Coverage"];
             /** Browser Steps */
             browser_steps?: (components["schemas"]["WaitForSelector"] | components["schemas"]["Scroll"] | components["schemas"]["ClickNext"])[];
             source?: components["schemas"]["ApiSource"] | null;
+        };
+        /**
+         * MonitorSpec
+         * @description The collection contract only; recipients, cadence and mail are user settings.
+         */
+        "MonitorSpec-Output": {
+            /** Name */
+            name: string;
+            /** Url */
+            url: string;
+            /**
+             * Collection Mode
+             * @enum {string}
+             */
+            collection_mode: "http" | "browser";
+            /** Fields */
+            fields: components["schemas"]["FieldSpec-Output"][];
+            business_key?: components["schemas"]["BusinessKey"] | null;
+            change_rules: components["schemas"]["ChangeRules-Output"];
+            coverage: components["schemas"]["Coverage"];
+            /** Browser Steps */
+            browser_steps?: (components["schemas"]["WaitForSelector"] | components["schemas"]["Scroll"] | components["schemas"]["ClickNext"])[];
+            source?: components["schemas"]["ApiSource"] | null;
+        };
+        /**
+         * MonitorSpecDocument
+         * @description A portable collection contract; the source version is informational on import.
+         */
+        "MonitorSpecDocument-Input": {
+            /**
+             * Format Version
+             * @default 1
+             * @constant
+             */
+            format_version: 1;
+            /** Spec Version */
+            spec_version: number;
+            spec: components["schemas"]["MonitorSpec-Input"];
+        };
+        /**
+         * MonitorSpecDocument
+         * @description A portable collection contract; the source version is informational on import.
+         */
+        "MonitorSpecDocument-Output": {
+            /**
+             * Format Version
+             * @default 1
+             * @constant
+             */
+            format_version: 1;
+            /** Spec Version */
+            spec_version: number;
+            spec: components["schemas"]["MonitorSpec-Output"];
+        };
+        /** MonitorTagsUpdate */
+        MonitorTagsUpdate: {
+            /** Tags */
+            tags?: string[];
         };
         /** MonitorView */
         MonitorView: {
@@ -1905,13 +2406,25 @@ export interface components {
             baseline_status: string;
             /** Health Status */
             health_status: string;
+            /** Tags */
+            tags?: string[];
             /** Notification Group Ids */
             notification_group_ids: string[];
+            /**
+             * Notification Cooldown Seconds
+             * @default 0
+             */
+            notification_cooldown_seconds: number;
+            quiet_hours?: components["schemas"]["QuietHours"] | null;
             /**
              * Delivery Channel
              * @default email
              */
             delivery_channel: string;
+            /** Event Channels */
+            event_channels?: {
+                [key: string]: string;
+            };
             /** Webhook Url */
             webhook_url?: string | null;
             /** Email Template Id */
@@ -1960,8 +2473,18 @@ export interface components {
             /** False Values */
             false_values?: string[];
         };
+        /** NotificationTestResult */
+        NotificationTestResult: {
+            /**
+             * Channel
+             * @enum {string}
+             */
+            channel: "email" | "webhook";
+            /** Response Code */
+            response_code: number;
+        };
         /** NumberAbsoluteChange */
-        NumberAbsoluteChange: {
+        "NumberAbsoluteChange-Input": {
             /** Field */
             field: string;
             /**
@@ -1977,8 +2500,25 @@ export interface components {
              */
             type: "number_absolute_change";
         };
+        /** NumberAbsoluteChange */
+        "NumberAbsoluteChange-Output": {
+            /** Field */
+            field: string;
+            /**
+             * Operator
+             * @enum {string}
+             */
+            operator: "increase_gte" | "decrease_gte" | "change_gte";
+            /** Value */
+            value: string;
+            /**
+             * @description discriminator enum property added by openapi-typescript
+             * @enum {string}
+             */
+            type: "number_absolute_change";
+        };
         /** NumberPercentChange */
-        NumberPercentChange: {
+        "NumberPercentChange-Input": {
             /** Field */
             field: string;
             /**
@@ -1994,24 +2534,31 @@ export interface components {
              */
             type: "number_percent_change";
         };
-        /** PagePagination */
-        PagePagination: {
+        /** NumberPercentChange */
+        "NumberPercentChange-Output": {
+            /** Field */
+            field: string;
             /**
-             * Kind
-             * @default page
-             * @constant
+             * Operator
+             * @enum {string}
              */
-            kind: "page";
+            operator: "increase_gte" | "decrease_gte" | "change_gte";
+            /** Value */
+            value: string;
             /**
-             * Page Param
-             * @default page
+             * @description discriminator enum property added by openapi-typescript
+             * @enum {string}
              */
-            page_param: string;
+            type: "number_percent_change";
+        };
+        /** OffsetPagination */
+        OffsetPagination: {
             /**
-             * Start Page
-             * @default 1
+             * Location
+             * @default query
+             * @enum {string}
              */
-            start_page: number;
+            location: "query" | "body";
             /** Size Param */
             size_param?: string | null;
             /** Size */
@@ -2034,6 +2581,74 @@ export interface components {
              * @default 500
              */
             max_items: number;
+            /**
+             * @description discriminator enum property added by openapi-typescript
+             * @enum {string}
+             */
+            kind: "offset";
+            /**
+             * Offset Param
+             * @default offset
+             */
+            offset_param: string;
+            /**
+             * Start Offset
+             * @default 0
+             */
+            start_offset: number;
+        };
+        /** PagePagination */
+        PagePagination: {
+            /**
+             * Location
+             * @default query
+             * @enum {string}
+             */
+            location: "query" | "body";
+            /** Size Param */
+            size_param?: string | null;
+            /** Size */
+            size?: number | null;
+            /** Total Path */
+            total_path?: string | null;
+            /**
+             * Stop
+             * @default empty
+             * @enum {string}
+             */
+            stop: "empty" | "total_reached";
+            /**
+             * Max Pages
+             * @default 3
+             */
+            max_pages: number;
+            /**
+             * Max Items
+             * @default 500
+             */
+            max_items: number;
+            /**
+             * @description discriminator enum property added by openapi-typescript
+             * @enum {string}
+             */
+            kind: "page";
+            /**
+             * Page Param
+             * @default page
+             */
+            page_param: string;
+            /**
+             * Start Page
+             * @default 1
+             */
+            start_page: number;
+        };
+        /** Page[ApiTokenView] */
+        Page_ApiTokenView_: {
+            /** Items */
+            items: components["schemas"]["ApiTokenView"][];
+            /** Total */
+            total: number;
         };
         /** Page[ConversationView] */
         Page_ConversationView_: {
@@ -2118,6 +2733,34 @@ export interface components {
             content: string;
             /** Client Message Id */
             client_message_id: string;
+        };
+        /** QueueMetric */
+        QueueMetric: {
+            /** Kind */
+            kind: string;
+            /** Queued */
+            queued: number;
+            /** Running */
+            running: number;
+        };
+        /** QuietHours */
+        QuietHours: {
+            /** Start */
+            start: string;
+            /** End */
+            end: string;
+        };
+        /** RegexMatch */
+        RegexMatch: {
+            /** Field */
+            field: string;
+            /**
+             * @description discriminator enum property added by openapi-typescript
+             * @enum {string}
+             */
+            type: "regex_match";
+            /** Pattern */
+            pattern: string;
         };
         /** RegisterRequest */
         RegisterRequest: {
@@ -2277,6 +2920,23 @@ export interface components {
              */
             type: "summary";
         };
+        /** SystemMetrics */
+        SystemMetrics: {
+            /**
+             * Generated At
+             * Format: date-time
+             */
+            generated_at: string;
+            /** Hours */
+            hours: number;
+            /** Queue */
+            queue: components["schemas"]["QueueMetric"][];
+            /** Collection */
+            collection: components["schemas"]["CollectionMetric"][];
+            deliveries: components["schemas"]["DeliveryMetric"];
+            /** Usage */
+            usage: components["schemas"]["UsageMetric"][];
+        };
         /**
          * TemplateStyle
          * @description The look of one design; the server owns which CSS property uses which value.
@@ -2362,7 +3022,7 @@ export interface components {
             type: "text_changed";
         };
         /** Threshold */
-        Threshold: {
+        "Threshold-Input": {
             /** Field */
             field: string;
             /**
@@ -2378,6 +3038,46 @@ export interface components {
             /** Value */
             value: number | string;
         };
+        /** Threshold */
+        "Threshold-Output": {
+            /** Field */
+            field: string;
+            /**
+             * @description discriminator enum property added by openapi-typescript
+             * @enum {string}
+             */
+            type: "threshold";
+            /**
+             * Operator
+             * @enum {string}
+             */
+            operator: "gt" | "gte" | "lt" | "lte" | "eq";
+            /** Value */
+            value: string;
+        };
+        /** UsageMetric */
+        UsageMetric: {
+            /**
+             * User Id
+             * Format: uuid
+             */
+            user_id: string;
+            /** Email */
+            email: string;
+            /**
+             * Bucket
+             * Format: date-time
+             */
+            bucket: string;
+            /** Requests */
+            requests: number;
+            /** Input Tokens */
+            input_tokens: number;
+            /** Output Tokens */
+            output_tokens: number;
+            /** Total Tokens */
+            total_tokens: number;
+        };
         /** ValidationError */
         ValidationError: {
             /** Location */
@@ -2390,6 +3090,16 @@ export interface components {
             input?: unknown;
             /** Context */
             ctx?: Record<string, never>;
+        };
+        /** ValueChanged */
+        ValueChanged: {
+            /** Field */
+            field: string;
+            /**
+             * @description discriminator enum property added by openapi-typescript
+             * @enum {string}
+             */
+            type: "value_changed";
         };
         /** WaitForSelector */
         WaitForSelector: {
@@ -2405,6 +3115,11 @@ export interface components {
              * @default 10000
              */
             timeout_ms: number;
+        };
+        /** WebhookTestRequest */
+        WebhookTestRequest: {
+            /** Url */
+            url: string;
         };
     };
     responses: never;
@@ -3090,6 +3805,39 @@ export interface operations {
             };
         };
     };
+    diagnose_monitor_api_v1_monitors__monitor_id__diagnosis_post: {
+        parameters: {
+            query?: {
+                job_id?: string | null;
+            };
+            header?: never;
+            path: {
+                monitor_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["DerivedDraft"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
     derive_draft_api_v1_monitors__monitor_id__drafts_post: {
         parameters: {
             query?: never;
@@ -3127,6 +3875,10 @@ export interface operations {
                 limit?: number;
                 offset?: number;
                 archived?: boolean;
+                keyword?: string | null;
+                health_status?: ("healthy" | "failed") | null;
+                status?: ("active" | "paused") | null;
+                tag?: string[] | null;
             };
             header?: never;
             path?: never;
@@ -3141,6 +3893,72 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["Page_MonitorView_"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    import_monitor_spec_api_v1_monitors_import_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["MonitorSpecDocument-Input"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["DerivedDraft"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    bulk_update_monitors_api_v1_monitors_bulk_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["MonitorBulkUpdate"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["MonitorBulkResult"];
                 };
             };
             /** @description Validation Error */
@@ -3207,6 +4025,37 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["MonitorView"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    export_monitor_spec_api_v1_monitors__monitor_id__export_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                monitor_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["MonitorSpecDocument-Output"];
                 };
             };
             /** @description Validation Error */
@@ -3306,6 +4155,41 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["Page_SpecVersion_"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    update_monitor_tags_api_v1_monitors__monitor_id__tags_patch: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                monitor_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["MonitorTagsUpdate"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["MonitorView"];
                 };
             };
             /** @description Validation Error */
@@ -3740,6 +4624,72 @@ export interface operations {
             };
         };
     };
+    test_email_api_v1_notifications_test_email_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["EmailTestRequest"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["NotificationTestResult"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    test_webhook_api_v1_notifications_test_webhook_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["WebhookTestRequest"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["NotificationTestResult"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
     list_deliveries_api_v1_deliveries_get: {
         parameters: {
             query?: {
@@ -4084,6 +5034,162 @@ export interface operations {
                 };
                 content: {
                     "application/json": unknown;
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    list_tokens_api_v1_tokens_get: {
+        parameters: {
+            query?: {
+                limit?: number;
+                offset?: number;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Page_ApiTokenView_"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    create_token_api_v1_tokens_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["ApiTokenCreate"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiTokenCreated"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    revoke_token_api_v1_tokens__token_id__delete: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                token_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiTokenView"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    stream_conversation_api_v1_conversations__conversation_id__stream_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                conversation_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    read_system_metrics_api_v1_admin_metrics_get: {
+        parameters: {
+            query?: {
+                hours?: number;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["SystemMetrics"];
                 };
             };
             /** @description Validation Error */

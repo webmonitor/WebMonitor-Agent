@@ -231,7 +231,13 @@ export function MonitorConfig({
                 <>
                   <p className="label-line mt-3">{t("monitors.config.pagination")}</p>
                   <p className="num mt-1 break-all text-[13px]">
-                    {t("monitors.config.pageParam")} · {spec.source.pagination.page_param ?? "page"}
+                    {spec.source.pagination.kind} · {spec.source.pagination.location ?? "query"}
+                    {" · "}
+                    {t("monitors.config.pageParam")} · {spec.source.pagination.kind === "cursor"
+                      ? spec.source.pagination.cursor_param
+                      : spec.source.pagination.kind === "offset"
+                        ? spec.source.pagination.offset_param
+                        : spec.source.pagination.page_param}
                     {" · "}
                     {t("monitors.config.pageSize")} · {spec.source.pagination.size ?? "—"}
                     {" · "}

@@ -36,6 +36,8 @@ function titleKey(pathname: string): MessageKey | null {
   if (pathname.startsWith("/register")) return "common.title.register";
   if (pathname.startsWith("/app/events")) return "common.title.events";
   if (pathname.startsWith("/app/notifications")) return "common.title.notifications";
+  if (pathname.startsWith("/app/tokens")) return "common.title.tokens";
+  if (pathname === "/app/monitors") return "common.title.monitors";
   if (pathname.startsWith("/app/monitors/")) return "common.title.monitor";
   if (pathname.startsWith("/app")) return "common.title.workspace";
   return null;

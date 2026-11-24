@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 import { api, ApiError, clearCsrfToken, safeReturnTo } from "../src/lib/api/client.ts";
-import { deliveryPreviewSchema, monitorSpecSchema } from "../src/lib/api/preview.ts";
+import { deliveryPreviewSchema, deliverySettingsSchema, monitorSpecSchema } from "../src/lib/api/preview.ts";
 import { clearSubmittedDraft } from "../src/lib/draft.ts";
 
 Object.assign(globalThis, {
@@ -59,8 +59,26 @@ test("monitor spec accepts a valid minimal production contract", () => {
   assert.equal(parsed.success, true);
   if (parsed.success) {
     assert.equal(parsed.data.fields[0]?.required, true);
+    assert.equal(parsed.data.change_rules.consecutive_hits, 1);
     assert.deepEqual(parsed.data.browser_steps, []);
   }
+});
+
+test("monitor spec accepts value, regex and consecutive confirmation rules", () => {
+  const parsed = monitorSpecSchema.safeParse({
+    ...validSpec,
+    fields: [{ name: "link", type: "url", semantic: "Course link", selector: "a" }],
+    change_rules: {
+      mode: "any",
+      consecutive_hits: 2,
+      rules: [
+        { type: "value_changed", field: "link" },
+        { type: "regex_match", field: "link", pattern: "^https:" },
+      ],
+    },
+  });
+  assert.equal(parsed.success, true);
+  if (parsed.success) assert.equal(parsed.data.change_rules.consecutive_hits, 2);
 });
 
 test("monitor spec accepts serialized null item_fields on scalar list entries", () => {
@@ -99,6 +117,25 @@ test("monitor spec rejects missing required sections and empty min-one collectio
   assert.equal(monitorSpecSchema.safeParse({
     ...validSpec,
     business_key: { field: "title", item_fields: [] },
+  }).success, false);
+});
+
+test("delivery settings preserve timing fields and old JSON defaults", () => {
+  const legacy = deliverySettingsSchema.safeParse({ notification_group_ids: [] });
+  assert.equal(legacy.success, true);
+  if (legacy.success) {
+    assert.equal(legacy.data.notification_cooldown_seconds, 0);
+    assert.equal(legacy.data.quiet_hours, undefined);
+  }
+  const timed = deliverySettingsSchema.safeParse({
+    notification_group_ids: [],
+    notification_cooldown_seconds: 300,
+    quiet_hours: { start: "22:00", end: "07:00" },
+  });
+  assert.equal(timed.success, true);
+  assert.equal(deliverySettingsSchema.safeParse({
+    notification_group_ids: [],
+    quiet_hours: { start: "22:00", end: "22:00" },
   }).success, false);
 });
 
