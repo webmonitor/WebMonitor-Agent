@@ -2,15 +2,18 @@
 
 import json
 
+import pytest
+from pydantic import ValidationError
+
 from webmonitor.collection.diff import evaluate_rules
 from webmonitor.schemas.monitors import MonitorSpec
 
 
-def make_spec(fields, rules, *, business_key=None, mode='any'):
+def make_spec(fields, rules, *, business_key=None, mode='any', consecutive_hits=1):
     return MonitorSpec.model_validate({
         'name': 'Regression monitor', 'url': 'https://example.com/product',
         'collection_mode': 'http', 'fields': fields, 'business_key': business_key,
-        'change_rules': {'mode': mode, 'rules': rules},
+        'change_rules': {'mode': mode, 'rules': rules, 'consecutive_hits': consecutive_hits},
         'coverage': {'scope': 'full', 'description': 'Complete product list'},
     })
 
@@ -18,6 +21,19 @@ def make_spec(fields, rules, *, business_key=None, mode='any'):
 def number_spec(rule):
     return make_spec([{'name': 'price', 'type': 'number', 'semantic': 'Current price',
                        'selector': '.price', 'normalize': {'decimal_separator': '.'}}], [rule])
+
+
+def scalar_spec(kind, rule, *, consecutive_hits=1):
+    normalize = {}
+    if kind == 'date':
+        normalize = {'date_format': '%Y-%m-%d', 'timezone': 'UTC'}
+    elif kind == 'boolean':
+        normalize = {'true_values': ['yes'], 'false_values': ['no']}
+    elif kind == 'number':
+        normalize = {'decimal_separator': '.'}
+    return make_spec([{'name': 'value', 'type': kind, 'semantic': 'Current value',
+                       'selector': '.value', 'normalize': normalize}],
+                     [{**rule, 'field': 'value'}], consecutive_hits=consecutive_hits)
 
 
 def test_percent_zero_is_undefined_then_uses_latest_success():
@@ -211,3 +227,140 @@ def test_list_rule_payload_carries_only_the_delta():
     assert difference['before'] is None and difference['after'] is None
     assert difference['items'] == [{'id': 'row-new', 'payload': 'new'}]
     assert len(json.dumps(result, ensure_ascii=False)) < 1000
+
+
+@pytest.mark.parametrize('kind,before,after', [
+    ('date', '2026-01-01T00:00:00Z', '2026-01-02T00:00:00Z'),
+    ('boolean', False, True),
+    ('url', 'https://example.com/old', 'https://example.com/new'),
+])
+def test_value_changed_supports_only_typed_scalar_changes(kind, before, after):
+    spec = scalar_spec(kind, {'type': 'value_changed'})
+    initial = evaluate_rules(spec, None, {'value': before}, {})
+    changed = evaluate_rules(spec, {'value': before}, {'value': after}, initial['rule_state'])
+    unchanged = evaluate_rules(spec, {'value': after}, {'value': after}, changed['rule_state'])
+    assert changed['triggered'] is True
+    assert unchanged['triggered'] is False
+
+
+@pytest.mark.parametrize('kind', ['text', 'number'])
+def test_value_changed_rejects_text_and_numeric_fields(kind):
+    with pytest.raises(ValidationError):
+        scalar_spec(kind, {'type': 'value_changed'})
+
+
+@pytest.mark.parametrize('kind,before,after,pattern', [
+    ('text', 'pending', 'ready', '^ready$'),
+    ('date', '2026-01-01T00:00:00Z', '2026-01-02T00:00:00Z', '^2026-01-02T.*Z$'),
+    ('boolean', False, True, '^true$'),
+    ('url', 'https://example.com/draft', 'https://example.com/released', '/released$'),
+])
+def test_regex_match_uses_deterministic_scalar_text_and_persistent_transitions(
+        kind, before, after, pattern):
+    spec = scalar_spec(kind, {'type': 'regex_match', 'pattern': pattern})
+    initial = evaluate_rules(spec, None, {'value': before}, {})
+    matched = evaluate_rules(spec, {'value': before}, {'value': after}, initial['rule_state'])
+    sustained = evaluate_rules(spec, {'value': after}, {'value': after}, matched['rule_state'])
+    assert matched['triggered'] is True
+    assert matched['rule_state']['predicates'] == {'0': True}
+    assert sustained['triggered'] is False
+
+
+def test_regex_schema_precompiles_and_rejects_invalid_patterns_and_types():
+    with pytest.raises(ValidationError):
+        scalar_spec('text', {'type': 'regex_match', 'pattern': '[unclosed'})
+    with pytest.raises(ValidationError):
+        scalar_spec('number', {'type': 'regex_match', 'pattern': '.*'})
+
+
+def test_pathological_regex_times_out_as_a_nonmatching_warning():
+    spec = scalar_spec('text', {'type': 'regex_match', 'pattern': '(a+)+$'})
+    result = evaluate_rules(spec, {'value': 'short'}, {'value': 'a' * 100_000 + '!'}, {})
+    assert result['triggered'] is False
+    assert result['warnings'] == [{'code': 'rule_timeout', 'rule_index': 0,
+                                  'field': 'value', 'reason': 'regex_timeout'}]
+
+
+def test_consecutive_hits_default_one_preserves_legacy_state_and_behavior():
+    spec = scalar_spec('boolean', {'type': 'value_changed'})
+    legacy_state = {'predicates': {}, 'aggregate': True, 'persistent_aggregate': False}
+    result = evaluate_rules(spec, {'value': False}, {'value': True}, legacy_state)
+    assert result['triggered'] is True
+    assert 'confirmation' not in result['rule_state']
+
+
+def test_consecutive_persistent_hits_confirm_jitter_and_reset_after_firing():
+    spec = scalar_spec('text', {'type': 'regex_match', 'pattern': '^ready'},
+                       consecutive_hits=2)
+    initial = evaluate_rules(spec, None, {'value': 'pending'}, {})
+    first = evaluate_rules(spec, {'value': 'pending'}, {'value': 'ready'}, initial['rule_state'])
+    assert first['triggered'] is False
+    assert first['rule_state']['confirmation']['count'] == 1
+    assert first['rule_state']['confirmation']['rule_signature']
+    assert first['rule_state']['confirmation']['value_fingerprint']
+
+    jitter = evaluate_rules(spec, {'value': 'ready'}, {'value': 'ready now'},
+                            first['rule_state'])
+    assert jitter['triggered'] is False
+    assert jitter['rule_state']['confirmation']['count'] == 1
+    confirmed = evaluate_rules(spec, {'value': 'ready now'}, {'value': 'ready now'},
+                               jitter['rule_state'])
+    assert confirmed['triggered'] is True
+    assert 'confirmation' not in confirmed['rule_state']
+    sustained = evaluate_rules(spec, {'value': 'ready now'}, {'value': 'ready now'},
+                               confirmed['rule_state'])
+    assert sustained['triggered'] is False
+    assert 'confirmation' not in sustained['rule_state']
+
+
+def test_consecutive_hits_reset_when_the_matching_rule_set_changes():
+    text_fields = [
+        {'name': 'first', 'type': 'text', 'semantic': 'First', 'selector': '.first'},
+        {'name': 'second', 'type': 'text', 'semantic': 'Second', 'selector': '.second'},
+    ]
+    spec = make_spec(text_fields, [
+        {'type': 'regex_match', 'field': 'first', 'pattern': '^yes$'},
+        {'type': 'regex_match', 'field': 'second', 'pattern': '^yes$'},
+    ], consecutive_hits=2)
+    initial = evaluate_rules(spec, None, {'first': 'no', 'second': 'no'}, {})
+    first = evaluate_rules(spec, {'first': 'no', 'second': 'no'},
+                           {'first': 'yes', 'second': 'no'}, initial['rule_state'])
+    changed_rules = evaluate_rules(spec, {'first': 'no', 'second': 'no'},
+                                   {'first': 'yes', 'second': 'yes'}, first['rule_state'])
+    assert changed_rules['triggered'] is False
+    assert changed_rules['rule_state']['confirmation']['count'] == 1
+    assert (changed_rules['rule_state']['confirmation']['rule_signature']
+            != first['rule_state']['confirmation']['rule_signature'])
+
+
+def test_consecutive_change_hits_require_the_same_rule_and_value():
+    spec = scalar_spec('date', {'type': 'value_changed'}, consecutive_hits=2)
+    baseline = '2026-01-01T00:00:00Z'
+    first_value = '2026-01-02T00:00:00Z'
+    jittered_value = '2026-01-03T00:00:00Z'
+    initial = evaluate_rules(spec, None, {'value': baseline}, {})
+    first = evaluate_rules(spec, {'value': baseline}, {'value': first_value}, initial['rule_state'])
+    assert first['triggered'] is False and first['rule_state']['confirmation']['count'] == 1
+
+    # Production retains the original baseline while a candidate is pending.
+    confirmed = evaluate_rules(spec, {'value': baseline}, {'value': first_value},
+                               first['rule_state'])
+    assert confirmed['triggered'] is True
+    assert confirmed['differences'][0]['before'] == baseline
+    assert 'confirmation' not in confirmed['rule_state']
+
+    jitter = evaluate_rules(spec, {'value': baseline}, {'value': jittered_value},
+                            first['rule_state'])
+    assert jitter['triggered'] is False
+    assert jitter['rule_state']['confirmation']['count'] == 1
+    assert (jitter['rule_state']['confirmation']['value_fingerprint']
+            != first['rule_state']['confirmation']['value_fingerprint'])
+    returned = evaluate_rules(spec, {'value': baseline}, {'value': baseline}, first['rule_state'])
+    assert returned['triggered'] is False
+    assert 'confirmation' not in returned['rule_state']
+
+
+@pytest.mark.parametrize('hits', [0, 11, True, 1.5])
+def test_consecutive_hits_is_a_bounded_strict_integer(hits):
+    with pytest.raises(ValidationError):
+        scalar_spec('text', {'type': 'regex_match', 'pattern': 'ready'}, consecutive_hits=hits)

@@ -5,7 +5,7 @@ import json
 from datetime import timedelta
 from uuid import UUID, uuid4
 
-import httpx
+import httpx2
 import pytest
 import pytest_asyncio
 from mcp import ClientSession
@@ -20,6 +20,31 @@ from webmonitor.security.auth import CurrentUser
 from webmonitor.services import accounts, jobs, tokens
 
 
+@contextlib.asynccontextmanager
+async def running_app(app):
+    """Hold the lifespan in one task, as the MCP SDK's cancel scopes require."""
+    ready = asyncio.Event()
+    stop = asyncio.Event()
+
+    async def manage():
+        async with app.router.lifespan_context(app):
+            ready.set()
+            await stop.wait()
+
+    task = asyncio.create_task(manage())
+    ready_waiter = asyncio.create_task(ready.wait())
+    await asyncio.wait({task, ready_waiter}, return_when=asyncio.FIRST_COMPLETED)
+    if not ready.is_set():
+        ready_waiter.cancel()
+        await task
+        raise RuntimeError("Application lifespan exited during startup")
+    try:
+        yield app
+    finally:
+        stop.set()
+        await task
+
+
 @pytest_asyncio.fixture
 async def mcp_app(monkeypatch, database_url):
     monkeypatch.setenv("WORKERS_ENABLED", "false")
@@ -30,16 +55,15 @@ async def mcp_app(monkeypatch, database_url):
     get_settings.cache_clear()
     from webmonitor.api.app import create_app
 
-    app = create_app()
-    async with app.router.lifespan_context(app):
+    async with running_app(create_app()) as app:
         yield app
     get_settings.cache_clear()
 
 
 @contextlib.asynccontextmanager
 async def open_mcp_session(app, token: str):
-    http_client = httpx.AsyncClient(
-        transport=httpx.ASGITransport(app=app),
+    http_client = httpx2.AsyncClient(
+        transport=httpx2.ASGITransport(app=app),
         base_url="http://testserver",
         headers={"Authorization": f"Bearer {token}"},
         timeout=30.0,
@@ -48,7 +72,6 @@ async def open_mcp_session(app, token: str):
         async with streamable_http_client("http://testserver/mcp", http_client=http_client) as (
             read_stream,
             write_stream,
-            _,
         ):
             async with ClientSession(read_stream, write_stream) as mcp_session:
                 init_result = await mcp_session.initialize()
@@ -69,8 +92,8 @@ async def test_mcp_disabled_by_default_returns_404(monkeypatch, database_url):
 
     app = create_app()
     async with app.router.lifespan_context(app):
-        async with httpx.AsyncClient(
-            transport=httpx.ASGITransport(app=app), base_url="http://testserver"
+        async with httpx2.AsyncClient(
+            transport=httpx2.ASGITransport(app=app), base_url="http://testserver"
         ) as client:
             res = await client.post("/mcp", json={"jsonrpc": "2.0", "id": 1, "method": "initialize"})
             assert res.status_code == 404
@@ -83,8 +106,8 @@ async def test_mcp_auth_origin_cookie_and_token_lifecycle(mcp_app, session):
     admin.password_hash = await accounts._hash("correct horse battery")
     await session.commit()
 
-    async with httpx.AsyncClient(
-        transport=httpx.ASGITransport(app=mcp_app), base_url="http://testserver"
+    async with httpx2.AsyncClient(
+        transport=httpx2.ASGITransport(app=mcp_app), base_url="http://testserver"
     ) as client:
         # 1. Missing Bearer token -> 401
         no_auth = await client.post("/mcp", json={})
@@ -214,21 +237,27 @@ async def test_mcp_mode2_end_to_end_discovery_draft_preview_approve_and_ops(
         }
 
     async def fake_collect_http(url: str, spec=None, **kwargs):
-        from webmonitor.collection.types import CollectOutcome
+        from webmonitor.collection.types import CollectionResult
 
         if spec is None:
-            return CollectOutcome(
+            return CollectionResult(
                 final_url=url,
+                body=None,
+                screenshot=None,
                 fields={},
                 coverage={"scope": "full", "description": "html"},
+                duration_ms=1,
                 warnings=[],
                 analysis={"selectors": ["h1", "li"]},
             )
         res = collection_result(spec)
-        return CollectOutcome(
+        return CollectionResult(
             final_url=res["final_url"],
+            body=None,
+            screenshot=None,
             fields=res["fields"],
             coverage=res["coverage"],
+            duration_ms=1,
             warnings=[],
         )
 

@@ -5,6 +5,9 @@ delivery never re-renders after the monitor changes. Redirects are not followed:
 the destination was validated once, and following a redirect would bypass that.
 """
 import asyncio
+import hashlib
+import hmac
+import time
 
 import httpx
 
@@ -30,20 +33,28 @@ async def send_webhook(delivery, *,
         raise DeliveryFailure("webhook_url_forbidden", "Webhook URL is not permitted") from None
     event = (delivery.payload or {}).get("event") or {}
     monitor = (delivery.payload or {}).get("monitor") or {}
+    body = delivery.body_text.encode("utf-8")
+    timestamp = str(int(time.time()))
     headers = {
         "Content-Type": "application/json",
         "User-Agent": "WebMonitor-Agent",
         "X-WebMonitor-Event": str(event.get("type") or ""),
         "X-WebMonitor-Monitor": str(monitor.get("id") or ""),
         "X-WebMonitor-Delivery": str(delivery.id),
+        "X-WebMonitor-Timestamp": timestamp,
     }
+    secret = get_settings().webhook_secret.get_secret_value()
+    if secret:
+        signed = timestamp.encode("ascii") + b"." + body
+        digest = hmac.new(secret.encode("utf-8"), signed, hashlib.sha256).hexdigest()
+        headers["X-WebMonitor-Signature-256"] = f"sha256={digest}"
     try:
         async with asyncio.timeout(20), httpx.AsyncClient(
             proxy=None if transport else get_settings().egress_proxy_url,
             transport=transport, trust_env=False, follow_redirects=False,
             timeout=15,
         ) as client, client.stream(
-            "POST", url, content=delivery.body_text.encode("utf-8"), headers=headers,
+            "POST", url, content=body, headers=headers,
         ) as response:
             # The status is the whole result; the response body is never stored.
             if 200 <= response.status_code < 300:

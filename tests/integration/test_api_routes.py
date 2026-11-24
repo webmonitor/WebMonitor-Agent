@@ -1055,6 +1055,105 @@ async def test_api_responses_are_never_cached(client):
 
 
 @pytest.mark.asyncio
+async def test_notification_test_routes_require_session_and_csrf(client):
+    body = {"recipient": "ops@example.com"}
+    missing_csrf = await client.post("/api/v1/notifications/test/email", json=body)
+    assert missing_csrf.status_code == 403
+    assert missing_csrf.json()["error"]["code"] == "origin_invalid"
+
+    token = (await client.get("/api/v1/auth/csrf")).json()["csrf_token"]
+    headers = {"X-CSRF-Token": token, "Origin": get_settings().app_origin}
+    signed_out = await client.post(
+        "/api/v1/notifications/test/email", json=body, headers=headers
+    )
+    assert signed_out.status_code == 401
+    assert signed_out.json()["error"]["code"] == "unauthenticated"
+
+
+@pytest.mark.asyncio
+async def test_notification_test_routes_send_without_creating_production_rows(
+    client, session, monkeypatch
+):
+    from sqlalchemy import func
+
+    from webmonitor.models import Delivery, Event, Job
+    from webmonitor.services import notifications
+
+    user = await ensure_admin(session)
+    headers = await sign_in(client)
+    sent = {}
+
+    async def email_accepted(delivery, rendered):
+        sent["email"] = (delivery, rendered)
+        return 250
+
+    async def webhook_accepted(delivery):
+        sent["webhook"] = delivery
+        return 202
+
+    monkeypatch.setattr(notifications, "send_email", email_accepted)
+    monkeypatch.setattr(notifications, "send_webhook", webhook_accepted)
+    email = await client.post(
+        "/api/v1/notifications/test/email",
+        json={"recipient": " OPS@EXAMPLE.COM "}, headers=headers,
+    )
+    webhook = await client.post(
+        "/api/v1/notifications/test/webhook",
+        json={"url": " https://hooks.example.com/ops "}, headers=headers,
+    )
+    assert email.status_code == 200 and email.json() == {"channel": "email", "response_code": 250}
+    assert webhook.status_code == 200 and webhook.json() == {
+        "channel": "webhook", "response_code": 202,
+    }
+    assert sent["email"][0].recipient == "ops@example.com"
+    assert sent["webhook"].recipient == "https://hooks.example.com/ops"
+    for model in (Delivery, Event, Job):
+        assert await session.scalar(select(func.count()).select_from(model)) == 0
+
+    user.role = "member"
+    await session.commit()
+    forbidden = await client.post(
+        "/api/v1/notifications/test/email",
+        json={"recipient": "ops@example.com"}, headers=headers,
+    )
+    assert forbidden.status_code == 403
+    assert forbidden.json()["error"]["code"] == "forbidden"
+
+
+@pytest.mark.asyncio
+async def test_notification_test_routes_report_delivery_failures(client, session, monkeypatch):
+    from webmonitor.notifications.errors import DeliveryFailure
+    from webmonitor.services import notifications
+
+    await ensure_admin(session)
+    headers = await sign_in(client)
+
+    async def email_failed(delivery, rendered):
+        raise DeliveryFailure("smtp_network_error", "SMTP connection failed or timed out", True)
+
+    async def webhook_failed(delivery):
+        raise DeliveryFailure(
+            "webhook_rejected", "Webhook endpoint rejected the request", False, 400
+        )
+
+    monkeypatch.setattr(notifications, "send_email", email_failed)
+    monkeypatch.setattr(notifications, "send_webhook", webhook_failed)
+    email = await client.post(
+        "/api/v1/notifications/test/email",
+        json={"recipient": "ops@example.com"}, headers=headers,
+    )
+    webhook = await client.post(
+        "/api/v1/notifications/test/webhook",
+        json={"url": "https://hooks.example.com/ops"}, headers=headers,
+    )
+    assert email.status_code == 502
+    assert email.json()["error"]["code"] == "smtp_network_error"
+    assert webhook.status_code == 502
+    assert webhook.json()["error"]["code"] == "webhook_rejected"
+    assert "test-secret" not in webhook.text
+
+
+@pytest.mark.asyncio
 async def test_readiness_reports_a_stopped_worker(database_url, monkeypatch):
     """Readiness is more than a database: nothing is collected if the worker died."""
     import asyncio
@@ -1080,3 +1179,172 @@ async def test_readiness_reports_a_stopped_worker(database_url, monkeypatch):
     finally:
         app.state.worker_task.cancel()
         get_settings.cache_clear()
+
+
+async def _published_monitor(session, user, group, name: str):
+    from support import build_spec, prepare_draft, publish
+
+    conversation, draft, current = await prepare_draft(
+        session, user, group, spec=build_spec(name=name))
+    monitor = await publish(session, conversation, draft, current)
+    await session.commit()
+    return monitor
+
+
+@pytest.mark.asyncio
+async def test_monitor_filters_tags_and_pagination_preserve_ownership(client, session):
+    from support import build_spec
+
+    from webmonitor.models import NotificationGroup
+    from webmonitor.schemas.api import MonitorSpecDocument
+    from webmonitor.security.auth import CurrentUser
+    from webmonitor.services import monitors as monitor_service
+
+    user = await ensure_admin(session)
+    headers = await sign_in(client)
+    group = NotificationGroup(name="Management ops", members=[
+        {"email": "ops@example.com", "active": True}], created_by_user_id=user.id)
+    session.add(group)
+    await session.flush()
+    alpha = await _published_monitor(session, user, group, "Alpha price")
+    beta = await _published_monitor(session, user, group, "Beta news")
+    alpha.status, alpha.health_status = "paused", "failed"
+    alpha.baseline_status, alpha.baseline_snapshot_id = "ready", uuid4()
+    original = (alpha.spec_version, alpha.spec_hash, alpha.baseline_snapshot_id,
+                alpha.baseline_status, dict(alpha.rule_state))
+    await session.commit()
+
+    tagged = await client.patch(f"/api/v1/monitors/{alpha.id}/tags",
+        json={"tags": ["ops", "price"]}, headers=headers)
+    assert tagged.status_code == 200 and tagged.json()["tags"] == ["ops", "price"]
+    await session.refresh(alpha)
+    assert (alpha.spec_version, alpha.spec_hash, alpha.baseline_snapshot_id,
+            alpha.baseline_status, alpha.rule_state) == original
+    assert alpha.spec == build_spec(name="Alpha price").model_dump(mode="json")
+    await client.patch(f"/api/v1/monitors/{beta.id}/tags", json={"tags": ["ops"]},
+                       headers=headers)
+    assert (await client.patch(f"/api/v1/monitors/{alpha.id}/tags",
+        json={"tags": [f"tag-{index}" for index in range(21)]}, headers=headers)).status_code == 422
+    assert (await client.patch(f"/api/v1/monitors/{alpha.id}/tags",
+        json={"tags": ["Ops", "ops"]}, headers=headers)).status_code == 422
+
+    filtered = await client.get("/api/v1/monitors", params=[
+        ("keyword", "ALPHA"), ("health_status", "failed"), ("status", "paused"),
+        ("tag", "ops"), ("tag", "price")])
+    assert filtered.status_code == 200
+    assert filtered.json()["total"] == 1
+    assert [row["id"] for row in filtered.json()["items"]] == [str(alpha.id)]
+    paged = await client.get("/api/v1/monitors", params={"tag": "ops", "limit": 1})
+    assert paged.json()["total"] == 2 and len(paged.json()["items"]) == 1
+
+    member = User(email=f"{uuid4().hex}@example.com", display_name="Member",
+                  password_hash="x", role="member")
+    session.add(member)
+    await session.flush()
+    own = await _published_monitor(session, member, group, "Member watch")
+    await client.patch(f"/api/v1/monitors/{own.id}/tags", json={"tags": ["ops"]},
+                       headers=headers)
+    owned = await monitor_service.list_monitors(session,
+        CurrentUser(user_id=member.id, role="member"), 50, 0, tags=["ops"])
+    assert owned.total == 1 and [row.id for row in owned.items] == [own.id]
+
+    exported = await client.get(f"/api/v1/monitors/{alpha.id}/export")
+    assert exported.status_code == 200
+    document = MonitorSpecDocument.model_validate(exported.json())
+    assert document.spec_version == alpha.spec_version
+    assert document.spec.model_dump(mode="json") == alpha.spec
+
+
+@pytest.mark.asyncio
+async def test_bulk_monitor_commands_return_real_per_item_results(client, session):
+    from sqlalchemy import func
+
+    from webmonitor.models import Job, Monitor, NotificationGroup
+    from webmonitor.services import jobs, monitors as monitor_service
+    from webmonitor.security.auth import CurrentUser
+
+    user = await ensure_admin(session)
+    headers = await sign_in(client)
+    group = NotificationGroup(name="Bulk ops", members=[
+        {"email": "ops@example.com", "active": True}], created_by_user_id=user.id)
+    session.add(group)
+    await session.flush()
+    first = await _published_monitor(session, user, group, "Bulk one")
+    second = await _published_monitor(session, user, group, "Bulk two")
+    current = CurrentUser(user_id=user.id, role="admin")
+    await monitor_service.archive_monitor(session, current, second.id)
+    pending = await jobs.enqueue(session, user_id=user.id, kind="production",
+        monitor_id=first.id, url=first.url, spec=first.spec, revision=first.spec_version)
+    await session.commit()
+
+    missing = uuid4()
+    paused = await client.post("/api/v1/monitors/bulk", headers=headers, json={
+        "action": "pause", "monitor_ids": [str(first.id), str(second.id), str(missing)]})
+    assert paused.status_code == 200
+    rows = {row["monitor_id"]: row for row in paused.json()["items"]}
+    assert rows[str(first.id)]["ok"] is True
+    assert rows[str(first.id)]["monitor"]["status"] == "paused"
+    assert rows[str(second.id)]["ok"] is True
+    assert rows[str(missing)]["error"]["code"] == "not_found"
+    await session.refresh(pending)
+    assert pending.status == "cancelled"
+
+    resumed = await client.post("/api/v1/monitors/bulk", headers=headers, json={
+        "action": "resume", "monitor_ids": [str(first.id), str(second.id)]})
+    rows = {row["monitor_id"]: row for row in resumed.json()["items"]}
+    assert rows[str(first.id)]["monitor"]["status"] == "active"
+    assert rows[str(second.id)]["ok"] is False
+    assert rows[str(second.id)]["error"]["code"] == "monitor_archived"
+    await session.refresh(first)
+    await session.refresh(second)
+    assert first.status == "active" and second.status == "paused"
+    assert await session.scalar(select(func.count()).select_from(Monitor)) == 2
+    assert await session.scalar(select(func.count()).select_from(Job).where(
+        Job.kind == "production", Job.status.in_(("queued", "running")))) == 0
+
+
+@pytest.mark.asyncio
+async def test_spec_import_creates_only_an_unpublished_conversation_draft(client, session):
+    from sqlalchemy import func
+
+    from webmonitor.models import Conversation, Draft, Job, Monitor, NotificationGroup
+
+    user = await ensure_admin(session)
+    headers = await sign_in(client)
+    group = NotificationGroup(name="Import ops", members=[
+        {"email": "ops@example.com", "active": True}], created_by_user_id=user.id)
+    session.add(group)
+    await session.flush()
+    monitor = await _published_monitor(session, user, group, "Portable watch")
+    document = (await client.get(f"/api/v1/monitors/{monitor.id}/export")).json()
+    before = {model: await session.scalar(select(func.count()).select_from(model))
+              for model in (Conversation, Draft, Job, Monitor)}
+
+    imported = await client.post("/api/v1/monitors/import", json=document, headers=headers)
+    assert imported.status_code == 201, imported.text
+    result = imported.json()
+    assert result["spec_revision"] == 1 and result["settings_revision"] == 0
+    snapshot = (await client.get(f"/api/v1/conversations/{result['conversation_id']}")).json()
+    assert snapshot["messages"] == [] and snapshot["jobs"] == []
+    assert len(snapshot["drafts"]) == 1
+    draft = snapshot["drafts"][0]
+    assert draft["id"] == result["draft_id"] and draft["status"] == "draft"
+    assert draft["monitor_id"] is None and draft["spec"] == document["spec"]
+    assert draft["extraction_preview"] is None and draft["delivery_preview"] is None
+    for model in (Conversation, Draft):
+        assert await session.scalar(select(func.count()).select_from(model)) == before[model] + 1
+    for model in (Job, Monitor):
+        assert await session.scalar(select(func.count()).select_from(model)) == before[model]
+
+    premature = await client.post(f"/api/v1/conversations/{result['conversation_id']}/approve",
+        headers=headers, json={"draft_id": result["draft_id"], "spec_revision": 1,
+            "settings_revision": 0, "extraction_preview_hash": "0" * 64,
+            "delivery_preview_hash": "0" * 64})
+    assert premature.status_code == 409
+    assert premature.json()["error"]["code"] == "settings_incomplete"
+    assert await session.scalar(select(func.count()).select_from(Monitor)) == before[Monitor]
+
+    rejected = await client.post("/api/v1/monitors/import", headers=headers,
+        json={**document, "spec": {**document["spec"], "unexpected": True}})
+    assert rejected.status_code == 422
+    assert await session.scalar(select(func.count()).select_from(Conversation)) == before[Conversation] + 1

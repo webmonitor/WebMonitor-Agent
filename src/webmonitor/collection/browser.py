@@ -2,7 +2,8 @@
 import asyncio
 import base64
 import json
-from contextlib import suppress
+from contextlib import asynccontextmanager, suppress
+from dataclasses import dataclass
 from time import monotonic
 
 from playwright.async_api import Error as PlaywrightError
@@ -10,6 +11,7 @@ from playwright.async_api import Page, async_playwright
 from playwright.async_api import TimeoutError as PlaywrightTimeoutError
 
 from webmonitor.collection.extraction import extract_fields
+from webmonitor.collection.host_limit import host_slot
 from webmonitor.collection.network import network_candidate
 from webmonitor.collection.types import (
     MAX_HTML_BYTES,
@@ -28,6 +30,109 @@ NAVIGATION_TIMEOUT_MS = 30000
 # A page can keep polling analytics or ads forever. Wait for a quiet network
 # only as a best effort; content extraction must not fail on a missing idle.
 SETTLE_TIMEOUT_MS = 5000
+
+
+@dataclass
+class _Process:
+    playwright: object
+    browser: object
+    started: float
+    uses: int = 0
+    active: int = 0
+    retiring: bool = False
+
+
+_process: _Process | None = None
+_process_condition: asyncio.Condition | None = None
+
+
+async def _close_process(process: _Process) -> None:
+    with suppress(PlaywrightError):
+        await process.browser.close()
+    with suppress(Exception):
+        await process.playwright.stop()
+
+
+def _condition() -> asyncio.Condition:
+    global _process_condition
+    if _process_condition is None:
+        _process_condition = asyncio.Condition()
+    return _process_condition
+
+
+async def _lease_process() -> _Process:
+    global _process
+    condition = _condition()
+    async with condition:
+        while True:
+            settings = get_settings()
+            if _process is not None:
+                expired = (_process.uses >= settings.browser_reuse_requests
+                           or monotonic() - _process.started >= settings.browser_reuse_seconds
+                           or not _process.browser.is_connected())
+                _process.retiring = _process.retiring or expired
+                if _process.retiring and _process.active:
+                    await condition.wait()
+                    continue
+                if _process.retiring:
+                    await _close_process(_process)
+                    _process = None
+            if _process is None:
+                playwright = None
+                try:
+                    playwright = await async_playwright().start()
+                    browser = await playwright.chromium.launch(
+                        headless=True, chromium_sandbox=True,
+                        proxy={'server': settings.egress_proxy_url},
+                        args=['--proxy-bypass-list=<-loopback>', '--disable-quic',
+                              '--force-webrtc-ip-handling-policy=disable_non_proxied_udp'])
+                except PlaywrightError:
+                    if playwright is not None:
+                        with suppress(Exception):
+                            await playwright.stop()
+                    raise DomainError('browser_unavailable', 503) from None
+                _process = _Process(playwright, browser, monotonic())
+            _process.uses += 1
+            _process.active += 1
+            return _process
+
+
+async def _release_process(process: _Process) -> None:
+    global _process
+    async with _condition():
+        process.active -= 1
+        if process.retiring and process.active == 0 and _process is process:
+            _process = None
+            await _close_process(process)
+        _condition().notify_all()
+
+
+@asynccontextmanager
+async def _browser_process():
+    """Lease a process; callers still own a fresh isolated context per collection."""
+    process = await _lease_process()
+    try:
+        yield process.browser
+    finally:
+        await _release_process(process)
+
+
+async def shutdown_browser() -> None:
+    """Drain active contexts, then close the reused process during worker shutdown."""
+    global _process, _process_condition
+    if _process_condition is None:
+        return
+    async with _process_condition:
+        process = _process
+        if process is not None:
+            process.retiring = True
+            while process.active:
+                await _process_condition.wait()
+            if _process is process:
+                _process = None
+                await _close_process(process)
+        _process_condition.notify_all()
+    _process_condition = None
 
 
 def _browser_slots() -> asyncio.Semaphore:
@@ -69,7 +174,7 @@ async def collect_browser(url: str, spec: MonitorSpec | None = None, *,
     skipped = {'non_json': 0, 'large': 0, 'limit': 0, 'timeout': 0}
     async with _browser_slots():
         started = monotonic()
-        browser = context = None
+        context = None
         tasks = set()
         failure = None
         request_count = resource_bytes = 0
@@ -91,15 +196,7 @@ async def collect_browser(url: str, spec: MonitorSpec | None = None, *,
         try:
             async with asyncio.timeout(60):
                 target = await validate_target(url)
-                async with async_playwright() as playwright:
-                    try:
-                        browser = await playwright.chromium.launch(
-                            headless=True, chromium_sandbox=True,
-                            proxy={'server': get_settings().egress_proxy_url},
-                            args=['--proxy-bypass-list=<-loopback>', '--disable-quic',
-                                  '--force-webrtc-ip-handling-policy=disable_non_proxied_udp'])
-                    except PlaywrightError:
-                        raise DomainError('browser_unavailable', 503) from None
+                async with host_slot(target), _browser_process() as browser:
                     try:
                         context = await browser.new_context(viewport={'width': 1280, 'height': 800},
                                                             service_workers='block', accept_downloads=False,
@@ -359,9 +456,6 @@ async def collect_browser(url: str, spec: MonitorSpec | None = None, *,
                         if context:
                             with suppress(PlaywrightError):
                                 await context.close()
-                        if browser:
-                            with suppress(PlaywrightError):
-                                await browser.close()
         except TimeoutError:
             raise failure or DomainError('collection_timeout', 503) from None
         except PlaywrightError:

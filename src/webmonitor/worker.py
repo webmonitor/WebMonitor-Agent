@@ -15,7 +15,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from webmonitor.agent.orchestration import execute_job as execute_agent_job
 from webmonitor.collection.api import collect_api
-from webmonitor.collection.browser import collect_browser
+from webmonitor.collection.browser import collect_browser, shutdown_browser
 from webmonitor.collection.http import collect_http
 from webmonitor.collection.probe import probe, replay
 from webmonitor.config import get_settings
@@ -26,7 +26,7 @@ from webmonitor.notifications.delivery import send_email
 from webmonitor.notifications.errors import DeliveryFailure
 from webmonitor.notifications.webhook import send_webhook
 from webmonitor.schemas.monitors import ApiRequest, MonitorSpec
-from webmonitor.services import accounts, drafts, jobs, notifications, runs
+from webmonitor.services import accounts, drafts, jobs, notifications, retention, runs
 from webmonitor.storage.evidence import delete_evidence, upload_evidence
 
 logger = logging.getLogger(__name__)
@@ -103,13 +103,15 @@ async def _discard_evidence(refs: list[dict]) -> None:
 
 async def _collect(job_id: UUID, worker_id: str) -> None:
     async with _session() as session, session.begin():
-        job = await _locked(session, job_id)
+        monitor, job = await jobs.lock(session, job_id)
         if not _owned(job, worker_id, terminal=True):
             return
         if job.cancel_requested_at is not None:
             await jobs.finish(session, job, "cancelled", error_code="collection_cancelled")
             return
         kind, url, stored = job.kind, job.url, job.spec
+        validator = ((monitor.collection_state or {}).get("conditional")
+                     if kind == "production" and monitor is not None else None)
     spec = (MonitorSpec.model_validate(stored)
             if kind in ("preview", "production") and stored else None)
     mode = (stored or {}).get("collection_mode", "http")
@@ -129,10 +131,13 @@ async def _collect(job_id: UUID, worker_id: str) -> None:
             if op == "network":
                 result = await collect_browser(url, network=True)
             elif spec is not None and spec.source is not None:
-                result = await collect_api(url, spec)
+                eligible = len(spec.source.steps) == 1 and spec.source.pagination is None
+                result = await collect_api(url, spec,
+                    **({"validator": validator} if eligible and validator else {}))
             else:
                 collector = collect_browser if mode == "browser" else collect_http
-                result = await collector(url, spec)
+                result = await collector(url, spec,
+                    **({"validator": validator} if mode == "http" and validator else {}))
             if result.body is not None:
                 uploaded.append(await upload_evidence(prefix=_prefix(job), kind=result.body_kind,
                                                       data=result.body.encode("utf-8")))
@@ -142,7 +147,8 @@ async def _collect(job_id: UUID, worker_id: str) -> None:
             payload = {"final_url": result.final_url, "fields": result.fields,
                        "coverage": result.coverage, "evidence_refs": uploaded,
                        "duration_ms": result.duration_ms, "warnings": result.warnings,
-                       "analysis": result.analysis}
+                       "analysis": result.analysis, "not_modified": result.not_modified,
+                       "validator": result.validator}
         async with _session() as session, session.begin():
             live = await _locked(session, job_id)
             if not _owned(live, worker_id, terminal=True):
@@ -153,7 +159,10 @@ async def _collect(job_id: UUID, worker_id: str) -> None:
                 await jobs.finish(session, live, "cancelled", error_code="collection_cancelled")
                 return
             if live.kind == "production":
-                await runs.commit_success(session, live, payload)
+                if payload.get("not_modified"):
+                    await runs.commit_not_modified(session, live, payload)
+                else:
+                    await runs.commit_success(session, live, payload)
             else:
                 live.result = payload
                 if live.kind == "preview":
@@ -217,6 +226,15 @@ async def scheduler_loop() -> None:
             if started - purged_at >= SESSION_PURGE_SECONDS:
                 async with _session() as session, session.begin():
                     await accounts.purge_expired_sessions(session)
+                async with _session() as session:
+                    stats = await retention.collect(session)
+                if (stats.deliveries_deleted or stats.events_deleted
+                        or stats.snapshots_deleted or stats.jobs_deleted
+                        or stats.evidence_deleted or stats.failures):
+                    logger.info("Retention GC: deliveries=%s events=%s snapshots=%s jobs=%s "
+                                "evidence=%s failures=%s", stats.deliveries_deleted,
+                                stats.events_deleted, stats.snapshots_deleted, stats.jobs_deleted,
+                                stats.evidence_deleted, stats.failures)
                 purged_at = started
         except asyncio.CancelledError:
             raise
@@ -352,10 +370,13 @@ async def delivery_loop(worker_id: str) -> None:
 async def run_worker() -> None:
     """Scheduler, agent, both collectors and notification delivery in one process."""
     worker_id = make_worker_id()
-    # One loop crashing takes the process down loudly instead of running half-deaf.
-    async with asyncio.TaskGroup() as group:
-        group.create_task(scheduler_loop())
-        group.create_task(agent_loop(worker_id))
-        group.create_task(collection_loop(worker_id, "http"))
-        group.create_task(collection_loop(worker_id, "browser"))
-        group.create_task(delivery_loop(worker_id))
+    try:
+        # One loop crashing takes the process down loudly instead of running half-deaf.
+        async with asyncio.TaskGroup() as group:
+            group.create_task(scheduler_loop())
+            group.create_task(agent_loop(worker_id))
+            group.create_task(collection_loop(worker_id, "http"))
+            group.create_task(collection_loop(worker_id, "browser"))
+            group.create_task(delivery_loop(worker_id))
+    finally:
+        await shutdown_browser()

@@ -330,6 +330,83 @@ async def test_empty_first_page_fails():
 
 
 @pytest.mark.asyncio
+async def test_cursor_pagination_follows_response_tokens_until_absent():
+    calls = []
+
+    def handler(request):
+        calls.append(str(request.url))
+        cursor = dict(httpx.QueryParams(request.url.query.decode())).get('cursor')
+        if cursor is None:
+            return json_response({'data': {'list': [{'id': '1'}, {'id': '2'}], 'next': 'abc'}})
+        return json_response({'data': {'list': [{'id': '3'}], 'next': None}})
+
+    monitor = spec(steps=[step('https://api.example.com/items')],
+                   pagination={'kind': 'cursor', 'next_cursor_path': 'data.next',
+                               'size_param': 'limit', 'size': 2, 'max_pages': 3})
+    result = await collect_api(monitor.url, monitor, transport=httpx.MockTransport(handler))
+    assert result.fields['items'] == [{'id': '1'}, {'id': '2'}, {'id': '3'}]
+    assert calls == ['https://api.example.com/items?limit=2',
+                     'https://api.example.com/items?cursor=abc&limit=2']
+
+
+@pytest.mark.asyncio
+async def test_offset_pagination_advances_by_actual_row_count():
+    calls = []
+
+    def handler(request):
+        calls.append(str(request.url))
+        offset = int(dict(httpx.QueryParams(request.url.query.decode()))['offset'])
+        rows = [{'id': '1'}, {'id': '2'}] if offset == 0 else [{'id': '3'}]
+        return json_response({'data': {'list': rows}})
+
+    monitor = spec(steps=[step('https://api.example.com/items')],
+                   pagination={'kind': 'offset', 'size_param': 'size', 'size': 2,
+                               'stop': 'empty', 'max_pages': 3})
+    result = await collect_api(monitor.url, monitor, transport=httpx.MockTransport(handler))
+    assert result.fields['items'] == [{'id': '1'}, {'id': '2'}, {'id': '3'}]
+    assert calls == ['https://api.example.com/items?offset=0&size=2',
+                     'https://api.example.com/items?offset=2&size=2']
+
+
+@pytest.mark.asyncio
+async def test_post_body_pagination_preserves_the_original_json_object():
+    bodies = []
+
+    def handler(request):
+        body = json.loads(request.content)
+        bodies.append(body)
+        rows = [{'id': '1'}, {'id': '2'}] if body['page'] == 1 else []
+        return json_response({'data': {'list': rows}})
+
+    monitor = spec(steps=[step('https://api.example.com/items', method='POST',
+                               body={'query': 'notice'})],
+                   pagination={'kind': 'page', 'location': 'body', 'size_param': 'size',
+                               'size': 2, 'stop': 'empty', 'max_pages': 3})
+    result = await collect_api(monitor.url, monitor, transport=httpx.MockTransport(handler))
+    assert result.fields['items'] == [{'id': '1'}, {'id': '2'}]
+    assert bodies == [{'query': 'notice', 'page': 1, 'size': 2},
+                      {'query': 'notice', 'page': 2, 'size': 2}]
+
+
+@pytest.mark.asyncio
+async def test_cursor_must_progress_to_prevent_an_infinite_loop():
+    monitor = spec(steps=[step('https://api.example.com/items')],
+                   pagination={'kind': 'cursor', 'next_cursor_path': 'data.next', 'max_pages': 3})
+    def handler(request):
+        return json_response({'data': {'list': [{'id': '1'}], 'next': 'same'}})
+    with pytest.raises(DomainError) as error:
+        await collect_api(monitor.url, monitor, transport=httpx.MockTransport(handler))
+    assert error.value.details == {'reason': 'cursor_not_progressing'}
+
+
+@pytest.mark.asyncio
+async def test_body_pagination_rejects_a_get_request():
+    with pytest.raises(ValueError, match='body pagination requires POST'):
+        spec(steps=[step('https://api.example.com/items')],
+             pagination={'kind': 'page', 'location': 'body'})
+
+
+@pytest.mark.asyncio
 async def test_empty_json_list_is_allowed_when_opted_in():
     def empty(request):
         return json_response({'code': 200, 'data': {'list': []}})

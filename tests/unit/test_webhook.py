@@ -65,6 +65,34 @@ async def test_send_webhook_posts_the_stored_body_without_following_redirects():
     assert headers["content-type"] == "application/json"
     assert headers["x-webmonitor-event"] == "content_changed"
     assert headers["x-webmonitor-monitor"] == "monitor-1"
+    assert headers["x-webmonitor-timestamp"].isdigit()
+    assert "x-webmonitor-signature-256" not in headers
+
+
+@pytest.mark.asyncio
+async def test_webhook_signature_covers_timestamp_and_exact_raw_body(monkeypatch):
+    monkeypatch.setenv("WEBHOOK_SECRET", "test-secret")
+    get_settings.cache_clear()
+    monkeypatch.setattr("webmonitor.notifications.webhook.time.time", lambda: 1700000000.999)
+    captured: dict[str, httpx.Request] = {}
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        captured["request"] = request
+        return httpx.Response(200)
+
+    delivery = FakeDelivery()
+    delivery.body_text = '{"test":true}'
+    await send_webhook(delivery, transport=httpx.MockTransport(handler))
+
+    request = captured["request"]
+    assert request.content == b'{"test":true}'
+    assert request.headers["x-webmonitor-timestamp"] == "1700000000"
+    assert request.headers["x-webmonitor-signature-256"] == (
+        "sha256=be41c9cb530026a732d99c614a2463273baa23083f3f8b8cda0a41c865469101"
+    )
+    settings = get_settings()
+    assert settings.webhook_secret.get_secret_value() == "test-secret"
+    assert "test-secret" not in repr(settings)
 
 
 @pytest.mark.asyncio

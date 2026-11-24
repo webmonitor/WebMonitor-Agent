@@ -10,6 +10,11 @@ from webmonitor.errors import DomainError
 from webmonitor.models import Delivery as DeliveryRow
 from webmonitor.models import Monitor
 from webmonitor.schemas.api import Delivery, Group, GroupPatch, GroupSpec, Page
+from webmonitor.schemas.notifications import (
+    EmailTestRequest,
+    NotificationTestResult,
+    WebhookTestRequest,
+)
 from webmonitor.services import notifications
 
 router = APIRouter(prefix="/api/v1", tags=["notifications"])
@@ -51,6 +56,16 @@ async def delete_group(group_id: UUID, session: DatabaseSession, user: Authentic
     result = notifications.group_view(group)
     await session.commit()
     return result
+
+
+@router.post("/notifications/test/email", response_model=NotificationTestResult)
+async def test_email(body: EmailTestRequest, user: AuthenticatedUser):
+    return await notifications.send_test_email(user, str(body.recipient))
+
+
+@router.post("/notifications/test/webhook", response_model=NotificationTestResult)
+async def test_webhook(body: WebhookTestRequest, user: AuthenticatedUser):
+    return await notifications.send_test_webhook(user, body.url)
 
 
 @router.get("/deliveries", response_model=Page[Delivery])

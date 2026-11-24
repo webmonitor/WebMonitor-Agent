@@ -23,7 +23,7 @@ from webmonitor.schemas.monitors import MonitorSpec
 from webmonitor.schemas.templates import EmailTemplateConfig
 from webmonitor.security.auth import CurrentUser
 from webmonitor.services import drafts, jobs, runs, templates
-from webmonitor.services.monitors import list_spec_versions
+from webmonitor.services.monitors import list_spec_versions, update_delivery_settings
 
 
 @pytest.mark.asyncio
@@ -55,6 +55,34 @@ async def test_publish_creates_one_monitor_and_repeats_idempotently(session):
     await session.commit()
     assert again.id == monitor.id
     assert await session.scalar(select(func.count()).select_from(Monitor)) == 1
+
+
+@pytest.mark.asyncio
+async def test_delivery_timing_persists_through_publish_update_and_derived_drafts(session):
+    user, current, group = await seed_owner(session)
+    quiet = {"start": "22:00", "end": "07:00"}
+    settings = build_settings(group.id, timezone="America/New_York", cooldown=900,
+                              quiet_hours=quiet)
+    conversation, draft, _ = await prepare_draft(session, user, group, settings=settings)
+    monitor = await publish(session, conversation, draft, current)
+    await session.commit()
+
+    stored = await session.get(Monitor, monitor.id)
+    assert stored.notification_cooldown_seconds == 900
+    assert stored.quiet_hours == quiet
+    _, derived = await drafts.draft_from_monitor(session, current, monitor.id)
+    derived_settings = DeliverySettings.model_validate(derived.settings)
+    assert derived_settings.notification_cooldown_seconds == 900
+    assert derived_settings.quiet_hours is not None
+    assert derived_settings.quiet_hours.model_dump(mode="json") == quiet
+
+    updated = build_settings(group.id, timezone="America/New_York", cooldown=0,
+                             quiet_hours=None)
+    await update_delivery_settings(session, current, monitor.id, updated)
+    await session.commit()
+    await session.refresh(stored)
+    assert stored.notification_cooldown_seconds == 0
+    assert stored.quiet_hours is None
 
 
 @pytest.mark.asyncio
@@ -172,6 +200,10 @@ async def test_settings_only_publish_of_a_derived_draft_keeps_the_baseline(sessi
     conversation, draft, _ = await prepare_draft(session, user, group)
     await session.commit()
     monitor = await publish(session, conversation, draft, current)
+    # Old stored specs predate consecutive_hits; defaulting it must not reset them.
+    monitor.spec = {**monitor.spec, "change_rules": {
+        key: value for key, value in monitor.spec["change_rules"].items()
+        if key != "consecutive_hits"}}
     monitor.baseline_snapshot_id = uuid4()
     monitor.baseline_status = "ready"
     monitor.rule_state = {"predicates": {"0": True}, "aggregate": True}

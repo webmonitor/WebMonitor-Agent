@@ -3,7 +3,13 @@ import asyncio
 from time import monotonic
 
 from webmonitor.collection.extraction import extract_fields
-from webmonitor.collection.fetch import content_type_base, decode_text, fetch_bounded
+from webmonitor.collection.fetch import (
+    conditional_headers,
+    content_type_base,
+    decode_text,
+    fetch_bounded,
+    validator_from_headers,
+)
 from webmonitor.collection.types import (
     MAX_HTML_BYTES,
     CollectionResult,
@@ -15,12 +21,21 @@ from webmonitor.errors import DomainError
 from webmonitor.schemas.monitors import MonitorSpec
 
 
-async def collect_http(url: str, spec: MonitorSpec | None = None) -> CollectionResult:
+async def collect_http(url: str, spec: MonitorSpec | None = None, *,
+                       validator: dict | None = None) -> CollectionResult:
     started = monotonic()
     try:
         async with asyncio.timeout(30):
             fetched = await fetch_bounded(url, accept='text/html,application/xhtml+xml',
+                                         headers=conditional_headers(validator),
                                          max_bytes=MAX_HTML_BYTES)
+            if fetched.status == 304:
+                if not validator:
+                    raise DomainError('target_http_error', 422, details={'status_code': 304})
+                return CollectionResult(fetched.final_url, None, None, {},
+                    spec.coverage.model_dump() if spec else {}, int((monotonic() - started) * 1000),
+                    [], {'collection_mode': 'http', 'not_modified': True},
+                    not_modified=True, validator=validator_from_headers(fetched.headers) or validator)
             if fetched.status >= 400:
                 raise DomainError('target_http_error', 503 if fetched.status >= 500 else 422,
                                   details={'status_code': fetched.status})
@@ -35,7 +50,7 @@ async def collect_http(url: str, spec: MonitorSpec | None = None) -> CollectionR
             coverage = collection_coverage(spec, warnings, html=html)
             result = CollectionResult(fetched.final_url, html, None, {}, coverage,
                                       int((monotonic() - started) * 1000), warnings, analysis,
-                                      body_kind='html')
+                                      body_kind='html', validator=validator_from_headers(fetched.headers))
             if spec:
                 result.fields = extract_fields(html, spec, final_url=fetched.final_url)
                 validate_collection(spec, result.fields, coverage=coverage)

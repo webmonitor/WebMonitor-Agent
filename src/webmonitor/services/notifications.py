@@ -1,9 +1,11 @@
 """Notification groups, recipient resolution and leased notification delivery."""
 import json
-from datetime import timedelta
+from datetime import UTC, datetime, time, timedelta
 from email.utils import parseaddr
+from types import SimpleNamespace
 from typing import Any
 from uuid import UUID, uuid4
+from zoneinfo import ZoneInfo
 
 from sqlalchemy import and_, func, or_, select
 from sqlalchemy.exc import IntegrityError
@@ -19,11 +21,16 @@ from webmonitor.models import (
     User,
     utc_now,
 )
+from webmonitor.notifications.delivery import send_email
+from webmonitor.notifications.errors import DeliveryFailure
 from webmonitor.notifications.rendering import render_email
+from webmonitor.notifications.webhook import send_webhook
 from webmonitor.schemas.api import Delivery as DeliveryView
 from webmonitor.schemas.api import Group, MemberSpec, Page
+from webmonitor.schemas.notifications import NotificationTestResult
 from webmonitor.schemas.templates import EmailTemplateConfig
 from webmonitor.security.auth import CurrentUser, require_admin
+from webmonitor.security.egress import validate_webhook_url
 from webmonitor.services.jobs import LEASE_SECONDS
 
 
@@ -116,6 +123,51 @@ async def disable_group(session: AsyncSession, user: CurrentUser, group_id: UUID
     return group
 
 
+def _message_id(delivery_id: UUID) -> str:
+    domain = parseaddr(get_settings().mail_from)[1].split("@")[-1] or "webmonitor.local"
+    return f"<{delivery_id}@{domain}>"
+
+
+def _test_failure(exc: DeliveryFailure) -> DomainError:
+    # Transport errors are already scrubbed of server text and credentials.
+    return DomainError(exc.code, 502, exc.message)
+
+
+async def send_test_email(user: CurrentUser, recipient: str) -> NotificationTestResult:
+    """Send one explicit test without creating a monitor event or queued delivery."""
+    require_admin(user)
+    delivery = SimpleNamespace(recipient=recipient, message_id=_message_id(uuid4()))
+    rendered = {
+        "subject": "WebMonitor test notification",
+        "text": "This is a test email from WebMonitor. No monitoring event was created.",
+        "html": "<p>This is a test email from WebMonitor. No monitoring event was created.</p>",
+    }
+    try:
+        response_code = await send_email(delivery, rendered)
+    except DeliveryFailure as exc:
+        raise _test_failure(exc) from None
+    return NotificationTestResult(channel="email", response_code=response_code)
+
+
+async def send_test_webhook(user: CurrentUser, url: str) -> NotificationTestResult:
+    """POST a clearly marked test body through normal URL checks and signing."""
+    require_admin(user)
+    url = validate_webhook_url(url)
+    delivery_id = uuid4()
+    payload = {"test": True, "message": "This is a test webhook from WebMonitor."}
+    delivery = SimpleNamespace(
+        id=delivery_id,
+        recipient=url,
+        payload=payload,
+        body_text=json.dumps(payload, ensure_ascii=False, indent=2),
+    )
+    try:
+        response_code = await send_webhook(delivery)
+    except DeliveryFailure as exc:
+        raise _test_failure(exc) from None
+    return NotificationTestResult(channel="webhook", response_code=response_code)
+
+
 async def load_recipients(session: AsyncSession, group_ids: list[UUID] | list[str], *,
                           lock: bool = False) -> list[dict]:
     """Freeze every authorized source, deduplicating email delivery addresses."""
@@ -180,12 +232,62 @@ def _payload(monitor: Monitor, event: Event, fields: dict) -> dict:
     }
 
 
+def _quiet_time(value: datetime, zone_name: str, quiet_hours: dict[str, str]) -> datetime:
+    """Return the first allowed instant, using the monitor's actual DST rules."""
+    if value.tzinfo is None:
+        value = value.replace(tzinfo=UTC)
+    zone = ZoneInfo(zone_name)
+    local = value.astimezone(zone)
+    start_hour, start_minute = (int(part) for part in quiet_hours['start'].split(':'))
+    end_hour, end_minute = (int(part) for part in quiet_hours['end'].split(':'))
+    start = start_hour * 60 + start_minute
+    end = end_hour * 60 + end_minute
+    minute = local.hour * 60 + local.minute
+    crosses_midnight = start > end
+    is_quiet = ((start <= minute < end) if not crosses_midnight
+                else (minute >= start or minute < end))
+    if not is_quiet:
+        return value
+    end_date = local.date()
+    if crosses_midnight and minute >= start:
+        end_date += timedelta(days=1)
+    wall_end = datetime.combine(end_date, time(end_hour, end_minute))
+    valid = []
+    for fold in (0, 1):
+        candidate = wall_end.replace(tzinfo=zone, fold=fold)
+        utc = candidate.astimezone(UTC)
+        if utc.astimezone(zone).replace(tzinfo=None) == wall_end:
+            valid.append(utc)
+    if valid:
+        # During a repeated wall time, use the first end that has not already passed.
+        return next((candidate for candidate in sorted(valid) if candidate >= value), value)
+    # A nonexistent wall time is moved forward by the zone's DST transition.
+    return wall_end.replace(tzinfo=zone, fold=0).astimezone(UTC)
+
+
+async def _event_available_at(session: AsyncSession, monitor: Monitor, event: Event) -> datetime:
+    available_at = event.created_at
+    if available_at.tzinfo is None:
+        available_at = available_at.replace(tzinfo=UTC)
+    cooldown = monitor.notification_cooldown_seconds or 0
+    if cooldown:
+        latest = await session.scalar(select(func.max(Delivery.available_at)).where(
+            Delivery.monitor_id == monitor.id))
+        if latest is not None:
+            available_at = max(available_at, latest + timedelta(seconds=cooldown))
+    if monitor.quiet_hours:
+        available_at = _quiet_time(available_at, _timezone(monitor), monitor.quiet_hours)
+    return available_at
+
+
 async def enqueue_event_deliveries(session: AsyncSession, monitor: Monitor, event: Event,
                                    fields: dict) -> None:
     """Flush only. Disabled or empty routes never undo a valid snapshot."""
     payload = _payload(monitor, event, fields)
     event.payload = payload
-    if monitor.delivery_channel == "webhook":
+    available_at = await _event_available_at(session, monitor, event)
+    route = (monitor.event_channels or {}).get(event.type, monitor.delivery_channel)
+    if route in ("webhook", "both"):
         if not monitor.webhook_url:
             raise DomainError("webhook_url_missing", 409)
         delivery_id = uuid4()
@@ -195,9 +297,10 @@ async def enqueue_event_deliveries(session: AsyncSession, monitor: Monitor, even
             recipient=monitor.webhook_url, subject=subject, html="",
             body_text=json.dumps(payload, ensure_ascii=False, indent=2),
             payload={**payload, "channel": "webhook"},
-            status="queued", attempt_count=0, available_at=event.created_at))
+            status="queued", attempt_count=0, available_at=available_at))
         await session.flush()
-        return
+        if route == "webhook":
+            return
     recipients = await approved_recipients(session, monitor)
     if not recipients:
         raise DomainError("notification_recipients_empty", 409)
@@ -214,7 +317,6 @@ async def enqueue_event_deliveries(session: AsyncSession, monitor: Monitor, even
             # is still the valid record of what the monitor was approved with.
             raise DomainError("template_unavailable", 409) from None
     rendered = render_email(event.type, payload, template)
-    domain = parseaddr(get_settings().mail_from)[1].split("@")[-1] or "webmonitor.local"
     for recipient in recipients:
         delivery_id = uuid4()
         session.add(Delivery(id=delivery_id, user_id=monitor.user_id,
@@ -223,7 +325,7 @@ async def enqueue_event_deliveries(session: AsyncSession, monitor: Monitor, even
             subject=rendered["subject"], html=rendered["html"], body_text=rendered["text"],
             payload={**payload, "recipient_sources": recipient["group_ids"]},
             status="queued", attempt_count=0,
-            available_at=event.created_at, message_id=f"<{delivery_id}@{domain}>"))
+            available_at=available_at, message_id=_message_id(delivery_id)))
     await session.flush()
 
 
@@ -257,7 +359,12 @@ async def claim_delivery(session: AsyncSession, worker_id: str) -> Delivery | No
 async def authorized(session: AsyncSession, delivery: Delivery) -> bool:
     """Only this monitor's approved, still-active route authorizes a queued delivery."""
     monitor = await session.get(Monitor, delivery.monitor_id)
-    if monitor is None or monitor.delivery_channel != delivery.channel:
+    if monitor is None:
+        return False
+    event_type = ((delivery.payload or {}).get("event") or {}).get("type")
+    route = (monitor.event_channels or {}).get(event_type, monitor.delivery_channel)
+    allowed = ("email", "webhook") if route == "both" else (route,)
+    if delivery.channel not in allowed:
         return False
     if await session.scalar(select(User.active).where(User.id == delivery.user_id)) is not True:
         return False

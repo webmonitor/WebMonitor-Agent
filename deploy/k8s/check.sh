@@ -33,7 +33,7 @@ secret=$deploy_dir/k8s/secret.example.yaml
 
 [ ! -e "$deploy_dir/k8s/secret.example.env" ] || fail "remove the obsolete Secret env entry point"
 for key in POSTGRES_PASSWORD SECRET_KEY S3_ROOT_USER S3_ROOT_PASSWORD OPENAI_API_KEY \
-    SMTP_USERNAME SMTP_PASSWORD ADMIN_EMAIL ADMIN_PASSWORD; do
+    SMTP_USERNAME SMTP_PASSWORD WEBHOOK_SECRET ADMIN_EMAIL ADMIN_PASSWORD; do
     require "$secret" "  $key:"
 done
 forbid "$secret" "S3_SECRET_ACCESS_KEY"

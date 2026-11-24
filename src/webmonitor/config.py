@@ -36,6 +36,7 @@ class Settings(BaseSettings):
     default_notification_group: str = ""
     default_delivery_channel: str = "email"
     default_webhook_url: str = ""
+    webhook_secret: SecretStr = SecretStr("")
 
     openai_api_key: SecretStr = SecretStr("")
     openai_base_url: str = "https://api.openai.com/v1"
@@ -76,11 +77,17 @@ class Settings(BaseSettings):
     agent_concurrency: int = 2
     http_concurrency: int = 8
     browser_concurrency: int = 4
+    target_domain_concurrency: int = 2
+    browser_reuse_requests: int = 50
+    browser_reuse_seconds: int = 300
 
     mcp_enabled: bool = False
     mcp_allowed_origins: str = ""
 
     preview_ttl_minutes: int = 60
+    # A zero-day retention period is an explicit opt-out from all retention GC.
+    retention_days: int = 30
+    retention_gc_batch_size: int = 100
     message_max_chars: int = 32000
     max_active_monitors: int = 1000
     max_attempts: int = 3
@@ -109,15 +116,21 @@ class Settings(BaseSettings):
             raise ValueError("TARGET_POLICY other than public requires DEVELOPMENT_MODE=true")
         if self.target_policy == "allowlist" and not parse_target_origins(self.target_allowed_origins):
             raise ValueError("TARGET_POLICY=allowlist requires TARGET_ALLOWED_ORIGINS")
-        if self.default_delivery_channel not in {"email", "webhook"}:
-            raise ValueError("DEFAULT_DELIVERY_CHANNEL must be email or webhook")
-        if self.default_delivery_channel == "webhook" and not self.default_webhook_url.strip():
-            raise ValueError("DEFAULT_DELIVERY_CHANNEL=webhook requires DEFAULT_WEBHOOK_URL")
+        if self.default_delivery_channel not in {"email", "webhook", "both"}:
+            raise ValueError("DEFAULT_DELIVERY_CHANNEL must be email, webhook or both")
+        if self.default_delivery_channel in {"webhook", "both"} and not self.default_webhook_url.strip():
+            raise ValueError("webhook/both delivery requires DEFAULT_WEBHOOK_URL")
         if self.agent_model_retries < 0:
             raise ValueError("AGENT_MODEL_RETRIES must not be negative")
+        if self.retention_days < 0:
+            raise ValueError("RETENTION_DAYS must not be negative")
+        if self.retention_gc_batch_size < 1:
+            raise ValueError("RETENTION_GC_BATCH_SIZE must be at least 1")
         for name in ("preview_ttl_minutes", "agent_concurrency", "http_concurrency",
                      "agent_model_timeout_seconds",
-                     "browser_concurrency", "max_attempts", "max_active_monitors",
+                     "browser_concurrency", "target_domain_concurrency",
+                     "browser_reuse_requests", "browser_reuse_seconds",
+                     "max_attempts", "max_active_monitors",
                      "login_attempts", "login_window_minutes", "agent_max_turns",
                      "agent_max_tokens", "agent_timeout_seconds", "agent_history_messages",
                      "agent_history_chars", "preview_runs_per_hour", "manual_runs_per_hour",

@@ -27,6 +27,12 @@ NOTIFICATION_ERRORS = frozenset({"notification_routes_invalid", "notification_re
                                  "webhook_url_missing"})
 
 
+def _schedule_jitter(monitor: Monitor) -> int:
+    span = min(60, max(1, monitor.interval_seconds // 10))
+    digest = hashlib.sha256(f"{monitor.id}:{monitor.spec_version}".encode()).digest()
+    return int.from_bytes(digest[:2], "big") % (span + 1)
+
+
 async def schedule_due(session: AsyncSession, *, now=None, limit: int = 200) -> int:
     now = now or utc_now()
     due = (await session.scalars(select(Monitor).join(User, User.id == Monitor.user_id).where(
@@ -44,7 +50,8 @@ async def schedule_due(session: AsyncSession, *, now=None, limit: int = 200) -> 
                 revision=monitor.spec_version)
             created += 1
         # Late ticks merge; an overlapping tick is deliberately skipped.
-        monitor.next_run_at = now + timedelta(seconds=monitor.interval_seconds)
+        monitor.next_run_at = now + timedelta(
+            seconds=monitor.interval_seconds + _schedule_jitter(monitor))
     await session.flush()
     return created
 
@@ -124,6 +131,36 @@ def _event_type(spec: MonitorSpec, diff: dict) -> str:
     return "content_changed"
 
 
+async def commit_not_modified(session: AsyncSession, job: Job, result: dict) -> bool:
+    """A validator hit proves the trusted baseline is current without duplicating it."""
+    monitor, job = await _locked(session, job.id)
+    now = utc_now()
+    stale = _stale(monitor, job)
+    if not stale and monitor is not None:
+        stale = not await _owner_active(session, monitor)
+    if job.status != "running" or job.cancel_requested_at is not None or stale:
+        await jobs.discard(session, job)
+        return False
+    baseline = await session.get(Snapshot, monitor.baseline_snapshot_id) \
+        if monitor.baseline_snapshot_id else None
+    if baseline is None:
+        raise DomainError("collection_invalid", 422,
+                          details={"reason": "not_modified_without_baseline"})
+    if monitor.health_status == "failed":
+        await _event(session, monitor, job, "recovered", before=baseline.extracted_data,
+            after=baseline.extracted_data, summary="采集已恢复",
+            fields=baseline.extracted_data, snapshot_id=baseline.id,
+            fingerprint=monitor.failure_fingerprint)
+    if "validator" in result:
+        monitor.collection_state = {**(monitor.collection_state or {}),
+                                    "conditional": result["validator"] or {}}
+    monitor.last_success_at = now
+    monitor.health_status, monitor.failure_fingerprint = "healthy", None
+    await jobs.finish(session, job, "succeeded", result=result)
+    await session.flush()
+    return True
+
+
 async def commit_success(session: AsyncSession, job: Job, result: dict) -> bool:
     """First success only establishes the baseline; later ones may publish events."""
     monitor, job = await _locked(session, job.id)
@@ -158,9 +195,15 @@ async def commit_success(session: AsyncSession, job: Job, result: dict) -> bool:
             await _event(session, monitor, job, _event_type(spec, diff), before=previous,
                 after=fields, summary=summary, fields=fields, snapshot_id=snapshot.id,
                 differences=diff["differences"])
-    monitor.baseline_snapshot_id = snapshot.id
+    if first_success or not diff["rule_state"].get("confirmation"):
+        # Pending confirmations keep comparing the same candidate with the last
+        # confirmed baseline; a stable repeated value can then reach N hits.
+        monitor.baseline_snapshot_id = snapshot.id
     monitor.baseline_status = "ready"
     monitor.rule_state = diff["rule_state"]
+    if "validator" in result:
+        monitor.collection_state = {**(monitor.collection_state or {}),
+                                    "conditional": result["validator"] or {}}
     monitor.last_success_at = now
     monitor.health_status, monitor.failure_fingerprint = "healthy", None
     await jobs.finish(session, job, "succeeded", result=result)

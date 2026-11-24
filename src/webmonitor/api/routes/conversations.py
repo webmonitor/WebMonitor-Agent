@@ -158,6 +158,20 @@ async def cancel_job(job_id: UUID, session: DatabaseSession, user: Authenticated
     return result
 
 
+@router.post("/monitors/{monitor_id}/diagnosis", response_model=DerivedDraft, status_code=201)
+async def diagnose_monitor(monitor_id: UUID, session: DatabaseSession, user: AuthenticatedUser,
+                           job_id: UUID | None = None):
+    from webmonitor.services import diagnosis
+    conversation, draft = await diagnosis.diagnose_monitor(
+        session, user, monitor_id, job_id=job_id
+    )
+    result = DerivedDraft(conversation_id=conversation.id, draft_id=draft.id,
+                          spec_revision=draft.spec_revision,
+                          settings_revision=draft.settings_revision)
+    await session.commit()
+    return result
+
+
 @router.post("/monitors/{monitor_id}/drafts", response_model=DerivedDraft, status_code=201)
 async def derive_draft(monitor_id: UUID, session: DatabaseSession, user: AuthenticatedUser):
     conversation, draft = await drafts.draft_from_monitor(session, user, monitor_id)

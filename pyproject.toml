@@ -19,6 +19,7 @@ dependencies = [
   "uvicorn[standard]==0.54.0",
   "pydantic==2.13.5",
   "pydantic-settings==2.15.0",
+  "regex==2026.11.23",
   "httpx==0.28.1",
   "sqlalchemy[asyncio]==2.1.1",
   "asyncpg==0.31.0",
@@ -55,6 +56,10 @@ packages = ["src/webmonitor"]
 [tool.ruff]
 target-version = "py312"
 line-length = 100
+
+[tool.ruff.lint]
+# Keep checks independent of user-level Ruff configuration and new-version defaults.
+select = ["E4", "E7", "E9", "F"]
 
 [tool.pytest.ini_options]
 testpaths = ["tests/unit", "tests/integration"]

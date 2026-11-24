@@ -1,14 +1,20 @@
 """Monitor reads and commands."""
+from typing import Literal
 from uuid import UUID
 
 from fastapi import APIRouter, Query
 
 from webmonitor.api.dependencies import AuthenticatedUser, DatabaseSession
 from webmonitor.schemas.api import (
+    DerivedDraft,
     JobView,
+    MonitorBulkResult,
+    MonitorBulkUpdate,
     MonitorDetail,
     MonitorRename,
     MonitorSettingsUpdate,
+    MonitorSpecDocument,
+    MonitorTagsUpdate,
     MonitorView,
     Page,
     SnapshotDetail,
@@ -23,13 +29,40 @@ router = APIRouter(prefix="/api/v1", tags=["monitors"])
 @router.get("/monitors", response_model=Page[MonitorView])
 async def list_monitors(session: DatabaseSession, user: AuthenticatedUser,
                         limit: int = Query(50, ge=1, le=100), offset: int = Query(0, ge=0),
-                        archived: bool = False):
-    return await monitors.list_monitors(session, user, limit, offset, archived=archived)
+                        archived: bool = False,
+                        keyword: str | None = Query(default=None, max_length=200),
+                        health_status: Literal["healthy", "failed"] | None = None,
+                        status: Literal["active", "paused"] | None = None,
+                        tag: list[str] | None = Query(default=None)):
+    return await monitors.list_monitors(session, user, limit, offset, archived=archived,
+        keyword=keyword, health_status=health_status, status=status, tags=tag)
+
+
+@router.post("/monitors/import", response_model=DerivedDraft, status_code=201)
+async def import_monitor_spec(body: MonitorSpecDocument, session: DatabaseSession,
+                              user: AuthenticatedUser):
+    result = await monitors.import_spec(session, user, body)
+    await session.commit()
+    return result
+
+
+@router.post("/monitors/bulk", response_model=MonitorBulkResult)
+async def bulk_update_monitors(body: MonitorBulkUpdate, session: DatabaseSession,
+                               user: AuthenticatedUser):
+    result = await monitors.bulk_update(session, user, body)
+    await session.commit()
+    return result
 
 
 @router.get("/monitors/{monitor_id}", response_model=MonitorDetail)
 async def read_monitor(monitor_id: UUID, session: DatabaseSession, user: AuthenticatedUser):
     return await monitors.read_monitor(session, user, monitor_id)
+
+
+@router.get("/monitors/{monitor_id}/export", response_model=MonitorSpecDocument)
+async def export_monitor_spec(monitor_id: UUID, session: DatabaseSession,
+                              user: AuthenticatedUser):
+    return await monitors.export_spec(session, user, monitor_id)
 
 
 @router.get("/monitors/{monitor_id}/snapshots", response_model=Page[SnapshotRecord])
@@ -53,6 +86,15 @@ async def list_spec_versions(monitor_id: UUID, session: DatabaseSession, user: A
 async def rename_monitor(monitor_id: UUID, body: MonitorRename, session: DatabaseSession,
                          user: AuthenticatedUser):
     monitor = await monitors.rename_monitor(session, user, monitor_id, body.name)
+    result = monitors.monitor_view(monitor)
+    await session.commit()
+    return result
+
+
+@router.patch("/monitors/{monitor_id}/tags", response_model=MonitorView)
+async def update_monitor_tags(monitor_id: UUID, body: MonitorTagsUpdate,
+                              session: DatabaseSession, user: AuthenticatedUser):
+    monitor = await monitors.update_tags(session, user, monitor_id, body)
     result = monitors.monitor_view(monitor)
     await session.commit()
     return result

@@ -91,7 +91,7 @@ async def default_delivery_settings(session: AsyncSession) -> DeliverySettings:
                 NotificationGroup.created_at).limit(1))
     channel = configured.default_delivery_channel
     webhook_url = configured.default_webhook_url.strip() or None
-    if channel == "webhook":
+    if channel in ("webhook", "both"):
         webhook_url = validate_webhook_url(webhook_url)
     return DeliverySettings(
         channel=channel,
@@ -178,9 +178,10 @@ async def save_spec(session: AsyncSession, user: CurrentUser, *, conversation_id
 
 async def _validate_settings(session: AsyncSession, draft: Draft,
                              settings: DeliverySettings) -> None:
-    if settings.channel == "webhook":
+    if settings.channel in ("webhook", "both"):
         validate_webhook_url(settings.webhook_url)
-        return
+        if settings.channel == "webhook":
+            return
     if settings.notification_group_ids:
         await notifications.load_recipients(session, settings.notification_group_ids)
     if settings.email_template_id is None or draft.spec is None:
@@ -247,10 +248,13 @@ async def draft_from_monitor(session: AsyncSession, user: CurrentUser,
     await session.flush()
     settings = DeliverySettings(
         channel=monitor.delivery_channel,
+        event_channels=monitor.event_channels,
         notification_group_ids=[UUID(item) for item in monitor.notification_group_ids or []],
         webhook_url=monitor.webhook_url,
         schedule={"interval_seconds": monitor.interval_seconds, "timezone": monitor.timezone},
-        email_template_id=monitor.email_template_id)
+        email_template_id=monitor.email_template_id,
+        notification_cooldown_seconds=monitor.notification_cooldown_seconds,
+        quiet_hours=monitor.quiet_hours)
     draft = Draft(user_id=user.user_id, conversation_id=conversation.id,
                   monitor_id=monitor.id, status="draft",
                   spec=monitor.spec, spec_hash=monitor.spec_hash, spec_revision=1,
@@ -272,17 +276,21 @@ async def start_preview(session: AsyncSession, user: CurrentUser, draft_id: UUID
     # Delivery settings are never collected in the chat: seed the deployment
     # default before the preview that has to render a real mail.
     current = _settings(draft)
-    route_missing = ((current.channel == "webhook" and not current.webhook_url)
-                     or (current.channel == "email" and not current.notification_group_ids))
+    route_missing = ((current.channel in ("webhook", "both") and not current.webhook_url)
+                     or (current.channel in ("email", "both")
+                         and not current.notification_group_ids))
     if current.schedule is None or route_missing:
         seeded = await default_delivery_settings(session)
         merged = seeded.model_copy(update={
             "channel": current.channel,
+            "event_channels": current.event_channels,
             "notification_group_ids": current.notification_group_ids or seeded.notification_group_ids,
             "webhook_url": current.webhook_url or seeded.webhook_url,
             "schedule": current.schedule or seeded.schedule,
-            "email_template_id": current.email_template_id or seeded.email_template_id})
-        if merged.channel == "webhook":
+            "email_template_id": current.email_template_id or seeded.email_template_id,
+            "notification_cooldown_seconds": current.notification_cooldown_seconds,
+            "quiet_hours": current.quiet_hours})
+        if merged.channel in ("webhook", "both"):
             validate_webhook_url(merged.webhook_url)
         draft.settings = DeliverySettings.model_validate(merged).model_dump(mode="json")
         draft.settings_hash = content_hash(merged)
@@ -371,8 +379,9 @@ async def build_delivery_preview(session: AsyncSession, draft: Draft) -> dict | 
                                draft.extraction_preview.get("extracted_data") or {})
     now = utc_now()
     ttl = get_settings().preview_ttl_minutes
+    url = validate_webhook_url(settings.webhook_url) \
+        if settings.channel in ("webhook", "both") else None
     if settings.channel == "webhook":
-        url = validate_webhook_url(settings.webhook_url)
         preview = {
             "preview_id": str(uuid4()),
             "settings_revision": draft.settings_revision,
@@ -421,9 +430,9 @@ async def build_delivery_preview(session: AsyncSession, draft: Draft) -> dict | 
         "preview_id": str(uuid4()),
         "settings_revision": draft.settings_revision,
         "settings_hash": content_hash(settings),
-        "channel": "email",
-        "webhook_url": None,
-        "webhook_body": None,
+        "channel": settings.channel,
+        "webhook_url": url if settings.channel in ("webhook", "both") else None,
+        "webhook_body": payload if settings.channel in ("webhook", "both") else None,
         "template_id": str(template_id) if template_id is not None else None,
         "template_name": template_name,
         "template_hash": template_hash,
@@ -498,11 +507,12 @@ async def validate_delivery_preview(session: AsyncSession, draft: Draft) -> dict
     settings = _settings(draft)
     if preview.get("channel") != settings.channel:
         raise DomainError("preview_stale", 409, "The delivery channel changed; preview again")
-    if settings.channel == "webhook":
+    if settings.channel in ("webhook", "both"):
         url = validate_webhook_url(settings.webhook_url)
         if preview.get("webhook_url") != url:
             raise DomainError("preview_stale", 409, "The webhook URL changed; preview again")
-        return preview
+        if settings.channel == "webhook":
+            return preview
     template_hash = content_hash(None)
     if settings.email_template_id is not None:
         try:
@@ -526,8 +536,9 @@ async def validate_delivery_preview(session: AsyncSession, draft: Draft) -> dict
 # ---- publication ------------------------------------------------------------
 
 def _contract(spec: dict[str, Any]) -> str:
-    """The collection contract, ignoring the display name, decides a version bump."""
-    return content_hash({**spec, "name": None})
+    """Compare validated semantics, so newly added defaults do not reset a baseline."""
+    normalized = MonitorSpec.model_validate(spec).model_dump(mode="json")
+    return content_hash({**normalized, "name": None})
 
 
 async def publish_draft(session: AsyncSession, user: CurrentUser, *, conversation_id: UUID,
@@ -552,9 +563,9 @@ async def publish_draft(session: AsyncSession, user: CurrentUser, *, conversatio
     settings = _settings(draft)
     schedule = settings.schedule
     missing = [name for name, absent in (
-        ("notification_group_ids", settings.channel == "email"
+        ("notification_group_ids", settings.channel in ("email", "both")
          and not settings.notification_group_ids),
-        ("webhook_url", settings.channel == "webhook" and not settings.webhook_url),
+        ("webhook_url", settings.channel in ("webhook", "both") and not settings.webhook_url),
         ("schedule", schedule is None)) if absent]
     if missing or schedule is None:
         raise DomainError("settings_incomplete", 409, details={"missing": missing})
@@ -570,7 +581,7 @@ async def publish_draft(session: AsyncSession, user: CurrentUser, *, conversatio
         raise DomainError("preview_not_ready", 409)
     spec = _spec(draft)
     validate_url(spec.url)
-    if settings.channel == "webhook":
+    if settings.channel in ("webhook", "both"):
         validate_webhook_url(settings.webhook_url)
     validate_extraction_preview(draft)
     delivery = await validate_delivery_preview(session, draft)
@@ -599,7 +610,10 @@ async def publish_draft(session: AsyncSession, user: CurrentUser, *, conversatio
             interval_seconds=schedule.interval_seconds,
             timezone=schedule.timezone,
             notification_group_ids=[str(item) for item in settings.notification_group_ids],
-            delivery_channel=settings.channel, webhook_url=settings.webhook_url,
+            delivery_channel=settings.channel, event_channels=dict(settings.event_channels),
+            webhook_url=settings.webhook_url,
+            notification_cooldown_seconds=settings.notification_cooldown_seconds,
+            quiet_hours=settings.quiet_hours.model_dump(mode="json") if settings.quiet_hours else None,
             email_template_id=template_id, email_template=snapshot,
             approved_recipients=delivery["recipient_sources"],
             baseline_status="pending_first_success", rule_state={}, next_run_at=utc_now())
@@ -622,6 +636,7 @@ def _apply_contract(monitor: Monitor, spec: MonitorSpec, spec_hash: str | None) 
     monitor.baseline_snapshot_id = None
     monitor.baseline_status = "pending_first_success"
     monitor.rule_state = {}
+    monitor.collection_state = {}
     monitor.health_status, monitor.failure_fingerprint = "healthy", None
     monitor.next_run_at = utc_now()
 
@@ -635,7 +650,11 @@ def _apply_settings(monitor: Monitor, spec: MonitorSpec, settings: DeliverySetti
     monitor.timezone = schedule.timezone
     monitor.notification_group_ids = [str(item) for item in settings.notification_group_ids]
     monitor.delivery_channel = settings.channel
+    monitor.event_channels = dict(settings.event_channels)
     monitor.webhook_url = settings.webhook_url
+    monitor.notification_cooldown_seconds = settings.notification_cooldown_seconds
+    monitor.quiet_hours = (settings.quiet_hours.model_dump(mode="json")
+                           if settings.quiet_hours else None)
     monitor.email_template_id = template_id
     monitor.email_template = snapshot
     # The approved snapshot follows the publication the user confirmed.

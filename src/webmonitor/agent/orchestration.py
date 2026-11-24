@@ -22,6 +22,7 @@ from openai import APIConnectionError, APIStatusError, AsyncOpenAI
 from sqlalchemy import select
 
 from webmonitor.agent.model import CompleteChatCompletionsModel, create_model_client
+from webmonitor.agent import live_text
 from webmonitor.agent.runtime import RuntimeContext, current_draft
 from webmonitor.agent.titling import (
     TITLE_PROMPT,
@@ -54,8 +55,10 @@ non-essential headers and parameters and replay again. JSON monitors set collect
 "http" and source.kind "json"; fields and item_fields use path instead of selector. Bind
 values from an earlier response with {{steps.<id>.<path>}}; steps run in order. Add
 json_equals/json_present assertions for business codes; an HTTP 200 with a business error or
-an empty first page is a failure. Page pagination must name the page and size parameters and
-stop on the API's own empty page or total; keep max_pages/max_items within the schema.
+an empty first page is a failure. Pagination may use page, cursor or offset tokens in the URL query
+or a POST JSON object body. Name the observed token and size parameters; cursor pagination also
+needs next_cursor_path from the actual response, and body pagination requires POST with an object
+body. Stop on the API's own empty page, absent next cursor or total; keep max_pages/max_items within the schema.
 Never invent evidence, preview data or success. Arbitrary JS, XPath, external MCP and custom
 expressions are unsupported.
 Save the collection definition via save_monitor_draft: name,url,collection_mode,fields,
@@ -130,6 +133,7 @@ async def _append_text(job_id: UUID, worker_id: str, delta: str) -> None:
             return
         job.partial_text = (job.partial_text or "") + delta
         await session.commit()
+        live_text.clear(job_id)
 
 
 async def _complete_message(job_id: UUID, worker_id: str, text: str) -> bool:
@@ -371,7 +375,9 @@ async def execute_job(job_id: UUID, worker_id: str) -> None:
 
     async def periodic_flush():
         while True:
-            await asyncio.sleep(0.5)
+            # SSE reads process-local deltas immediately; the durable copy is
+            # batched for recovery instead of being written on every token.
+            await asyncio.sleep(2.0)
             await flush()
 
     try:
@@ -404,6 +410,7 @@ async def execute_job(job_id: UUID, worker_id: str) -> None:
                 if event.type == "raw_response_event" and event.data.type == "response.output_text.delta":
                     async with buffer_lock:
                         buffer += event.data.delta
+                        live_text.append(job_id, event.data.delta)
                         large = len(buffer) >= 512
                     if large:
                         await flush()
@@ -460,6 +467,7 @@ async def execute_job(job_id: UUID, worker_id: str) -> None:
         except DomainError:
             pass
     finally:
+        live_text.clear(job_id)
         if flusher is not None:
             flusher.cancel()
             await asyncio.gather(flusher, return_exceptions=True)

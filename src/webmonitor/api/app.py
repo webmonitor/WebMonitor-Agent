@@ -11,6 +11,7 @@ from starlette.exceptions import HTTPException
 from starlette.types import ASGIApp, Receive, Scope, Send
 
 from webmonitor.api.routes import (
+    administration,
     auth,
     conversations,
     events,
@@ -18,6 +19,7 @@ from webmonitor.api.routes import (
     members,
     monitors,
     notifications,
+    streams,
     templates,
     tokens,
 )
@@ -92,7 +94,7 @@ def create_app() -> FastAPI:
     # Outermost, so an oversized body is refused before CSRF and routing see it.
     app.add_middleware(MaxBodyMiddleware)
     for module in (auth, members, conversations, monitors, events, notifications, templates,
-                   evidence, tokens):
+                   evidence, tokens, streams, administration):
         app.include_router(module.router)
 
     @app.middleware("http")

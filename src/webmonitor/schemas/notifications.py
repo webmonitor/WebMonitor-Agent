@@ -3,7 +3,7 @@ from datetime import datetime
 from typing import Any, Literal
 from uuid import UUID
 
-from pydantic import BaseModel, ConfigDict, Field
+from pydantic import BaseModel, ConfigDict, EmailStr, Field, field_validator
 
 EventType = Literal['content_changed', 'list_changed', 'run_failed', 'recovered']
 EVENT_TYPES = frozenset(('content_changed', 'list_changed', 'run_failed', 'recovered'))
@@ -11,6 +11,29 @@ EVENT_TYPES = frozenset(('content_changed', 'list_changed', 'run_failed', 'recov
 
 class Contract(BaseModel):
     model_config = ConfigDict(extra='forbid')
+
+
+class EmailTestRequest(Contract):
+    recipient: EmailStr
+
+    @field_validator('recipient', mode='before')
+    @classmethod
+    def normalize_recipient(cls, value: Any) -> Any:
+        return value.strip().casefold() if isinstance(value, str) else value
+
+
+class WebhookTestRequest(Contract):
+    url: str = Field(min_length=1, max_length=1000)
+
+    @field_validator('url', mode='before')
+    @classmethod
+    def trimmed_url(cls, value: Any) -> Any:
+        return value.strip() if isinstance(value, str) else value
+
+
+class NotificationTestResult(Contract):
+    channel: Literal['email', 'webhook']
+    response_code: int
 
 
 class PayloadMonitor(Contract):

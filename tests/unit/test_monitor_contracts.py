@@ -6,6 +6,7 @@ from decimal import Decimal
 import pytest
 from pydantic import ValidationError
 
+from webmonitor.schemas.delivery import DeliverySettings
 from webmonitor.schemas.monitors import (
     MonitorSpec,
     FieldSpec,
@@ -231,3 +232,36 @@ def test_page_pagination_requires_one_list_and_complete_configuration():
         **base['source'],
         'pagination': {'kind': 'page', 'size_param': 'limit', 'size': 10}}})
     assert accepted.source.pagination.max_pages == 3
+
+
+def test_delivery_timing_defaults_preserve_old_json():
+    settings = DeliverySettings.model_validate({})
+    assert settings.notification_cooldown_seconds == 0
+    assert settings.quiet_hours is None
+
+
+def test_delivery_timing_accepts_cross_midnight_quiet_hours():
+    settings = DeliverySettings.model_validate({
+        'notification_cooldown_seconds': 300,
+        'quiet_hours': {'start': '22:00', 'end': '07:30'},
+    })
+    assert settings.notification_cooldown_seconds == 300
+    assert settings.quiet_hours is not None
+    assert settings.quiet_hours.start == '22:00'
+
+
+@pytest.mark.parametrize('quiet_hours', [
+    {'start': '22:00', 'end': '22:00'},
+    {'start': '24:00', 'end': '07:00'},
+    {'start': '22:00', 'end': '7:00'},
+    {'start': '22:00'},
+])
+def test_delivery_timing_rejects_invalid_quiet_hours(quiet_hours):
+    with pytest.raises(ValidationError):
+        DeliverySettings.model_validate({'quiet_hours': quiet_hours})
+
+
+@pytest.mark.parametrize('cooldown', [-1, 1.5, True])
+def test_delivery_cooldown_is_a_nonnegative_strict_integer(cooldown):
+    with pytest.raises(ValidationError):
+        DeliverySettings.model_validate({'notification_cooldown_seconds': cooldown})

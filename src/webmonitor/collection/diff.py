@@ -6,9 +6,12 @@ per-snapshot evidence and must never be suppressed by a previous true state.
 from decimal import Decimal
 from typing import Any
 
-from webmonitor.schemas.monitors import MonitorSpec, canonical_json
+import regex
 
-PERSISTENT = frozenset(('threshold', 'keyword_present', 'keyword_absent'))
+from webmonitor.schemas.monitors import MonitorSpec, canonical_json, content_hash
+
+PERSISTENT = frozenset(('threshold', 'keyword_present', 'keyword_absent', 'regex_match'))
+REGEX_TIMEOUT_SECONDS = 0.05
 _MISSING = object()
 
 
@@ -32,6 +35,17 @@ def _same_value(field, before, after):
     return before == after
 
 
+def _regex_text(value: Any, field) -> str:
+    """Use the same stable scalar spelling for JSON and HTML extraction."""
+    if field.type == 'boolean':
+        if not isinstance(value, bool):
+            raise ValueError('boolean field must contain a boolean')
+        return 'true' if value else 'false'
+    if not isinstance(value, str):
+        raise ValueError('regex rule field must contain a scalar string')
+    return value
+
+
 def _rows(rows: Any, keys: list[str]) -> dict[str, dict]:
     if not isinstance(rows, list):
         raise ValueError('list field must contain rows')
@@ -50,8 +64,10 @@ def evaluate_rules(spec: MonitorSpec, previous: dict | None, current: dict, prev
     """Return JSON-safe event evidence and next persistent state.
 
     ``rule_state`` is {predicates: {rule-index: bool}, aggregate: bool,
-    persistent_aggregate: bool}. A persistent rule fires on its transition; a change
-    rule fires on its own evidence in this snapshot, never on a previous true state.
+    persistent_aggregate: bool, confirmation?: {rule_signature, count,
+    value_fingerprint, persistent}}. A persistent rule fires on its transition;
+    a change rule fires on its own evidence in this snapshot, never on a previous
+    true state. Confirmations retain a rule/value identity until N repeated hits.
     ``differences`` includes every currently matching rule when an event fires;
     list entries include only this snapshot's added/removed/updated rows.
     """
@@ -69,7 +85,16 @@ def evaluate_rules(spec: MonitorSpec, previous: dict | None, current: dict, prev
         persistent = rule.type in PERSISTENT
         matched = False
         detail: dict[str, Any] = {}
-        if rule.type in ('keyword_present', 'keyword_absent'):
+        if rule.type == 'regex_match':
+            if after is not _MISSING:
+                try:
+                    matched = regex.compile(rule.pattern).search(
+                        _regex_text(after, field), timeout=REGEX_TIMEOUT_SECONDS) is not None
+                    detail['pattern'] = rule.pattern
+                except TimeoutError:
+                    warnings.append({'code': 'rule_timeout', 'rule_index': index,
+                                     'field': rule.field, 'reason': 'regex_timeout'})
+        elif rule.type in ('keyword_present', 'keyword_absent'):
             if after is not _MISSING:
                 present = rule.keyword in after
                 matched = present if rule.type == 'keyword_present' else not present
@@ -81,7 +106,7 @@ def evaluate_rules(spec: MonitorSpec, previous: dict | None, current: dict, prev
                            'lt': value < rule.value, 'lte': value <= rule.value,
                            'eq': value == rule.value}[rule.operator]
                 detail.update(operator=rule.operator, value=str(rule.value))
-        elif rule.type == 'text_changed':
+        elif rule.type in ('text_changed', 'value_changed'):
             matched = before is not _MISSING and after is not _MISSING and before != after
         elif rule.type in ('number_absolute_change', 'number_percent_change'):
             if before is not _MISSING and after is not _MISSING:
@@ -138,10 +163,38 @@ def evaluate_rules(spec: MonitorSpec, previous: dict | None, current: dict, prev
                                 else any(persistent_predicates))
     else:
         persistent_aggregate = False
+    previous_persistent = previous_state.get(
+        'persistent_aggregate', previous_state.get('aggregate', False))
     triggered = previous is not None and aggregate and (
-        change_evidence
-        or (persistent_aggregate and not previous_state.get(
-            'persistent_aggregate', previous_state.get('aggregate', False))))
+        change_evidence or (persistent_aggregate and not previous_persistent))
+    rule_state = {'predicates': persistent_state, 'aggregate': aggregate,
+                  'persistent_aggregate': persistent_aggregate}
+    required_hits = spec.change_rules.consecutive_hits
+    if required_hits > 1:
+        pending = previous_state.get('confirmation')
+        # A pending persistent match may keep confirming after its initial false→true
+        # transition. Once confirmed, a continuously true predicate stays silent.
+        persistent_candidate = persistent_aggregate and (
+            not previous_persistent or (isinstance(pending, dict)
+                                        and pending.get('persistent') is True))
+        candidate = previous is not None and aggregate and (
+            change_evidence or persistent_candidate)
+        triggered = False
+        if candidate:
+            signature = content_hash({'rules': spec.change_rules,
+                'matched_rules': [item['rule_index'] for item in matches]})
+            value_fingerprint = content_hash(current)
+            same_confirmation = (isinstance(pending, dict)
+                and pending.get('rule_signature') == signature
+                and pending.get('value_fingerprint') == value_fingerprint)
+            previous_hits = pending.get('count') if same_confirmation else 0
+            hits = previous_hits + 1 if isinstance(previous_hits, int) else 1
+            if hits >= required_hits:
+                triggered = True
+            else:
+                rule_state['confirmation'] = {'rule_signature': signature, 'count': hits,
+                                              'value_fingerprint': value_fingerprint,
+                                              'persistent': persistent_candidate}
     event_type = None
     if triggered:
         matched_fields = [fields[item['field']].type for item in matches]
@@ -151,7 +204,6 @@ def evaluate_rules(spec: MonitorSpec, previous: dict | None, current: dict, prev
     return json.loads(canonical_json({
         'triggered': triggered, 'event_type': event_type,
         'differences': matches if triggered else [],
-        'rule_state': {'predicates': persistent_state, 'aggregate': aggregate,
-                       'persistent_aggregate': persistent_aggregate},
+        'rule_state': rule_state,
         'warnings': warnings,
     }))

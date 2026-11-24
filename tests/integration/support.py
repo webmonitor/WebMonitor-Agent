@@ -35,11 +35,13 @@ def build_spec(name: str = "Notice watch", url: str = NOTICE_SPEC["url"]) -> Mon
 
 
 def build_settings(group_id, *, interval: int = 60, timezone: str = "UTC",
-                   template_id=None) -> DeliverySettings:
+                   template_id=None, cooldown: int = 0, quiet_hours=None) -> DeliverySettings:
     return DeliverySettings.model_validate({
         "notification_group_ids": [str(group_id)],
         "schedule": {"interval_seconds": interval, "timezone": timezone},
         "email_template_id": str(template_id) if template_id is not None else None,
+        "notification_cooldown_seconds": cooldown,
+        "quiet_hours": quiet_hours,
     })
 
 

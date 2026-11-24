@@ -99,7 +99,7 @@ async def stream_evidence(bucket: str, key: str):
 
 
 async def delete_evidence(bucket: str, key: str) -> None:
-    """Delete an uploaded object that never became a committed reference."""
+    """Delete an evidence object; an already missing object needs no further work."""
     def remove():
         try:
             s3_client().delete_object(Bucket=bucket, Key=key)
@@ -108,4 +108,7 @@ async def delete_evidence(bucket: str, key: str) -> None:
                 return
             raise
 
-    await asyncio.to_thread(remove)
+    try:
+        await asyncio.to_thread(remove)
+    except (BotoCoreError, ClientError, OSError):
+        raise DomainError("storage_unavailable", 503) from None

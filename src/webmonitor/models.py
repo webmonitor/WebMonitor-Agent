@@ -151,6 +151,8 @@ class Job(UUIDPrimaryKey, Created, Base):
         Index("ix_jobs_claimable", "kind", "status", "available_at"),
         Index("ix_jobs_conversation", "conversation_id", "created_at"),
         Index("ix_jobs_user_kind_created", "user_id", "kind", "created_at"),
+        Index("ix_jobs_retention", "finished_at",
+              postgresql_where=text("status IN ('succeeded', 'failed', 'cancelled', 'discarded')")),
     )
     user_id: Mapped[UUID] = mapped_column(ForeignKey("users.id"))
     kind: Mapped[str] = mapped_column(String(16))
@@ -222,7 +224,8 @@ class Monitor(UUIDPrimaryKey, Created, Updated, Base):
         CheckConstraint("baseline_status IN ('pending_first_success', 'ready')", name="baseline_status"),
         CheckConstraint("health_status IN ('healthy', 'failed')", name="health_status"),
         CheckConstraint("collection_mode IN ('http', 'browser')", name="collection_mode"),
-        CheckConstraint("delivery_channel IN ('email', 'webhook')", name="delivery_channel"),
+        CheckConstraint("delivery_channel IN ('email', 'webhook', 'both')", name="delivery_channel"),
+        CheckConstraint("notification_cooldown_seconds >= 0", name="notification_cooldown_seconds"),
         Index("ix_monitors_due", "next_run_at", postgresql_where=text("status = 'active'")),
         Index("ix_monitors_user_created", "user_id", "created_at"),
     )
@@ -230,6 +233,7 @@ class Monitor(UUIDPrimaryKey, Created, Updated, Base):
     draft_id: Mapped[UUID] = mapped_column(ForeignKey("drafts.id"), unique=True)
     name: Mapped[str] = mapped_column(String(200))
     url: Mapped[str] = mapped_column(Text)
+    tags: Mapped[list[str]] = mapped_column(JSONB, default=list, server_default="[]")
     status: Mapped[str] = mapped_column(String(16), default="active", server_default="active")
     spec: Mapped[dict[str, Any]] = mapped_column(JSONB)
     spec_version: Mapped[int] = mapped_column(Integer, default=1, server_default="1")
@@ -239,7 +243,11 @@ class Monitor(UUIDPrimaryKey, Created, Updated, Base):
     timezone: Mapped[str] = mapped_column(String(100))
     notification_group_ids: Mapped[list[str]] = mapped_column(JSONB, default=list, server_default="[]")
     delivery_channel: Mapped[str] = mapped_column(String(16), default="email", server_default="email")
+    event_channels: Mapped[dict[str, str]] = mapped_column(JSONB, default=dict, server_default="{}")
     webhook_url: Mapped[str | None] = mapped_column(String(1000))
+    notification_cooldown_seconds: Mapped[int] = mapped_column(
+        Integer, default=0, server_default="0")
+    quiet_hours: Mapped[dict[str, str] | None] = mapped_column(JSONB)
     email_template_id: Mapped[UUID | None] = mapped_column(
         ForeignKey("email_templates.id", ondelete="SET NULL"), index=True)
     # Frozen EmailTemplateConfig at approval; NULL means the packaged default template.
@@ -249,6 +257,7 @@ class Monitor(UUIDPrimaryKey, Created, Updated, Base):
     baseline_status: Mapped[str] = mapped_column(String(32), default="pending_first_success",
                                                  server_default="pending_first_success")
     rule_state: Mapped[dict[str, Any]] = mapped_column(JSONB, default=dict, server_default="{}")
+    collection_state: Mapped[dict[str, Any]] = mapped_column(JSONB, default=dict, server_default="{}")
     next_run_at: Mapped[datetime] = _timestamp()
     last_success_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
     last_failure_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
@@ -263,6 +272,7 @@ class Snapshot(UUIDPrimaryKey, Created, Base):
     __table_args__ = (
         CheckConstraint("spec_version > 0", name="spec_version"),
         Index("ix_snapshots_monitor_collected", "monitor_id", "collected_at"),
+        Index("ix_snapshots_retention", "collected_at"),
     )
     monitor_id: Mapped[UUID] = mapped_column(ForeignKey("monitors.id", ondelete="CASCADE"))
     job_id: Mapped[UUID] = mapped_column(ForeignKey("jobs.id"), unique=True)

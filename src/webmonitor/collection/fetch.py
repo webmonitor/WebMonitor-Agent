@@ -10,12 +10,33 @@ from urllib.parse import urljoin
 import httpx
 
 from webmonitor.collection.decoding import BoundedDecoder
+from webmonitor.collection.host_limit import host_slot
 from webmonitor.config import get_settings
 from webmonitor.errors import DomainError
 from webmonitor.security.egress import validate_target
 
 REDIRECT_CODES = frozenset({301, 302, 303, 307, 308})
 MAX_REDIRECTS = 6
+
+
+def validator_from_headers(headers: httpx.Headers) -> dict[str, str]:
+    result = {}
+    for key, header in (("etag", "etag"), ("last_modified", "last-modified")):
+        value = headers.get(header)
+        if value and len(value) <= 1000 and '\r' not in value and '\n' not in value:
+            result[key] = value
+    return result
+
+
+def conditional_headers(validator: dict[str, str] | None) -> dict[str, str]:
+    if not validator:
+        return {}
+    headers = {}
+    for key, header in (("etag", "If-None-Match"), ("last_modified", "If-Modified-Since")):
+        value = validator.get(key)
+        if isinstance(value, str) and 0 < len(value) <= 1000 and '\r' not in value and '\n' not in value:
+            headers[header] = value
+    return headers
 
 
 @dataclass(frozen=True)
@@ -65,7 +86,9 @@ async def fetch_bounded(url: str, *, method: str = 'GET', headers: dict[str, str
                 target = await validate_target(url)
                 current_method, current_body = method, body
                 for redirects in range(MAX_REDIRECTS):
-                    async with client.stream(current_method, target, content=current_body) as response:
+                    async with host_slot(target), client.stream(
+                        current_method, target, content=current_body
+                    ) as response:
                         if response.status_code in REDIRECT_CODES:
                             location = response.headers.get('location')
                             if not location or redirects == MAX_REDIRECTS - 1:

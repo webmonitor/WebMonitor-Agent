@@ -13,7 +13,7 @@ from pydantic import (
     model_validator,
 )
 
-from webmonitor.schemas.delivery import DeliverySettings
+from webmonitor.schemas.delivery import DeliverySettings, QuietHours
 from webmonitor.schemas.monitors import MonitorSpec
 from webmonitor.schemas.templates import EmailTemplateConfig
 
@@ -135,6 +135,48 @@ class MonitorRename(Input):
         if not value:
             raise ValueError("name must not be blank")
         return value
+
+
+MAX_MONITOR_TAGS = 20
+MAX_MONITOR_TAG_LENGTH = 40
+
+
+def normalize_tags(values: list[str]) -> list[str]:
+    tags = [value.strip() for value in values]
+    if any(not value or len(value) > MAX_MONITOR_TAG_LENGTH for value in tags):
+        raise ValueError("tags must contain 1 to 40 characters")
+    folded = [value.casefold() for value in tags]
+    if len(set(folded)) != len(folded):
+        raise ValueError("tags must be unique")
+    return tags
+
+
+class MonitorTagsUpdate(Input):
+    tags: list[str] = Field(default_factory=list, max_length=MAX_MONITOR_TAGS)
+
+    @field_validator("tags")
+    @classmethod
+    def normalized(cls, value: list[str]) -> list[str]:
+        return normalize_tags(value)
+
+
+class MonitorSpecDocument(Input):
+    """A portable collection contract; the source version is informational on import."""
+
+    format_version: Literal[1] = 1
+    spec_version: int = Field(ge=1, strict=True)
+    spec: MonitorSpec
+
+
+class MonitorBulkUpdate(Input):
+    monitor_ids: list[UUID] = Field(min_length=1, max_length=100)
+    action: Literal["pause", "resume"]
+
+    @model_validator(mode="after")
+    def unique_monitors(self) -> "MonitorBulkUpdate":
+        if len(set(self.monitor_ids)) != len(self.monitor_ids):
+            raise ValueError("monitor_ids must be unique")
+        return self
 
 
 class InvitationCreate(Input):
@@ -383,8 +425,12 @@ class MonitorView(BaseModel):
     timezone: str
     baseline_status: str
     health_status: str
+    tags: list[str] = Field(default_factory=list)
     notification_group_ids: list[str]
+    notification_cooldown_seconds: int = 0
+    quiet_hours: QuietHours | None = None
     delivery_channel: str = "email"
+    event_channels: dict[str, str] = Field(default_factory=dict)
     webhook_url: str | None = None
     email_template_id: UUID | None = None
     next_run_at: datetime
@@ -417,6 +463,22 @@ class MonitorDetail(MonitorView):
     approved_recipients: list[str] = Field(default_factory=list)
     approved_recipient_count: int
     email_template: dict[str, Any] | None = None
+
+
+class MonitorCommandError(BaseModel):
+    code: str
+    message: str
+
+
+class MonitorBulkItemResult(BaseModel):
+    monitor_id: UUID
+    ok: bool
+    monitor: MonitorView | None = None
+    error: MonitorCommandError | None = None
+
+
+class MonitorBulkResult(BaseModel):
+    items: list[MonitorBulkItemResult]
 
 
 class SpecVersion(BaseModel):

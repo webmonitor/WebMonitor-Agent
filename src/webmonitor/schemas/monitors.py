@@ -8,6 +8,7 @@ from typing import Annotated, Any, Literal
 from uuid import UUID
 from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
 
+import regex
 from pydantic import BaseModel, Field, StrictBool, field_validator, model_validator
 
 from webmonitor.schemas.notifications import Contract
@@ -257,6 +258,24 @@ class TextChanged(RuleBase):
     type: Literal['text_changed']
 
 
+class ValueChanged(RuleBase):
+    type: Literal['value_changed']
+
+
+class RegexMatch(RuleBase):
+    type: Literal['regex_match']
+    pattern: str = Field(min_length=1, max_length=1000)
+
+    @field_validator('pattern')
+    @classmethod
+    def compilable_pattern(cls, value: str) -> str:
+        try:
+            regex.compile(value)
+        except regex.error as exc:
+            raise ValueError('invalid regular expression') from exc
+        return value
+
+
 class KeywordPresent(RuleBase):
     type: Literal['keyword_present']
     keyword: str = Field(min_length=1)
@@ -306,12 +325,13 @@ class ListUpdated(RuleBase):
         return value
 
 
-ChangeRule = Annotated[TextChanged | KeywordPresent | KeywordAbsent | NumberAbsoluteChange | NumberPercentChange | Threshold | ListAdded | ListRemoved | ListUpdated, Field(discriminator='type')]
+ChangeRule = Annotated[TextChanged | ValueChanged | RegexMatch | KeywordPresent | KeywordAbsent | NumberAbsoluteChange | NumberPercentChange | Threshold | ListAdded | ListRemoved | ListUpdated, Field(discriminator='type')]
 
 
 class ChangeRules(Contract):
     mode: Literal['all', 'any']
     rules: list[ChangeRule] = Field(min_length=1)
+    consecutive_hits: int = Field(default=1, ge=1, le=10, strict=True)
 
 
 class Schedule(Contract):
@@ -435,10 +455,8 @@ class JsonPresentAssertion(Contract):
 Assertion = Annotated[JsonEqualsAssertion | JsonPresentAssertion, Field(discriminator='type')]
 
 
-class PagePagination(Contract):
-    kind: Literal['page'] = 'page'
-    page_param: str = Field(default='page', pattern=r'^[A-Za-z][A-Za-z0-9_]{0,31}$')
-    start_page: int = Field(default=1, ge=1, le=10000, strict=True)
+class PaginationBase(Contract):
+    location: Literal['query', 'body'] = 'query'
     size_param: str | None = Field(default=None, pattern=r'^[A-Za-z][A-Za-z0-9_]{0,31}$')
     size: int | None = Field(default=None, ge=1, le=1000, strict=True)
     total_path: str | None = Field(default=None, min_length=1, max_length=500)
@@ -452,11 +470,39 @@ class PagePagination(Contract):
         return None if value is None else clean_json_path(value.strip())
 
 
+class PagePagination(PaginationBase):
+    kind: Literal['page'] = 'page'
+    page_param: str = Field(default='page', pattern=r'^[A-Za-z][A-Za-z0-9_]{0,31}$')
+    start_page: int = Field(default=1, ge=1, le=10000, strict=True)
+
+
+class CursorPagination(PaginationBase):
+    kind: Literal['cursor'] = 'cursor'
+    cursor_param: str = Field(default='cursor', pattern=r'^[A-Za-z][A-Za-z0-9_]{0,31}$')
+    start_cursor: str | int | None = None
+    next_cursor_path: str = Field(min_length=1, max_length=500)
+
+    @field_validator('next_cursor_path')
+    @classmethod
+    def valid_next_cursor_path(cls, value: str) -> str:
+        return clean_json_path(value.strip())
+
+
+class OffsetPagination(PaginationBase):
+    kind: Literal['offset'] = 'offset'
+    offset_param: str = Field(default='offset', pattern=r'^[A-Za-z][A-Za-z0-9_]{0,31}$')
+    start_offset: int = Field(default=0, ge=0, le=1000000, strict=True)
+
+
+Pagination = Annotated[PagePagination | CursorPagination | OffsetPagination,
+                       Field(discriminator='kind')]
+
+
 class ApiSource(Contract):
     kind: Literal['json'] = 'json'
     steps: list[SourceStep] = Field(min_length=1, max_length=3)
     assertions: list[Assertion] = Field(default_factory=list, max_length=8)
-    pagination: PagePagination | None = None
+    pagination: Pagination | None = None
 
     @model_validator(mode='after')
     def ordered_steps(self) -> 'ApiSource':
@@ -513,6 +559,10 @@ class MonitorSpec(Contract):
                 raise ValueError('rule references missing field')
             if rule.type in ('text_changed', 'keyword_present', 'keyword_absent') and target.type != 'text':
                 raise ValueError('text rules require a text field')
+            if rule.type == 'value_changed' and target.type not in ('date', 'boolean', 'url'):
+                raise ValueError('value_changed requires a date, boolean or URL field')
+            if rule.type == 'regex_match' and target.type not in ('text', 'date', 'boolean', 'url'):
+                raise ValueError('regex_match requires a text, date, boolean or URL field')
             if rule.type in ('number_absolute_change', 'number_percent_change', 'threshold') and target.type not in ('number', 'money'):
                 raise ValueError('numeric rules require number/money field')
             if rule.type.startswith('list_'):
@@ -545,6 +595,10 @@ class MonitorSpec(Contract):
                     raise ValueError('total_reached requires total_path')
                 if (pagination.size_param is None) != (pagination.size is None):
                     raise ValueError('size_param and size must be set together')
+                if pagination.location == 'body':
+                    request = self.source.steps[-1].request
+                    if request.method != 'POST' or not isinstance(request.body, dict):
+                        raise ValueError('body pagination requires POST with a JSON object body')
             return
         for field in self.fields:
             if field.selector is None or field.path is not None:

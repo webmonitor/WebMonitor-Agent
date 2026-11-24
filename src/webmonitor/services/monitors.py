@@ -1,14 +1,21 @@
 """Monitor reads and the three user commands: pause, resume, run now."""
 from uuid import UUID
 
-from sqlalchemy import func, select
+from sqlalchemy import func, or_, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from webmonitor.config import get_settings
 from webmonitor.errors import DomainError
-from webmonitor.models import Draft, Job, Monitor, Snapshot, User, utc_now
+from webmonitor.models import Conversation, Draft, Job, Monitor, Snapshot, User, utc_now
 from webmonitor.schemas.api import (
+    DerivedDraft,
+    MonitorBulkItemResult,
+    MonitorBulkResult,
+    MonitorBulkUpdate,
+    MonitorCommandError,
     MonitorDetail,
+    MonitorSpecDocument,
+    MonitorTagsUpdate,
     MonitorView,
     Page,
     SnapshotDetail,
@@ -29,9 +36,12 @@ def monitor_view(monitor: Monitor) -> MonitorView:
         status=monitor.status, collection_mode=monitor.collection_mode,
         spec_version=monitor.spec_version, interval_seconds=monitor.interval_seconds,
         timezone=monitor.timezone, baseline_status=monitor.baseline_status,
-        health_status=monitor.health_status,
+        health_status=monitor.health_status, tags=list(monitor.tags or []),
         notification_group_ids=list(monitor.notification_group_ids or []),
+        notification_cooldown_seconds=monitor.notification_cooldown_seconds,
+        quiet_hours=monitor.quiet_hours,
         delivery_channel=monitor.delivery_channel,
+        event_channels=dict(monitor.event_channels or {}),
         webhook_url=monitor.webhook_url,
         email_template_id=monitor.email_template_id,
         next_run_at=monitor.next_run_at, last_success_at=monitor.last_success_at,
@@ -56,15 +66,27 @@ async def read_monitor_row(session: AsyncSession, user: CurrentUser, monitor_id:
 
 
 async def list_monitors(session: AsyncSession, user: CurrentUser, limit: int,
-                        offset: int, *, archived: bool = False) -> Page[MonitorView]:
-    query = select(Monitor)
-    query = query.where(Monitor.archived_at.is_not(None) if archived
-                        else Monitor.archived_at.is_(None))
+                        offset: int, *, archived: bool = False, keyword: str | None = None,
+                        health_status: str | None = None, status: str | None = None,
+                        tags: list[str] | None = None) -> Page[MonitorView]:
+    conditions = [Monitor.archived_at.is_not(None) if archived
+                  else Monitor.archived_at.is_(None)]
     if user.role != "admin":
-        query = query.where(Monitor.user_id == user.user_id)
+        conditions.append(Monitor.user_id == user.user_id)
+    if keyword and keyword.strip():
+        term = keyword.strip().lower()
+        conditions.append(or_(func.lower(Monitor.name).contains(term, autoescape=True),
+                              func.lower(Monitor.url).contains(term, autoescape=True)))
+    if health_status is not None:
+        conditions.append(Monitor.health_status == health_status)
+    if status is not None:
+        conditions.append(Monitor.status == status)
+    for tag in tags or []:
+        conditions.append(Monitor.tags.contains([tag]))
+    query = select(Monitor).where(*conditions)
     rows = (await session.scalars(query.order_by(Monitor.created_at.desc(), Monitor.id.desc())
         .limit(limit).offset(offset))).all()
-    total = await session.scalar(select(func.count()).select_from(query.subquery()))
+    total = await session.scalar(select(func.count()).select_from(Monitor).where(*conditions))
     return Page[MonitorView](items=[monitor_view(row) for row in rows], total=total or 0)
 
 
@@ -80,6 +102,26 @@ async def read_monitor(session: AsyncSession, user: CurrentUser, monitor_id: UUI
         baseline=baseline, email_template=monitor.email_template,
         approved_recipients=recipients if user.role == "admin" else [],
         approved_recipient_count=len(recipients))
+
+
+async def export_spec(session: AsyncSession, user: CurrentUser,
+                      monitor_id: UUID) -> MonitorSpecDocument:
+    monitor = await read_monitor_row(session, user, monitor_id)
+    return MonitorSpecDocument(spec_version=monitor.spec_version,
+        spec=MonitorSpec.model_validate(monitor.spec))
+
+
+async def import_spec(session: AsyncSession, user: CurrentUser,
+                      document: MonitorSpecDocument) -> DerivedDraft:
+    """Import starts a normal draft; only its existing preview/approve flow can publish."""
+    conversation = Conversation(user_id=user.user_id,
+        title=f"Import: {document.spec.name}"[:200])
+    session.add(conversation)
+    await session.flush()
+    draft = await drafts.save_spec(session, user, conversation_id=conversation.id,
+                                   spec=document.spec)
+    return DerivedDraft(conversation_id=conversation.id, draft_id=draft.id,
+        spec_revision=draft.spec_revision, settings_revision=draft.settings_revision)
 
 
 async def pause_monitor(session: AsyncSession, user: CurrentUser, monitor_id: UUID) -> Monitor:
@@ -106,6 +148,23 @@ async def resume_monitor(session: AsyncSession, user: CurrentUser, monitor_id: U
     monitor.status, monitor.paused_at, monitor.next_run_at = "active", None, utc_now()
     await session.flush()
     return monitor
+
+
+async def bulk_update(session: AsyncSession, user: CurrentUser,
+                      payload: MonitorBulkUpdate) -> MonitorBulkResult:
+    """Run the ordinary per-monitor command in a savepoint for every selected row."""
+    results: list[MonitorBulkItemResult] = []
+    for monitor_id in payload.monitor_ids:
+        try:
+            async with session.begin_nested():
+                command = pause_monitor if payload.action == "pause" else resume_monitor
+                monitor = await command(session, user, monitor_id)
+                results.append(MonitorBulkItemResult(
+                    monitor_id=monitor_id, ok=True, monitor=monitor_view(monitor)))
+        except DomainError as exc:
+            results.append(MonitorBulkItemResult(monitor_id=monitor_id, ok=False,
+                error=MonitorCommandError(code=exc.code, message=exc.message)))
+    return MonitorBulkResult(items=results)
 
 
 async def enqueue_manual(session: AsyncSession, user: CurrentUser, monitor_id: UUID) -> Job:
@@ -146,6 +205,15 @@ async def rename_monitor(session: AsyncSession, user: CurrentUser, monitor_id: U
     return monitor
 
 
+async def update_tags(session: AsyncSession, user: CurrentUser, monitor_id: UUID,
+                      payload: MonitorTagsUpdate) -> Monitor:
+    """Organization metadata never changes the collection contract or its baseline."""
+    monitor = await read_monitor_row(session, user, monitor_id, lock=True)
+    monitor.tags = payload.tags
+    await session.flush()
+    return monitor
+
+
 async def update_delivery_settings(session: AsyncSession, user: CurrentUser, monitor_id: UUID,
                                     settings: DeliverySettings) -> Monitor:
     """Recipients, cadence and template, edited by hand on the monitor.
@@ -156,16 +224,17 @@ async def update_delivery_settings(session: AsyncSession, user: CurrentUser, mon
     monitor = await read_monitor_row(session, user, monitor_id, lock=True)
     schedule = settings.schedule
     missing = [name for name, absent in (
-        ("notification_group_ids", settings.channel == "email"
+        ("notification_group_ids", settings.channel in ("email", "both")
          and not settings.notification_group_ids),
-        ("webhook_url", settings.channel == "webhook" and not settings.webhook_url),
+        ("webhook_url", settings.channel in ("webhook", "both") and not settings.webhook_url),
         ("schedule", schedule is None)) if absent]
     if missing or schedule is None:
         raise DomainError("settings_incomplete", 409, details={"missing": missing})
     spec = MonitorSpec.model_validate(monitor.spec)
-    if settings.channel == "webhook":
+    if settings.channel in ("webhook", "both"):
         validate_webhook_url(settings.webhook_url)
-        recipients: list[dict] = []
+    if settings.channel == "webhook":
+        recipients = []
         template_id, snapshot = monitor.email_template_id, monitor.email_template
     else:
         recipients = await notifications.load_recipients(

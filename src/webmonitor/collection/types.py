@@ -23,6 +23,8 @@ class CollectionResult:
     warnings: list[str] = field(default_factory=list)
     analysis: dict = field(default_factory=dict)
     body_kind: Literal['html', 'json'] = 'html'
+    not_modified: bool = False
+    validator: dict | None = None
 
 
 def analyze_html(html: str) -> tuple[dict, list[str]]:

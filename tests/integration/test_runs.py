@@ -1,6 +1,6 @@
 """First success only establishes a baseline; later runs publish events and delivery."""
 import json
-from datetime import timedelta
+from datetime import UTC, datetime, timedelta
 from uuid import uuid4
 
 import pytest
@@ -90,6 +90,19 @@ def result(title: str) -> dict:
             "evidence_refs": [], "warnings": [], "duration_ms": 5}
 
 
+async def queue_event_at(session, monitor: Monitor, created_at: datetime) -> Event:
+    job = await running_job(session, monitor)
+    job.status, job.finished_at = "succeeded", created_at
+    event = Event(monitor_id=monitor.id, job_id=job.id, type="content_changed",
+                  change={"before": {"title": "A"}, "after": {"title": "B"},
+                          "summary": "title changed", "differences": []},
+                  created_at=created_at)
+    session.add(event)
+    await session.flush()
+    await notifications.enqueue_event_deliveries(session, monitor, event, {"title": "B"})
+    return event
+
+
 @pytest.mark.asyncio
 async def test_first_success_establishes_the_baseline_without_events(session):
     user, group = await seed(session)
@@ -137,6 +150,37 @@ async def test_changed_value_publishes_one_event_and_one_delivery(session):
     assert '"B"' not in body
 
     # An unchanged value must stay silent.
+    await runs.commit_success(session, await running_job(session, monitor), result("B"))
+    await session.commit()
+    assert await session.scalar(select(func.count()).select_from(Event)) == 1
+
+
+@pytest.mark.asyncio
+async def test_consecutive_hits_hold_the_baseline_until_the_same_value_confirms(session):
+    user, group = await seed(session)
+    monitor = await make_monitor(session, user, group)
+    monitor.spec = {**monitor.spec, "change_rules": {
+        **monitor.spec["change_rules"], "consecutive_hits": 2}}
+    await runs.commit_success(session, await running_job(session, monitor), result("A"))
+    await session.commit()
+    baseline_id = monitor.baseline_snapshot_id
+
+    await runs.commit_success(session, await running_job(session, monitor), result("B"))
+    await session.commit()
+    assert monitor.baseline_snapshot_id == baseline_id
+    assert monitor.rule_state["confirmation"]["count"] == 1
+    assert await session.scalar(select(func.count()).select_from(Event)) == 0
+
+    await runs.commit_success(session, await running_job(session, monitor), result("B"))
+    await session.commit()
+    assert monitor.baseline_snapshot_id != baseline_id
+    assert "confirmation" not in monitor.rule_state
+    event = await session.scalar(select(Event))
+    assert event.change["before"] == {"title": "A"}
+    assert event.change["after"] == {"title": "B"}
+    assert await session.scalar(select(func.count()).select_from(Event)) == 1
+    assert await session.scalar(select(func.count()).select_from(Delivery)) == 1
+
     await runs.commit_success(session, await running_job(session, monitor), result("B"))
     await session.commit()
     assert await session.scalar(select(func.count()).select_from(Event)) == 1
@@ -237,3 +281,66 @@ async def test_webhook_channel_queues_one_json_delivery_and_revokes_on_change(se
     monitor.delivery_channel = "email"
     await session.flush()
     assert not await notifications.authorized(session, delivery)
+
+
+@pytest.mark.asyncio
+async def test_cooldown_chains_from_the_latest_queued_delivery(session):
+    user, group = await seed(session)
+    monitor = await make_monitor(session, user, group)
+    monitor.notification_cooldown_seconds = 3600
+    base = datetime(2026, 7, 1, 12, tzinfo=UTC)
+
+    first = await queue_event_at(session, monitor, base)
+    second = await queue_event_at(session, monitor, base + timedelta(minutes=5))
+    third = await queue_event_at(session, monitor, base + timedelta(minutes=10))
+    await session.commit()
+
+    deliveries = (await session.scalars(select(Delivery).order_by(Delivery.available_at))).all()
+    assert [row.available_at for row in deliveries] == [
+        base, base + timedelta(hours=1), base + timedelta(hours=2)]
+    assert {row.event_id for row in deliveries} == {first.id, second.id, third.id}
+    assert await session.scalar(select(func.count()).select_from(Event)) == 3
+    assert all(row.status == "queued" for row in deliveries)
+
+
+@pytest.mark.asyncio
+async def test_cross_midnight_quiet_hours_use_monitor_dst_zone_for_every_recipient(session):
+    user, group = await seed(session)
+    group.members = [{"email": "ops@example.com", "active": True},
+                     {"email": "dev@example.com", "active": True}]
+    monitor = await make_monitor(session, user, group)
+    monitor.approved_recipients = [
+        {"email": "ops@example.com", "group_ids": [str(group.id)]},
+        {"email": "dev@example.com", "group_ids": [str(group.id)]},
+    ]
+    monitor.timezone = "America/New_York"
+    monitor.quiet_hours = {"start": "22:00", "end": "07:00"}
+    # July 1 at 22:00 EDT: the next 07:00 is July 2 at 11:00 UTC.
+    detected_at = datetime(2026, 7, 2, 2, tzinfo=UTC)
+    event = await queue_event_at(session, monitor, detected_at)
+    await session.commit()
+
+    stored_event = await session.get(Event, event.id)
+    assert stored_event is not None
+    deliveries = (await session.scalars(select(Delivery).where(
+        Delivery.event_id == event.id))).all()
+    assert len(deliveries) == 2
+    assert {row.recipient for row in deliveries} == {"ops@example.com", "dev@example.com"}
+    assert {row.available_at for row in deliveries} == {datetime(2026, 7, 2, 11, tzinfo=UTC)}
+    assert all(row.status == "queued" for row in deliveries)
+
+
+@pytest.mark.asyncio
+async def test_quiet_hours_never_move_a_repeated_dst_time_into_the_past(session):
+    user, group = await seed(session)
+    monitor = await make_monitor(session, user, group)
+    monitor.timezone = "America/New_York"
+    monitor.quiet_hours = {"start": "22:00", "end": "01:30"}
+    first = await queue_event_at(session, monitor, datetime(2026, 11, 1, 5, tzinfo=UTC))
+    second = await queue_event_at(session, monitor, datetime(2026, 11, 1, 6, tzinfo=UTC))
+    await session.commit()
+
+    first_delivery = await session.scalar(select(Delivery).where(Delivery.event_id == first.id))
+    second_delivery = await session.scalar(select(Delivery).where(Delivery.event_id == second.id))
+    assert first_delivery.available_at == datetime(2026, 11, 1, 5, 30, tzinfo=UTC)
+    assert second_delivery.available_at == datetime(2026, 11, 1, 6, 30, tzinfo=UTC)
