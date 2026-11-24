@@ -1,0 +1,127 @@
+name: ci
+
+on:
+  pull_request:
+  push:
+    branches: [main]
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  test:
+    name: test
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+
+    services:
+      postgres:
+        image: postgres:16
+        env:
+          POSTGRES_USER: webmonitor
+          POSTGRES_DB: webmonitor
+          POSTGRES_PASSWORD: ci-postgres-password
+        ports: ["5432:5432"]
+        options: >-
+          --health-cmd "pg_isready -U webmonitor -d webmonitor"
+          --health-interval 3s
+          --health-timeout 3s
+          --health-retries 30
+
+    env:
+      PGHOST: 127.0.0.1
+      PGPORT: "5432"
+      PGDATABASE: webmonitor
+      PGUSER: webmonitor
+      POSTGRES_PASSWORD: ci-postgres-password
+      APP_ORIGIN: http://localhost:8080
+      DEVELOPMENT_MODE: "true"
+      SECRET_KEY: ci-only-secret-key-not-for-deployment-123456
+      WORKERS_ENABLED: "false"
+      # Startup tolerates unavailable evidence storage. Refuse it immediately on
+      # loopback rather than attempting to reach the Compose-only s3 hostname.
+      S3_ENDPOINT_URL: http://127.0.0.1:9
+      S3_ACCESS_KEY_ID: ci-only
+      S3_SECRET_ACCESS_KEY: ci-only
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+          cache: pip
+          cache-dependency-path: requirements.txt
+
+      - name: Install Python dependencies
+        run: |
+          python -m pip install --require-hashes -r requirements.txt
+          python -m pip install --no-deps --editable .
+
+      - name: Run Ruff
+        run: ruff check src tests
+
+      - name: Run unit tests
+        run: pytest tests/unit -q
+
+      - name: Run integration tests
+        run: pytest tests/integration -q
+
+      - name: Set up pnpm
+        uses: pnpm/action-setup@v4
+        with:
+          version: 10.34.8
+          run_install: false
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+          cache: pnpm
+          cache-dependency-path: web/pnpm-lock.yaml
+
+      - name: Install frontend dependencies
+        working-directory: web
+        run: pnpm install --frozen-lockfile
+
+      - name: Typecheck frontend
+        working-directory: web
+        run: pnpm typecheck
+
+      - name: Test frontend
+        working-directory: web
+        run: pnpm test
+
+      - name: Check generated OpenAPI schema
+        working-directory: web
+        run: |
+          set -euo pipefail
+          # generate:api intentionally uses the Compose service name. Map that
+          # name to the host-side API without changing the generator contract.
+          echo "127.0.0.1 api" | sudo tee -a /etc/hosts >/dev/null
+          webmonitor serve --host 127.0.0.1 --port 8000 >/tmp/webmonitor-api.log 2>&1 &
+          api_pid=$!
+          trap 'kill "$api_pid" 2>/dev/null || true; wait "$api_pid" 2>/dev/null || true' EXIT
+          ready=false
+          for attempt in {1..60}; do
+            if curl --fail --silent --output /dev/null http://127.0.0.1:8000/api/v1/health/ready; then
+              ready=true
+              break
+            fi
+            if ! kill -0 "$api_pid" 2>/dev/null; then
+              break
+            fi
+            sleep 1
+          done
+          if [ "$ready" != true ]; then
+            cat /tmp/webmonitor-api.log
+            exit 1
+          fi
+          pnpm generate:api
+          git diff --exit-code -- src/lib/api/schema.d.ts

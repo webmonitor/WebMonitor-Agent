@@ -50,6 +50,17 @@ HTTP goes only through `web/src/lib/api/client.ts:api()`: relative paths, CSRF o
 
 ## Commands
 
+Create the repository-dedicated development environment once. Do not use the base Conda environment or ad-hoc `/tmp` virtual environments for checks:
+
+```sh
+conda create -n webmonitor-agent -c conda-forge python=3.12 nodejs=22 pip -y
+conda run -n webmonitor-agent python -m pip install --require-hashes -r requirements.txt
+conda run -n webmonitor-agent python -m pip install --no-deps --editable .
+conda run -n webmonitor-agent python -m pip check
+```
+
+Run backend checks with `conda run -n webmonitor-agent ...` (for example, `conda run -n webmonitor-agent pytest tests/unit -q`). For frontend checks, enter the environment with `conda activate webmonitor-agent` so Node 22 is on `PATH`, then use Corepack pnpm in `web/`.
+
 ```sh
 # Source development: replaces the published image with a local build
 docker compose -f compose.yaml -f compose.build.yaml up --build -d --wait

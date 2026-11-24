@@ -13,6 +13,7 @@
   <a href="#install-in-three-steps">Quick start</a> ·
   <a href="#create-your-first-monitor">First monitor</a> ·
   <a href="#email-and-webhook-alerts">Alerts</a> ·
+  <a href="#mcp-and-api-tokens">MCP and API tokens</a> ·
   <a href="#faq">FAQ</a> ·
   <a href="#update-roll-back-and-your-data">Updates and data</a> ·
   <a href="./README.zh-CN.md">简体中文</a>
@@ -26,7 +27,7 @@ WebMonitor-Agent is a self-hosted change monitor for public web pages. Instead o
 
 One Docker Compose stack runs the Next.js interface, FastAPI service and background workers, PostgreSQL, S3-compatible evidence storage and a Squid egress proxy. Apart from your model endpoint and optional notification destinations, the stack is self-contained.
 
-Rules can watch text, keywords appearing or disappearing, numeric thresholds, percentage or absolute changes, and new, updated or removed list items. Checks can run every 1 minute to 24 hours.
+Rules can watch text, keywords appearing or disappearing, numeric thresholds, percentage or absolute changes, and new, updated or removed list items. `value_changed` covers top-level date, boolean and URL scalars. `regex_match` covers text, date, boolean and URL scalars using deterministic string values; patterns are compiled during schema validation and every match has a 50 ms timeout. Set `change_rules.consecutive_hits` (1–10, default 1) to require the same rules and value fingerprint on consecutive checks. While confirmation is pending, comparisons retain the last confirmed baseline; a changed value or matching rule set restarts the count, and a nonmatching check clears it. Checks can run every 1 minute to 24 hours.
 
 ### Collection boundaries
 
@@ -134,6 +135,8 @@ OPENAI_MODEL=replace-with-your-model-name
 # DEFAULT_NOTIFICATION_GROUP=
 # DEFAULT_DELIVERY_CHANNEL=email
 # DEFAULT_WEBHOOK_URL=
+# Optional HMAC-SHA256 signing secret for webhook receivers.
+# WEBHOOK_SECRET=
 
 # Email alerts (optional). Rules are under "Email and webhook alerts" below.
 # SMTP_HOST=
@@ -190,13 +193,15 @@ If the sample is wrong, ask for another. Queued, running and failed states are s
 
 ### 3. Confirm and manage
 
-**Create monitor** remains disabled until a valid sample exists and starts scheduled checking only when clicked. A sample is valid for 60 minutes. Creation also requires an enabled notification group.
+**Create monitor** remains disabled until a valid sample exists and starts scheduled checking only when clicked. A sample is valid for 60 minutes. Email and dual-channel modes require an enabled notification group; webhook-only mode does not.
 
 New monitors start with `DEFAULT_INTERVAL_SECONDS` and either `DEFAULT_NOTIFICATION_GROUP` or the first enabled group. On the monitor page:
 
-- **Delivery settings** edits recipients, channel, cadence, timezone and email template without discarding the collected baseline.
+- **Monitors** provides a searchable management index with health, running-state and tag filters. Edit up to 20 tags per monitor without changing its collection definition or baseline, and pause or resume a selected batch; the response reports each monitor that could not be changed. **Export spec** downloads the current collection `MonitorSpec` and source version. **Import spec** creates only a conversation and unpublished draft: the ordinary real preview and explicit approval remain mandatory, and import never starts a schedule.
+- **Delivery settings** edits recipients, channel, cadence, timezone, notification timing and email template without discarding the collected baseline.
 - **Edit definition** edits the collection JSON, creates a draft and runs another real preview; only confirming that preview publishes the change. **Raw definition (JSON)** and **Definition versions** expose the executed definition and its published history.
-- **Check history** retains successful values, coverage, screenshots and archives with the collection spec used for that run. Events link to their checks.
+- **Diagnose and repair with assistant** is available on failed monitors and `run_failed` events. It creates a derived draft and gives the agent the failure code, original spec and baseline summary for fresh probing and preview. Only another explicit approval advances `spec_version`; diagnosis never publishes automatically.
+- **Check history** retains successful values, coverage, screenshots and archives with the collection spec used for that run. Events link to their checks. A check record also charts number/money trends across loaded stored checks and highlights text/list differences from the preceding check.
 - **Pause** / **Resume** controls scheduling; pausing cancels queued or running collection. **Check now**, cancellation and failed-check retry are available from the monitor and check details. **Archive** stops checks while retaining history; **Restore** returns the monitor paused.
 - **Events** records detected changes. **Notifications** → **Delivery log** shows channel, destination, status, attempts, payload and errors, with retry for failed or cancelled deliveries.
 - **Email templates** provides model-assisted reusable designs with real mail previews and validated style tokens rather than custom markup. Existing monitors keep the template design they were approved with when a template is later edited or disabled.
@@ -204,6 +209,8 @@ New monitors start with `DEFAULT_INTERVAL_SECONDS` and either `DEFAULT_NOTIFICAT
 Administrators can invite members and disable accounts. Disabling an account revokes its sessions, pauses its monitors and cancels queued/running jobs and unsent deliveries; re-enabling does not resume or replay them.
 
 ## Email and webhook alerts
+
+Cooldowns and quiet hours never discard an event: its deliveries remain queued instead of being sent immediately. `notification_cooldown_seconds` (default 0) schedules relative to the monitor's latest existing delivery `available_at`. Optional `quiet_hours` use `HH:MM` start/end values in the monitor's IANA timezone, including windows that cross midnight and daylight-saving transitions; events detected inside the window have their deliveries held until its end. All recipients of one event share the same `available_at`, and the ordinary delivery worker performs the send only when that time arrives.
 
 ### Email
 
@@ -227,13 +234,15 @@ Collection results appear in **Events** and delivery status in **Delivery log**.
 
 ### HTTPS webhooks
 
-Each monitor uses one channel selected in **Delivery settings**. Webhook URLs must use HTTPS on a public host and port 443. They follow the same egress policy as collection, and redirects are not followed.
+Each monitor can use email, webhook or **Email + Webhook**. Dual-channel mode sends every event through both paths by default and can route `run_failed` to only one operations channel. Email and dual-channel modes require a notification group; webhook-only mode does not. Webhook URLs must use HTTPS on a public host and port 443, follow the collection egress policy and never follow redirects.
 
 To change the default for monitors created from new conversations:
 
 ```dotenv
 DEFAULT_DELIVERY_CHANNEL=webhook
 DEFAULT_WEBHOOK_URL=https://hooks.example.com/services/your-endpoint
+# Optional; leave empty for unsigned webhooks.
+WEBHOOK_SECRET=replace-with-a-receiver-shared-secret
 ```
 
 Changing the default affects new drafts; existing monitors keep their settings. A delivery POSTs the previewed JSON payload containing `monitor`, `event`, `change`, `fields` and `evidence_url`, with these headers:
@@ -242,8 +251,79 @@ Changing the default affects new drafts; existing monitors keep their settings. 
 - `X-WebMonitor-Event`: event type
 - `X-WebMonitor-Monitor`: monitor ID
 - `X-WebMonitor-Delivery`: delivery ID
+- `X-WebMonitor-Timestamp`: Unix time in whole seconds
+- `X-WebMonitor-Signature-256`: `sha256=<hex>`, present when `WEBHOOK_SECRET` is non-empty
+
+The signature is HMAC-SHA256 using `WEBHOOK_SECRET` as the key over the exact bytes of `<timestamp>.<raw request body>` (the timestamp is its header value, followed by a literal period). Receivers should check timestamp freshness and compare the hexadecimal signature using a constant-time comparison. When no secret is configured, the timestamp is still sent and the signature header is omitted for compatibility with unsigned receivers. The secret is a write-only deployment setting and is never returned in plaintext by the API.
 
 Endpoints should return `2xx`. Responses `408`, `425`, `429` and `5xx` are retried; other responses are recorded as failed. **Delivery log** shows the endpoint, HTTP status and error code and supports retrying a failed delivery.
+
+Administrators can use **Test email** and **Test webhook** under **Notifications** → **Delivery log** to check the configured transport and a destination immediately. Tests use the same destination validation, webhook signing and SMTP/webhook transports, but create no monitoring event, job or delivery-log entry.
+
+## Operations and extensions
+
+- Conversations use read-only SSE with complete snapshots and process-local text deltas, with polling as the fallback. Durable jobs remain the recovery source, and text persistence is batched instead of written per token.
+- HTML and single-step, unpaginated JSON APIs negotiate ETag / If-Modified-Since. A 304 completes the check without duplicating the baseline or changing rule state. Multi-step and paginated APIs still fetch the complete composite result, and a new `spec_version` forces a full collection.
+- JSON APIs support `page`, `cursor` and `offset` pagination in the URL query or a POST JSON object body. Cursors must advance; convergence comes only from an empty/short page, an absent next cursor or the declared total.
+- Chromium rotates every 50 collections or 300 seconds by default (`BROWSER_REUSE_REQUESTS` / `BROWSER_REUSE_SECONDS`; use 1 for cold starts), while every collection gets a fresh isolated context. `TARGET_DOMAIN_CONCURRENCY` bounds same-origin work and schedules use small deterministic jitter.
+- Administrators can open **System overview** for queue depth, HTTP/browser success rates and durations, delivery failure rate, and model tokens grouped by user and day.
+- Mocksite provides deterministic offline pagination targets at `/dynamic/notices` and `/api/notices*`.
+
+## MCP and API tokens
+
+External models can use WebMonitor's discovery, draft, read and operations tools through the MCP Streamable HTTP endpoint at `/mcp`. It is disabled by default. Enable it in `.env` and restart:
+
+```dotenv
+MCP_ENABLED=true
+```
+
+```sh
+docker compose up -d --wait
+```
+
+Open **API tokens & MCP** in the workspace. Enter a name, choose an expiry and scopes, then create the token. The plaintext `wm_pat_…` is returned once; only its hash is stored. The page shows `last_used_at`, expiry and revocation state, and **Revoke** takes effect immediately. It also generates Cursor and Claude Desktop configuration.
+
+| Scope | Permission |
+| --- | --- |
+| `read` | Read monitors, checks, events and deliveries |
+| `discover` | Probe and analyze targets, capture and replay network requests |
+| `drafts:write` | Create and edit drafts and generate previews |
+| `drafts:approve` | Approve a frozen, reviewed preview |
+| `monitors:write` | Pause, resume and update monitors |
+| `events:write` | Acknowledge events |
+
+All scopes except `drafts:approve` are selected by default; grant only what the client needs. Send the PAT as `Authorization: Bearer wm_pat_…`. It authenticates `/mcp`, not browser API sessions, and cookies cannot substitute for it.
+
+Cursor supports Streamable HTTP directly. Merge this into `~/.cursor/mcp.json` or the project's `.cursor/mcp.json`:
+
+```json
+{
+  "mcpServers": {
+    "webmonitor": {
+      "url": "https://monitor.example.com/mcp",
+      "headers": { "Authorization": "Bearer wm_pat_REPLACE_ME" }
+    }
+  }
+}
+```
+
+Claude Desktop can connect to this PAT-authenticated endpoint through `mcp-remote` (Node.js and `npx` required):
+
+```json
+{
+  "mcpServers": {
+    "webmonitor": {
+      "command": "npx",
+      "args": [
+        "-y", "mcp-remote", "https://monitor.example.com/mcp",
+        "--header", "Authorization: Bearer wm_pat_REPLACE_ME"
+      ]
+    }
+  }
+}
+```
+
+Use the deployment URL reachable from the client, not a container-internal hostname. Non-browser local clients do not need `MCP_ALLOWED_ORIGINS`. Browser requests with an `Origin` must exactly match `APP_ORIGIN` or the comma-separated `MCP_ALLOWED_ORIGINS` allowlist.
 
 ## FAQ
 
@@ -299,6 +379,10 @@ docker compose up -d --wait --no-deps api web
 ### Roll back
 
 Set `WEBMONITOR_IMAGE` to the previous tag and repeat the update commands.
+
+### Automatic retention
+
+The scheduler runs a bounded cleanup every hour. With the default `RETENTION_DAYS=30`, it removes expired terminal deliveries and old events with no remaining deliveries, then ordinary snapshots, unreferenced terminal jobs and their S3 evidence. The current baseline and evidence still referenced by an event or draft are always exempt. Events with queued, sending or retrying deliveries are retained. Each pass is capped by `RETENTION_GC_BATCH_SIZE=100`. S3 objects are deleted before their database references; storage failures retain the records needed for the next retry. Set `RETENTION_DAYS=0` to disable automatic cleanup entirely.
 
 > **The default PostgreSQL and S3 stores are ephemeral.** They use memory-backed temporary directories. Stopping, restarting or recreating `postgres` or `s3`, or running `docker compose down`, clears accounts, monitors, events and saved pages. `docker compose restart api` preserves the running data services. Configure persistent storage and backups for long-term use, and retain `.env` and the deployment files.
 
