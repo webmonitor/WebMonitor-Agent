@@ -5,11 +5,12 @@ Baseline and still-referenced event snapshots are not ordinary retention candida
 A candidate is removed only after every unshared evidence object was deleted. Any
 storage failure leaves all of its database references intact for the next pass.
 """
+from collections.abc import AsyncIterator
 from dataclasses import dataclass, field
 from datetime import datetime, timedelta
 from uuid import UUID
 
-from sqlalchemy import exists, func, select
+from sqlalchemy import exists, func, select, tuple_
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from webmonitor.config import get_settings
@@ -57,13 +58,19 @@ def _old_terminal_jobs(cutoff: datetime):
     return Job.status.in_(TERMINAL_JOB_STATUSES), Job.finished_at <= cutoff
 
 
-async def _candidates(session: AsyncSession, cutoff: datetime, limit: int) -> list[_Candidate]:
-    """Select at most limit units; a production snapshot and its job are one unit."""
-    snapshots = list((await session.scalars(select(Snapshot).where(
+async def _snapshot_candidates(
+        session: AsyncSession, cutoff: datetime, limit: int,
+        cursor: tuple[datetime, UUID] | None) -> tuple[list[_Candidate], tuple[datetime, UUID] | None]:
+    """Read one keyset page; a production snapshot and its job are one unit."""
+    filters = [
         Snapshot.collected_at <= cutoff,
         ~exists().where(Monitor.baseline_snapshot_id == Snapshot.id),
         ~exists().where(Event.snapshot_id == Snapshot.id),
-    ).order_by(Snapshot.collected_at, Snapshot.id).limit(limit)
+    ]
+    if cursor is not None:
+        filters.append(tuple_(Snapshot.collected_at, Snapshot.id) > cursor)
+    snapshots = list((await session.scalars(select(Snapshot).where(*filters)
+        .order_by(Snapshot.collected_at, Snapshot.id).limit(limit)
         .with_for_update(skip_locked=True).execution_options(populate_existing=True))).all())
     snapshots_by_job = {snapshot.job_id: snapshot for snapshot in snapshots}
     paired = []
@@ -78,17 +85,75 @@ async def _candidates(session: AsyncSession, cutoff: datetime, limit: int) -> li
         job = paired_by_id.get(snapshot.job_id)
         candidates.append(_Candidate(snapshot.id, job.id if job else None,
                                      _refs(snapshot, job)))
+    next_cursor = None
+    if snapshots:
+        last = snapshots[-1]
+        next_cursor = (last.collected_at, last.id)
+    return candidates, next_cursor
 
-    remaining = limit - len(candidates)
-    if remaining:
-        jobs = list((await session.scalars(select(Job).where(
-            *_old_terminal_jobs(cutoff),
-            ~exists().where(Snapshot.job_id == Job.id),
-            ~exists().where(Event.job_id == Job.id),
-        ).order_by(Job.finished_at, Job.id).limit(remaining)
-            .with_for_update(skip_locked=True).execution_options(populate_existing=True))).all())
-        candidates.extend(_Candidate(job_id=job.id, refs=_refs(job=job)) for job in jobs)
-    return candidates
+
+async def _job_candidates(
+        session: AsyncSession, cutoff: datetime, limit: int,
+        cursor: tuple[datetime, UUID] | None) -> tuple[list[_Candidate], tuple[datetime, UUID] | None]:
+    filters = [
+        *_old_terminal_jobs(cutoff),
+        ~exists().where(Snapshot.job_id == Job.id),
+        ~exists().where(Event.job_id == Job.id),
+    ]
+    if cursor is not None:
+        filters.append(tuple_(Job.finished_at, Job.id) > cursor)
+    jobs = list((await session.scalars(select(Job).where(*filters)
+        .order_by(Job.finished_at, Job.id).limit(limit)
+        .with_for_update(skip_locked=True).execution_options(populate_existing=True))).all())
+    next_cursor = None
+    if jobs:
+        last = jobs[-1]
+        next_cursor = (last.finished_at, last.id)
+    return [_Candidate(job_id=job.id, refs=_refs(job=job)) for job in jobs], next_cursor
+
+
+async def _candidate_pages(session: AsyncSession, cutoff: datetime,
+                           page_size: int) -> AsyncIterator[list[_Candidate]]:
+    """Advance through both sources even when every candidate in a page is protected."""
+    for source in (_snapshot_candidates, _job_candidates):
+        cursor = None
+        while True:
+            async with session.begin():
+                page, next_cursor = await source(session, cutoff, page_size, cursor)
+            if not page:
+                break
+            cursor = next_cursor
+            yield page
+
+
+async def _deletable_candidates(session: AsyncSession, cutoff: datetime,
+                                limit: int) -> list[_Candidate]:
+    """Fill the deletion budget with unprotected groups, without offset-scan stalls.
+
+    Protected groups stay pending because a later page may contain all of their shared
+    evidence owners. Unchanged pending groups need no new database checks; a group is
+    checked again only after a new candidate joins it.
+    """
+    selected: list[_Candidate] = []
+    pending: list[_Candidate] = []
+    async for page in _candidate_pages(session, cutoff, limit):
+        fresh = {id(item) for item in page}
+        next_pending: list[_Candidate] = []
+        for group in _groups([*pending, *page]):
+            if not any(id(item) in fresh for item in group):
+                next_pending.extend(group)
+                continue
+            # Reference checks use a short transaction which ends before any S3 I/O.
+            async with session.begin():
+                protected = await _externally_referenced(session, group)
+            if protected or len(selected) + len(group) > limit:
+                next_pending.extend(group)
+                continue
+            selected.extend(group)
+            if len(selected) == limit:
+                return selected
+        pending = next_pending
+    return selected
 
 
 def _groups(candidates: list[_Candidate]) -> list[list[_Candidate]]:
@@ -168,18 +233,12 @@ async def collect(session: AsyncSession, *, now: datetime | None = None) -> Rete
     remaining = limit - stats.deliveries_deleted - stats.events_deleted
     if not remaining:
         return stats
-    async with session.begin():
-        candidates = await _candidates(session, cutoff, remaining)
+    candidates = await _deletable_candidates(session, cutoff, remaining)
     if not candidates:
         return stats
 
     deletable = []
     for group in _groups(candidates):
-        # Reference checks use a short transaction which ends before any S3 I/O.
-        async with session.begin():
-            protected = await _externally_referenced(session, group)
-        if protected:
-            continue
         refs = set().union(*(item.refs for item in group))
         failed = False
         for bucket, key in sorted(refs):

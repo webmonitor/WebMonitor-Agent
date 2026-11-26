@@ -10,7 +10,7 @@ from webmonitor.mcp.errors import parse_uuid, run_tool
 from webmonitor.mcp.tools_discover import _clamp_timeout, _wait_with_progress
 from webmonitor.schemas.api import MonitorRename
 from webmonitor.schemas.delivery import DeliverySettings
-from webmonitor.services import conversations, events, monitors, notifications
+from webmonitor.services import events, monitors, notifications
 
 MUTATE_LOCAL = ToolAnnotations(
     readOnlyHint=False,
@@ -18,6 +18,9 @@ MUTATE_LOCAL = ToolAnnotations(
     idempotentHint=False,
     openWorldHint=False,
 )
+
+# Write scopes never imply read: mutations acknowledge with IDs and outcomes,
+# while monitor, job, event and delivery payloads remain behind the read scope.
 
 
 def register_ops_tools(mcp: MCPServer) -> None:
@@ -41,7 +44,7 @@ def register_ops_tools(mcp: MCPServer) -> None:
             mid = parse_uuid(monitor_id, field="monitor_id")
             async with get_session_factory()() as session:
                 job = await monitors.enqueue_manual(session, principal.user, mid)
-                view = conversations.job_view(job).model_dump(mode="json")
+                view = {"job_id": str(job.id), "status": job.status}
                 await session.commit()
             if not wait:
                 return view
@@ -56,7 +59,8 @@ def register_ops_tools(mcp: MCPServer) -> None:
                 if exc.code == "job_timeout":
                     return {**view, "timed_out": True}
                 raise
-            return {**conversations.job_view(finished).model_dump(mode="json"), "result": finished.result}
+            # Collection results are readable data, not a monitors:write result.
+            return {"job_id": str(finished.id), "status": finished.status}
 
         return await run_tool("monitors:write", op)
 
@@ -68,9 +72,9 @@ def register_ops_tools(mcp: MCPServer) -> None:
             mid = parse_uuid(monitor_id, field="monitor_id")
             async with get_session_factory()() as session:
                 monitor = await monitors.pause_monitor(session, principal.user, mid)
-                view = monitors.monitor_view(monitor).model_dump(mode="json")
+                result = {"monitor_id": str(mid), "status": monitor.status}
                 await session.commit()
-                return view
+                return result
 
         return await run_tool("monitors:write", op)
 
@@ -82,9 +86,9 @@ def register_ops_tools(mcp: MCPServer) -> None:
             mid = parse_uuid(monitor_id, field="monitor_id")
             async with get_session_factory()() as session:
                 monitor = await monitors.resume_monitor(session, principal.user, mid)
-                view = monitors.monitor_view(monitor).model_dump(mode="json")
+                result = {"monitor_id": str(mid), "status": monitor.status}
                 await session.commit()
-                return view
+                return result
 
         return await run_tool("monitors:write", op)
 
@@ -96,10 +100,9 @@ def register_ops_tools(mcp: MCPServer) -> None:
             mid = parse_uuid(monitor_id, field="monitor_id")
             body = MonitorRename(name=name)
             async with get_session_factory()() as session:
-                monitor = await monitors.rename_monitor(session, principal.user, mid, body.name)
-                view = monitors.monitor_view(monitor).model_dump(mode="json")
+                await monitors.rename_monitor(session, principal.user, mid, body.name)
                 await session.commit()
-                return view
+                return {"monitor_id": str(mid), "renamed": True}
 
         return await run_tool("monitors:write", op)
 
@@ -111,9 +114,9 @@ def register_ops_tools(mcp: MCPServer) -> None:
             mid = parse_uuid(monitor_id, field="monitor_id")
             async with get_session_factory()() as session:
                 monitor = await monitors.archive_monitor(session, principal.user, mid)
-                view = monitors.monitor_view(monitor).model_dump(mode="json")
+                result = {"monitor_id": str(mid), "status": monitor.status}
                 await session.commit()
-                return view
+                return result
 
         return await run_tool("monitors:write", op)
 
@@ -125,9 +128,9 @@ def register_ops_tools(mcp: MCPServer) -> None:
             mid = parse_uuid(monitor_id, field="monitor_id")
             async with get_session_factory()() as session:
                 monitor = await monitors.restore_monitor(session, principal.user, mid)
-                view = monitors.monitor_view(monitor).model_dump(mode="json")
+                result = {"monitor_id": str(mid), "status": monitor.status}
                 await session.commit()
-                return view
+                return result
 
         return await run_tool("monitors:write", op)
 
@@ -142,9 +145,10 @@ def register_ops_tools(mcp: MCPServer) -> None:
             parsed = DeliverySettings.model_validate(settings)
             async with get_session_factory()() as session:
                 await monitors.update_delivery_settings(session, principal.user, mid, parsed)
-                detail = await monitors.read_monitor(session, principal.user, mid)
                 await session.commit()
-                return detail.model_dump(mode="json")
+                # Do not echo the monitor contract, recipients or settings through
+                # a token that was granted mutation access without read access.
+                return {"monitor_id": str(mid), "updated": True}
 
         return await run_tool("monitors:write", op)
 
@@ -155,9 +159,9 @@ def register_ops_tools(mcp: MCPServer) -> None:
         async def op(principal):
             eid = parse_uuid(event_id, field="event_id")
             async with get_session_factory()() as session:
-                view = await events.acknowledge_event(session, principal.user, eid)
+                await events.acknowledge_event(session, principal.user, eid)
                 await session.commit()
-                return view.model_dump(mode="json")
+                return {"event_id": str(eid), "acknowledged": True}
 
         return await run_tool("events:write", op)
 
@@ -169,7 +173,8 @@ def register_ops_tools(mcp: MCPServer) -> None:
             did = parse_uuid(delivery_id, field="delivery_id")
             async with get_session_factory()() as session:
                 view = await notifications.retry_delivery(session, principal.user, did)
+                result = {"delivery_id": str(did), "status": view.status}
                 await session.commit()
-                return view.model_dump(mode="json")
+                return result
 
         return await run_tool("events:write", op)

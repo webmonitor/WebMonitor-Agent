@@ -23,6 +23,19 @@ logger = logging.getLogger(__name__)
 
 LEASE_SECONDS = 90
 TERMINAL = frozenset({"succeeded", "failed", "cancelled", "discarded"})
+_worker_shutdown = False
+
+
+def begin_worker_shutdown() -> None:
+    """Stop interpreting process teardown as a caller abandoning its child jobs."""
+    global _worker_shutdown
+    _worker_shutdown = True
+
+
+def reset_worker_shutdown() -> None:
+    """A fresh in-process application lifespan starts with normal cancellation semantics."""
+    global _worker_shutdown
+    _worker_shutdown = False
 
 
 def _attempt(number: int, status: str, *, error_code: str | None = None,
@@ -36,10 +49,11 @@ def _attempt(number: int, status: str, *, error_code: str | None = None,
 async def enqueue(session: AsyncSession, *, user_id: UUID, kind: str, url: str | None = None,
                   spec: dict[str, Any] | None = None, conversation_id: UUID | None = None,
                   draft_id: UUID | None = None, revision: int | None = None,
-                  monitor_id: UUID | None = None, available_at=None) -> Job:
+                  monitor_id: UUID | None = None, available_at=None,
+                  source: str | None = None) -> Job:
     job = Job(user_id=user_id, kind=kind, status="queued", url=url, spec=spec,
               conversation_id=conversation_id, draft_id=draft_id, revision=revision,
-              monitor_id=monitor_id, available_at=available_at or utc_now())
+              monitor_id=monitor_id, available_at=available_at or utc_now(), source=source)
     # A partial unique index makes the second concurrent enqueue lose; report it
     # as a conflict instead of a 500 from the database.
     try:
@@ -54,15 +68,18 @@ async def enqueue(session: AsyncSession, *, user_id: UUID, kind: str, url: str |
 
 
 async def enforce_hourly_quota(session: AsyncSession, *, user_id: UUID, kind: str,
-                               limit: int) -> None:
-    """Serialize each user/kind count with its enqueue until the caller commits."""
+                               limit: int, source: str | None = None) -> None:
+    """Serialize each user/kind/source count with its enqueue until commit."""
     digest = hashlib.sha256(f"{user_id}:{kind}".encode()).digest()
     lock_key = int.from_bytes(digest[:8], byteorder="big", signed=True)
     await session.execute(text("SELECT pg_advisory_xact_lock(:lock_key)"),
                           {"lock_key": lock_key})
-    count, oldest = (await session.execute(select(func.count(), func.min(Job.created_at)).where(
-        Job.user_id == user_id, Job.kind == kind,
-        Job.created_at >= utc_now() - timedelta(hours=1)))).one()
+    conditions = [Job.user_id == user_id, Job.kind == kind,
+                  Job.created_at >= utc_now() - timedelta(hours=1)]
+    if source is not None:
+        conditions.append(Job.source == source)
+    count, oldest = (await session.execute(
+        select(func.count(), func.min(Job.created_at)).where(*conditions))).one()
     if (count or 0) < limit:
         return
     retry_after = max(1, int((oldest + timedelta(hours=1) - utc_now()).total_seconds()))
@@ -89,13 +106,13 @@ async def wait(job_id: UUID, *, timeout: float = 70.0,
                         return job
                     raise DomainError(job.error_code or "job_failed", 409)
             if asyncio.get_running_loop().time() >= deadline:
-                if cancel_on_timeout:
+                if cancel_on_timeout and not _worker_shutdown:
                     await _cancel_in_new_session(job_id)
                 raise DomainError("job_timeout", 504)
             await asyncio.sleep(0.25)
     except asyncio.CancelledError:
         # The caller gave up (its own run ended); its child must not keep a slot.
-        if cancel_on_timeout:
+        if cancel_on_timeout and not _worker_shutdown:
             await _cancel_in_new_session(job_id)
         raise
 

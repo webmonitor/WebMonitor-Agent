@@ -142,6 +142,7 @@ class Job(UUIDPrimaryKey, Created, Base):
     __table_args__ = (
         CheckConstraint("kind IN ('agent', 'analyze', 'preview', 'production')", name="kind"),
         CheckConstraint("status IN ('queued', 'running', 'succeeded', 'failed', 'cancelled', 'discarded')", name="status"),
+        CheckConstraint("source IN ('scheduled', 'manual')", name="source"),
         Index("uq_jobs_active_production", "monitor_id", unique=True,
               postgresql_where=text("kind = 'production' AND status IN ('queued', 'running')")),
         Index("uq_jobs_active_preview", "draft_id", "revision", unique=True,
@@ -156,6 +157,8 @@ class Job(UUIDPrimaryKey, Created, Base):
     )
     user_id: Mapped[UUID] = mapped_column(ForeignKey("users.id"))
     kind: Mapped[str] = mapped_column(String(16))
+    # Production runs record whether the scheduler or a user enqueued them.
+    source: Mapped[str | None] = mapped_column(String(16))
     status: Mapped[str] = mapped_column(String(16), default="queued", server_default="queued")
     conversation_id: Mapped[UUID | None] = mapped_column(
         ForeignKey("conversations.id", ondelete="CASCADE"))

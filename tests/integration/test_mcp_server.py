@@ -388,7 +388,8 @@ async def test_mcp_mode2_end_to_end_discovery_draft_preview_approve_and_ops(
         queued_run = _tool_json(
             await mcp_session.call_tool("run_monitor_now", {"monitor_id": monitor_id, "wait": False})
         )
-        assert queued_run["kind"] == "production" and queued_run["status"] == "queued"
+        assert queued_run["job_id"] and queued_run["status"] == "queued"
+        assert "kind" not in queued_run and "result" not in queued_run
 
         paused = _tool_json(await mcp_session.call_tool("pause_monitor", {"monitor_id": monitor_id}))
         assert paused["status"] == "paused"
@@ -422,7 +423,7 @@ async def test_mcp_mode2_end_to_end_discovery_draft_preview_approve_and_ops(
         acked = _tool_json(
             await mcp_session.call_tool("acknowledge_event", {"event_id": str(event_row.id)})
         )
-        assert acked["acknowledged_at"] is not None
+        assert acked == {"event_id": str(event_row.id), "acknowledged": True}
 
 
 @pytest.mark.asyncio

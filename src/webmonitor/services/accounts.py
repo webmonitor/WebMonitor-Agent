@@ -12,7 +12,7 @@ from uuid import UUID
 from argon2 import PasswordHasher
 from argon2.exceptions import InvalidHashError, VerificationError
 from email_validator import EmailNotValidError, validate_email
-from sqlalchemy import delete, func, select, update
+from sqlalchemy import delete, func, select, text, update
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -173,6 +173,12 @@ async def create_invitation(session: AsyncSession, *, email: str, ttl_hours: int
         raise DomainError("email_not_allowed", 403)
     if not 1 <= ttl_hours <= 168:
         raise DomainError("invalid_invitation_ttl", 422)
+    # Serialize replacement with every other invitation for this normalized address.
+    # The transaction-level lock is released only after the caller commits the insert.
+    digest = hashlib.sha256(f"invitation:{email}".encode()).digest()
+    lock_key = int.from_bytes(digest[:8], byteorder="big", signed=True)
+    await session.execute(text("SELECT pg_advisory_xact_lock(:lock_key)"),
+                          {"lock_key": lock_key})
     # A reissued invitation replaces the previous link for the same address.
     await session.execute(update(Invitation).where(Invitation.email == email,
         Invitation.consumed_at.is_(None)).values(consumed_at=utc_now()))
@@ -180,8 +186,14 @@ async def create_invitation(session: AsyncSession, *, email: str, ttl_hours: int
     invitation = Invitation(email=email, token_hash=token_hash(token),
         created_by_user_id=created_by_user_id,
         expires_at=utc_now() + timedelta(hours=ttl_hours))
-    session.add(invitation)
-    await session.flush()
+    try:
+        async with session.begin_nested():
+            session.add(invitation)
+            await session.flush()
+    except IntegrityError as exc:
+        if getattr(exc.orig, "sqlstate", None) == "23505":
+            raise DomainError("invitation_conflict", 409) from None
+        raise
     url = settings.app_origin + "/register?" + urlencode(
         {"invitation_token": token, "email": email})
     return invitation, url

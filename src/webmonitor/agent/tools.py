@@ -11,7 +11,7 @@ from pydantic import ValidationError
 from sqlalchemy import select
 
 from webmonitor.agent.runtime import RuntimeContext, current_draft
-from webmonitor.collection.probe import probe, replay
+from webmonitor.config import get_settings
 from webmonitor.db import get_session_factory
 from webmonitor.errors import DomainError
 from webmonitor.models import Job, utc_now
@@ -175,6 +175,28 @@ async def _observed(ctx, operation):
     return result
 
 
+async def _enqueue_analysis(session, parent: Job, *, url: str, spec: dict) -> Job:
+    """Charge and persist every real discovery request in one transaction.
+
+    The caller holds the conversation and Agent job locks. The analyze advisory
+    lock and child row then share their commit, exactly as MCP discovery does.
+    """
+    await jobs.enforce_hourly_quota(
+        session,
+        user_id=parent.user_id,
+        kind="analyze",
+        limit=get_settings().analyze_runs_per_hour,
+    )
+    return await jobs.enqueue(
+        session,
+        user_id=parent.user_id,
+        kind="analyze",
+        url=url,
+        spec=spec,
+        conversation_id=parent.conversation_id,
+    )
+
+
 @function_tool(failure_error_function=safe_tool_error)
 async def analyze_target(ctx: ToolContext[RuntimeContext], url: str,
                          collection_mode: str = "http") -> dict:
@@ -188,6 +210,7 @@ async def analyze_target(ctx: ToolContext[RuntimeContext], url: str,
                 Job.kind == "analyze", Job.url == url))).all()
             if collection_mode == "browser":
                 if not any(item.spec and item.spec.get("collection_mode") == "http"
+                           and item.spec.get("op") in (None, "probe")
                            and item.status == "succeeded" for item in prior):
                     raise DomainError("http_analysis_required", 409)
             else:
@@ -197,9 +220,9 @@ async def analyze_target(ctx: ToolContext[RuntimeContext], url: str,
             # Only a real collection needs the budget, and it must be refused
             # before enqueuing: a job nobody waits for would still be collected.
             timeout = _wait_timeout(ctx.context.deadline)
-            created = await jobs.enqueue(session, user_id=job.user_id, kind="analyze", url=url,
-                spec={"collection_mode": collection_mode},
-                conversation_id=job.conversation_id)
+            created = await _enqueue_analysis(
+                session, job, url=url, spec={"collection_mode": collection_mode}
+            )
             await session.commit()
         finished = await jobs.wait(created.id, timeout=timeout, cancel_on_timeout=True)
         return _analysis(finished)
@@ -211,7 +234,7 @@ def _reusable_analysis(rows, now):
     cutoff = now - timedelta(seconds=ANALYSIS_REUSE_SECONDS)
     return next((item for item in rows if item.status == "succeeded"
                  and item.spec and item.spec.get("collection_mode") == "http"
-                 and item.created_at >= cutoff), None)
+                 and item.spec.get("op") is None and item.created_at >= cutoff), None)
 
 
 def _analysis(job: Job) -> dict:
@@ -226,9 +249,16 @@ def _analysis(job: Job) -> dict:
 async def probe_target(ctx: ToolContext[RuntimeContext], url: str) -> dict:
     """Fetch a public URL once and report content type, text sample, embedded payload markers, comments and scripts. Use before choosing HTML, DOM or JSON."""
     async def operation():
+        timeout = _wait_timeout(ctx.context.deadline)
         async with get_session_factory()() as session:
-            await _check(session, ctx)
-        return await probe(url)
+            job = await _check(session, ctx, lock=True)
+            created = await _enqueue_analysis(
+                session, job, url=url,
+                spec={"collection_mode": "http", "op": "probe"},
+            )
+            await session.commit()
+        finished = await jobs.wait(created.id, timeout=timeout, cancel_on_timeout=True)
+        return (finished.result or {}).get("probe") or {}
     return await _observed(ctx, operation)
 
 
@@ -240,9 +270,10 @@ async def capture_network(ctx: ToolContext[RuntimeContext], url: str) -> dict:
         async with get_session_factory()() as session:
             job = await _check(session, ctx, lock=True)
             # A capture is never reused: the page and its API responses can change.
-            created = await jobs.enqueue(session, user_id=job.user_id, kind="analyze", url=url,
+            created = await _enqueue_analysis(
+                session, job, url=url,
                 spec={"collection_mode": "browser", "op": "network"},
-                conversation_id=job.conversation_id)
+            )
             await session.commit()
         finished = await jobs.wait(created.id, timeout=timeout, cancel_on_timeout=True)
         if finished.status != "succeeded":
@@ -255,9 +286,21 @@ async def capture_network(ctx: ToolContext[RuntimeContext], url: str) -> dict:
 async def replay_request(ctx: ToolContext[RuntimeContext], request: dict) -> dict:
     """Send one concrete HTTP request over egress and summarize the JSON response, list paths and pagination hints."""
     async def operation():
+        parsed = ApiRequest.model_validate(request)
+        timeout = _wait_timeout(ctx.context.deadline)
         async with get_session_factory()() as session:
-            await _check(session, ctx)
-        return await replay(ApiRequest.model_validate(request))
+            job = await _check(session, ctx, lock=True)
+            created = await _enqueue_analysis(
+                session, job, url=parsed.url,
+                spec={
+                    "collection_mode": "http",
+                    "op": "replay",
+                    "request": parsed.model_dump(mode="json"),
+                },
+            )
+            await session.commit()
+        finished = await jobs.wait(created.id, timeout=timeout, cancel_on_timeout=True)
+        return (finished.result or {}).get("replay") or {}
     return await _observed(ctx, operation)
 
 

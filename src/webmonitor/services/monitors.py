@@ -124,6 +124,20 @@ async def import_spec(session: AsyncSession, user: CurrentUser,
         spec_revision=draft.spec_revision, settings_revision=draft.settings_revision)
 
 
+async def _active_monitor_for_update(session: AsyncSession, user: CurrentUser,
+                                     monitor_id: UUID) -> Monitor:
+    """Lock owner before monitor, matching account availability changes."""
+    owner_id = (await read_monitor_row(session, user, monitor_id)).user_id
+    owner = await session.scalar(select(User).where(User.id == owner_id).with_for_update()
+        .execution_options(populate_existing=True))
+    if owner is None:
+        raise DomainError("not_found", 404)
+    if not owner.active:
+        raise DomainError("account_inactive", 409)
+    # Re-read under the lock: ownership, archive state and status may have changed.
+    return await read_monitor_row(session, user, monitor_id, lock=True)
+
+
 async def pause_monitor(session: AsyncSession, user: CurrentUser, monitor_id: UUID) -> Monitor:
     monitor = await read_monitor_row(session, user, monitor_id, lock=True)
     if monitor.status != "paused":
@@ -134,12 +148,11 @@ async def pause_monitor(session: AsyncSession, user: CurrentUser, monitor_id: UU
 
 
 async def resume_monitor(session: AsyncSession, user: CurrentUser, monitor_id: UUID) -> Monitor:
-    monitor = await read_monitor_row(session, user, monitor_id, lock=True)
+    monitor = await _active_monitor_for_update(session, user, monitor_id)
     if monitor.archived_at is not None:
         raise DomainError("monitor_archived", 409)
     if monitor.status == "active":
         return monitor
-    await session.execute(select(User.id).where(User.id == monitor.user_id).with_for_update())
     active = await session.scalar(select(func.count()).select_from(Monitor).where(
         Monitor.user_id == monitor.user_id, Monitor.status == "active",
         Monitor.archived_at.is_(None)))
@@ -168,7 +181,7 @@ async def bulk_update(session: AsyncSession, user: CurrentUser,
 
 
 async def enqueue_manual(session: AsyncSession, user: CurrentUser, monitor_id: UUID) -> Job:
-    monitor = await read_monitor_row(session, user, monitor_id, lock=True)
+    monitor = await _active_monitor_for_update(session, user, monitor_id)
     if monitor.status != "active":
         raise DomainError("monitor_not_active", 409)
     existing = await session.scalar(select(Job).where(Job.monitor_id == monitor.id,
@@ -176,10 +189,10 @@ async def enqueue_manual(session: AsyncSession, user: CurrentUser, monitor_id: U
     if existing is not None:
         return existing
     await jobs.enforce_hourly_quota(session, user_id=monitor.user_id, kind="production",
-                                    limit=get_settings().manual_runs_per_hour)
+                                    source="manual", limit=get_settings().manual_runs_per_hour)
     return await jobs.enqueue(session, user_id=monitor.user_id, kind="production",
         monitor_id=monitor.id, url=monitor.url, spec=monitor.spec,
-        revision=monitor.spec_version)
+        revision=monitor.spec_version, source="manual")
 
 
 async def list_monitor_jobs(session: AsyncSession, user: CurrentUser, monitor_id: UUID,

@@ -4,6 +4,7 @@ The collection contract (`MonitorSpec`) and the user's delivery settings
 (`DeliverySettings`) carry their own revision, hash and preview. Editing one never
 invalidates the other's preview, and the agent can only write the collection contract.
 """
+import asyncio
 from datetime import timedelta
 from typing import Any
 from uuid import UUID, uuid4
@@ -307,8 +308,8 @@ async def start_preview(session: AsyncSession, user: CurrentUser, draft_id: UUID
         spec=spec.model_dump(mode="json"), conversation_id=draft.conversation_id)
 
 
-def _extraction_preview(draft: Draft, spec: MonitorSpec, result: dict,
-                        now, ttl_minutes: int) -> dict:
+async def _extraction_preview(draft: Draft, spec: MonitorSpec, result: dict,
+                              now, ttl_minutes: int) -> dict:
     fields = result.get("fields") or {}
     preview = {
         "preview_id": str(uuid4()),
@@ -318,7 +319,7 @@ def _extraction_preview(draft: Draft, spec: MonitorSpec, result: dict,
         "coverage": result.get("coverage") or {},
         "final_url": result.get("final_url"),
         "evidence_refs": result.get("evidence_refs") or [],
-        "rule_simulation": evaluate_rules(spec, None, fields, {}),
+        "rule_simulation": await asyncio.to_thread(evaluate_rules, spec, None, fields, {}),
         "source": (result.get("analysis") or {}).get("source"),
         "warnings": list(result.get("warnings") or []),
         "created_at": now.isoformat(),
@@ -336,7 +337,8 @@ async def build_preview(session: AsyncSession, draft: Draft, job: Job) -> dict:
     now = utc_now()
     ttl = get_settings().preview_ttl_minutes
     stored = ExtractionPreview.model_validate(
-        _extraction_preview(draft, spec, job.result or {}, now, ttl)).model_dump(mode="json")
+        await _extraction_preview(draft, spec, job.result or {}, now, ttl)
+    ).model_dump(mode="json")
     _clear_delivery_preview(draft)
     draft.extraction_preview = stored
     try:
@@ -492,8 +494,9 @@ def validate_extraction_preview(draft: Draft) -> dict:
     return preview
 
 
-async def validate_delivery_preview(session: AsyncSession, draft: Draft) -> dict:
-    """The rendered preview must still match the current channel and settings."""
+async def _validated_delivery(session: AsyncSession, draft: Draft
+                              ) -> tuple[dict, UUID | None, dict | None]:
+    """Validate a preview and return a snapshot from the same template read."""
     if draft.delivery_preview is None:
         raise DomainError("preview_missing", 409)
     preview = dict(draft.delivery_preview)
@@ -512,16 +515,27 @@ async def validate_delivery_preview(session: AsyncSession, draft: Draft) -> dict
         if preview.get("webhook_url") != url:
             raise DomainError("preview_stale", 409, "The webhook URL changed; preview again")
         if settings.channel == "webhook":
-            return preview
-    template_hash = content_hash(None)
+            return preview, None, None
+    template_id: UUID | None = None
+    config: EmailTemplateConfig | None = None
+    template_name: str | None = None
     if settings.email_template_id is not None:
+        # Hold this one row through publication. An edit either wins first and
+        # makes the hash stale, or happens after the approved snapshot is frozen.
         try:
-            template = await templates.get_template(session, settings.email_template_id)
+            template = await templates.get_template(
+                session, settings.email_template_id, lock=True)
         except DomainError:
             raise DomainError("template_unavailable", 409) from None
-        template_hash = content_hash(templates.config_of(template).model_dump(mode="json"))
-    if preview.get("template_hash") != template_hash:
+        template_id, template_name = template.id, template.name
+        config = templates.config_of(template)
+    template_hash = content_hash(config.model_dump(mode="json") if config else None)
+    if (preview.get("template_hash") != template_hash
+            or preview.get("template_id") != (str(template_id) if template_id else None)
+            or preview.get("template_name") != template_name):
         raise DomainError("preview_stale", 409, "The selected template changed; preview again")
+    if config is not None:
+        _validate_template(config, _spec(draft))
     if not settings.notification_group_ids:
         raise DomainError("settings_incomplete", 409,
                           details={"missing": ["notification_group_ids"]})
@@ -530,6 +544,15 @@ async def validate_delivery_preview(session: AsyncSession, draft: Draft) -> dict
     if (notifications.recipients_emails(recipients) != preview.get("recipients")
             or recipients != preview.get("recipient_sources")):
         raise DomainError("preview_stale", 409, "Notification recipients changed; preview again")
+    snapshot = None if config is None or template_id is None else {
+        "id": str(template_id), "name": template_name,
+        "config": config.model_dump(mode="json")}
+    return preview, template_id, snapshot
+
+
+async def validate_delivery_preview(session: AsyncSession, draft: Draft) -> dict:
+    """The rendered preview must still match the current channel and settings."""
+    preview, _, _ = await _validated_delivery(session, draft)
     return preview
 
 
@@ -548,14 +571,25 @@ async def publish_draft(session: AsyncSession, user: CurrentUser, *, conversatio
     conversation = await session.get(Conversation, conversation_id,
                                      with_for_update=True, populate_existing=True)
     require_owner(user, conversation)
+    # Discover the owner without a lock, then follow User -> Monitor -> Job.
+    # Account deactivation takes the same order while pausing and cancelling work.
     row = await require_draft(session, user, draft_id)
+    owner_id, monitor_id = row.user_id, row.monitor_id
+    owner = await session.scalar(select(User).where(User.id == owner_id).with_for_update()
+        .execution_options(populate_existing=True))
+    if owner is None:
+        raise DomainError("not_found", 404)
+    if monitor_id is None and not owner.active:
+        raise DomainError("account_inactive", 409)
     monitor = None
-    if row.monitor_id is not None:
-        monitor = require_owner(user, await session.get(Monitor, row.monitor_id,
+    if monitor_id is not None:
+        monitor = require_owner(user, await session.get(Monitor, monitor_id,
             with_for_update=True, populate_existing=True))
     draft = await require_draft(session, user, draft_id, lock=True)
     if draft.conversation_id != conversation_id:
         raise DomainError("not_found", 404)
+    if draft.user_id != owner_id or draft.monitor_id != monitor_id:
+        raise DomainError("stale_revision", 409)
     if draft.spec_revision != spec_revision or draft.settings_revision != settings_revision:
         raise DomainError("stale_revision", 409)
     if draft.status == "published" and monitor is not None:
@@ -584,12 +618,13 @@ async def publish_draft(session: AsyncSession, user: CurrentUser, *, conversatio
     if settings.channel in ("webhook", "both"):
         validate_webhook_url(settings.webhook_url)
     validate_extraction_preview(draft)
-    delivery = await validate_delivery_preview(session, draft)
+    delivery, approved_template_id, approved_snapshot = await _validated_delivery(session, draft)
     if settings.channel == "webhook":
         template_id, snapshot = ((monitor.email_template_id, monitor.email_template)
                                  if monitor is not None else (None, None))
     else:
-        template_id, snapshot = await _template_snapshot(session, settings, spec)
+        # Validation and freezing deliberately share one config and its hash.
+        template_id, snapshot = approved_template_id, approved_snapshot
     if monitor is not None and _contract(monitor.spec or {}) == _contract(
             spec.model_dump(mode="json")):
         _apply_settings(monitor, spec, settings, schedule, template_id, snapshot,
@@ -678,8 +713,8 @@ async def _template_snapshot(session: AsyncSession, settings: DeliverySettings,
 
 
 async def _enforce_quota(session: AsyncSession, user_id: UUID) -> None:
+    """Count active monitors while the caller holds the owner's row lock."""
     settings = get_settings()
-    await session.execute(select(User.id).where(User.id == user_id).with_for_update())
     active = await session.scalar(select(func.count()).select_from(Monitor).where(
         Monitor.user_id == user_id, Monitor.status == "active",
         Monitor.archived_at.is_(None)))

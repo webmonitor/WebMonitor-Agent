@@ -2,6 +2,7 @@
 
 Network and S3 I/O finish before these helpers run; every helper only flushes.
 """
+import asyncio
 import hashlib
 import json
 from datetime import timedelta
@@ -47,7 +48,7 @@ async def schedule_due(session: AsyncSession, *, now=None, limit: int = 200) -> 
         if busy is None:
             await jobs.enqueue(session, user_id=monitor.user_id, kind="production",
                 monitor_id=monitor.id, url=monitor.url, spec=monitor.spec,
-                revision=monitor.spec_version)
+                revision=monitor.spec_version, source="scheduled")
             created += 1
         # Late ticks merge; an overlapping tick is deliberately skipped.
         monitor.next_run_at = now + timedelta(
@@ -177,7 +178,8 @@ async def commit_success(session: AsyncSession, job: Job, result: dict) -> bool:
     previous = baseline.extracted_data if baseline else None
     fields, coverage = result["fields"], result["coverage"]
     validate_collection(spec, fields, previous=previous, coverage=coverage)
-    diff = evaluate_rules(spec, previous, fields, monitor.rule_state or {})
+    diff = await asyncio.to_thread(
+        evaluate_rules, spec, previous, fields, monitor.rule_state or {})
     first_success = monitor.baseline_status == "pending_first_success"
     snapshot = Snapshot(monitor_id=monitor.id, job_id=job.id, spec_version=job.revision,
         final_url=result["final_url"], extracted_data=fields, coverage=coverage,

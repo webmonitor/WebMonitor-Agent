@@ -7,6 +7,7 @@ from mcp.types import CallToolResult, ToolAnnotations
 from webmonitor.config import get_settings
 from webmonitor.db import get_session_factory
 from webmonitor.errors import DomainError
+from webmonitor.mcp.auth import require_principal
 from webmonitor.mcp.errors import bound_untrusted_json, coerce_spec_input, parse_uuid, run_tool
 from webmonitor.mcp.tools_discover import _clamp_timeout, _wait_with_progress
 from webmonitor.models import Conversation
@@ -28,6 +29,9 @@ def register_draft_tools(mcp: MCPServer) -> None:
         """Create an editable conversation and draft seeded from an existing monitor."""
 
         async def op(principal):
+            # Derivation copies the existing contract and delivery settings, so
+            # drafts:write alone must not turn this mutation into a read oracle.
+            require_principal("read")
             mid = parse_uuid(monitor_id, field="monitor_id")
             async with get_session_factory()() as session:
                 conversation, draft = await drafts.draft_from_monitor(
