@@ -9,6 +9,7 @@ import {
   type Locale,
   type MessageKey,
 } from "@/lib/i18n/messages";
+import { titleKey } from "@/lib/i18n/title";
 
 type I18nValue = {
   locale: Locale;
@@ -28,19 +29,6 @@ function persist(locale: Locale) {
   }
   document.cookie = `${LOCALE_COOKIE}=${locale}; path=/; max-age=31536000; samesite=lax`;
   document.documentElement.lang = locale;
-}
-
-function titleKey(pathname: string): MessageKey | null {
-  if (pathname === "/") return "common.siteTitle";
-  if (pathname.startsWith("/login")) return "common.title.login";
-  if (pathname.startsWith("/register")) return "common.title.register";
-  if (pathname.startsWith("/app/events")) return "common.title.events";
-  if (pathname.startsWith("/app/notifications")) return "common.title.notifications";
-  if (pathname.startsWith("/app/tokens")) return "common.title.tokens";
-  if (pathname === "/app/monitors") return "common.title.monitors";
-  if (pathname.startsWith("/app/monitors/")) return "common.title.monitor";
-  if (pathname.startsWith("/app")) return "common.title.workspace";
-  return null;
 }
 
 export function I18nProvider({

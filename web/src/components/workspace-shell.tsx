@@ -23,6 +23,7 @@ import { useAuth } from "@/lib/providers";
 import { useI18n } from "@/lib/i18n";
 import { useFormat } from "@/lib/format";
 import { ListPagination } from "@/components/list-pagination";
+import { archivedConversationRedirect } from "@/features/chat/chat-state";
 
 const CONVERSATION_PREVIEW = 8;
 
@@ -102,7 +103,12 @@ function ConversationList({ onNavigate }: { onNavigate: () => void }) {
                     className="absolute top-1/2 right-1 grid size-6 -translate-y-1/2 place-items-center rounded-md text-muted-soft transition-[color,opacity] duration-150 hover:text-ink disabled:opacity-45 sm:opacity-0 sm:group-hover:opacity-100 sm:group-focus-within:opacity-100"
                     onClick={() => archive.mutate(conversation.id, {
                       onSuccess: () => {
-                        if (isCurrent) router.replace("/app");
+                        const destination = archivedConversationRedirect(
+                          window.location.pathname,
+                          window.location.search,
+                          conversation.id,
+                        );
+                        if (destination) router.replace(destination);
                         onNavigate();
                       },
                     })}
@@ -331,6 +337,12 @@ export function WorkspaceShell({ children }: { children: ReactNode }) {
 
   return (
     <div className="flex h-dvh overflow-hidden bg-background">
+      <a
+        href="#workspace-main"
+        className="fixed top-3 left-3 z-[60] -translate-y-24 rounded-md bg-primary px-3 py-2 text-sm text-primary-foreground shadow-soft transition-transform focus:translate-y-0"
+      >
+        {t("common.skipToContent")}
+      </a>
       {open && (
         <button
           className="fixed inset-0 z-30 bg-[rgba(20,20,19,0.32)] md:hidden"
@@ -475,7 +487,7 @@ export function WorkspaceShell({ children }: { children: ReactNode }) {
           </span>
           <LanguageSwitcher className="ml-auto" />
         </header>
-        <main className="min-h-0 flex-1 overflow-hidden">{children}</main>
+        <main id="workspace-main" tabIndex={-1} className="min-h-0 flex-1 overflow-hidden">{children}</main>
       </div>
     </div>
   );

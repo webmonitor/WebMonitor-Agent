@@ -2,6 +2,9 @@
 import { useInfiniteQuery, useMutation, useQuery, useQueryClient, type QueryClient } from "@tanstack/react-query";
 import { useEffect, useMemo, useState } from "react";
 import { api } from "@/lib/api/client";
+import { subscribeConversationStream } from "@/lib/api/conversation-stream";
+import { finishedRunQueryKeys, isTerminalJobStatus } from "@/lib/api/job-lifecycle";
+import { mergePages, nextPageOffset, pageRefetchInterval, type Page } from "@/lib/api/pagination";
 import type { components } from "@/lib/api/schema";
 
 export type AuthProfile = components["schemas"]["Member"];
@@ -44,61 +47,12 @@ export type MonitorFilters = {
   tags?: string[];
 };
 
-export type Page<T> = { items: T[]; total: number };
-
 const ACTIVE = ["queued", "running"];
-
-type StreamEntry = {
-  source: EventSource;
-  refs: number;
-  listeners: Set<(connected: boolean) => void>;
-};
-const conversationStreams = new Map<string, StreamEntry>();
-
-/** All consumers of one conversation share one network stream and query cache. */
-function subscribeConversationStream(id: string, cache: QueryClient,
-                                     listener: (connected: boolean) => void) {
-  let entry = conversationStreams.get(id);
-  if (!entry) {
-    const source = new EventSource(`/api/v1/conversations/${id}/stream`);
-    const listeners = new Set<(connected: boolean) => void>();
-    entry = { source, refs: 0, listeners };
-    conversationStreams.set(id, entry);
-    const notify = (connected: boolean) => listeners.forEach((fn) => fn(connected));
-    source.addEventListener("conversation", (event) => {
-      try {
-        const snapshot = JSON.parse((event as MessageEvent).data) as ConversationSnapshot;
-        void cache.cancelQueries({ queryKey: ["conversation", id] });
-        cache.setQueryData(["conversation", id], snapshot);
-        notify(true);
-      } catch {
-        notify(false);
-        source.close();
-        conversationStreams.delete(id);
-        void cache.invalidateQueries({ queryKey: ["conversation", id] });
-      }
-    });
-    source.addEventListener("error", () => notify(false));
-  }
-  entry.refs += 1;
-  entry.listeners.add(listener);
-  return () => {
-    entry.listeners.delete(listener);
-    entry.refs -= 1;
-    if (entry.refs === 0) {
-      entry.source.close();
-      if (conversationStreams.get(id) === entry) conversationStreams.delete(id);
-    }
-  };
-}
 
 function newClientMessageId(): string {
   const random = globalThis.crypto?.randomUUID?.();
   return random ?? `${Date.now()}-${Math.random().toString(16).slice(2)}`;
 }
-
-const OVERLAP = 20;
-const MAX_PAGES = 20;
 
 function usePagedQuery<T extends { id: string }>(key: readonly unknown[], path: string,
                                                 interval: number, limit = 50) {
@@ -107,27 +61,11 @@ function usePagedQuery<T extends { id: string }>(key: readonly unknown[], path: 
     initialPageParam: 0,
     queryFn: ({ pageParam, signal }) => api<Page<T>>(
       `${path}${path.includes("?") ? "&" : "?"}limit=${limit}&offset=${pageParam}`, { signal }),
-    // Rows shift between requests, so each page re-reads a few rows behind the
-    // last offset; ids decide both "is there more" and the merged list.
-    getNextPageParam: (last, pages, lastParam) => {
-      if (last.items.length === 0 || pages.length >= MAX_PAGES) return undefined;
-      const loaded = pages.reduce((count, page) => count + page.items.length, 0);
-      const unique = new Set(pages.flatMap((page) => page.items.map((row) => row.id))).size;
-      if (unique >= last.total) return undefined;
-      // Never overlap a whole page away: small limits must still move forward.
-      const overlap = Math.min(OVERLAP, Math.floor(limit / 2));
-      const next = Math.max(0, loaded - overlap);
-      return next > lastParam ? next : undefined;
-    },
-    maxPages: MAX_PAGES,
-    // Polling every page keeps the overlap fresh but multiplies background work;
-    // once a list spans several pages, refresh only on user actions.
-    refetchInterval: (query) => (query.state.data?.pages.length ?? 0) > 1 ? false : interval,
+    getNextPageParam: (last, pages, lastParam) => nextPageOffset(pages, lastParam, limit),
+    // Large lists refresh less often, never silently truncate their cached pages.
+    refetchInterval: (query) => pageRefetchInterval(query.state.data?.pages.length ?? 0, interval),
   });
-  const data = useMemo(() => query.data ? {
-    items: [...new Map(query.data.pages.flatMap((page) => page.items).map((row) => [row.id, row])).values()],
-    total: query.data.pages[0]?.total ?? 0,
-  } : undefined, [query.data]);
+  const data = useMemo(() => query.data ? mergePages(query.data.pages) : undefined, [query.data]);
   return { ...query, data };
 }
 
@@ -440,16 +378,36 @@ export function useBulkMonitorAction() {
   });
 }
 
+function invalidateFinishedRun(cache: QueryClient, monitorId: string) {
+  for (const queryKey of finishedRunQueryKeys(monitorId)) {
+    void cache.invalidateQueries({ queryKey });
+  }
+}
+
 export function useRunNow() {
   const cache = useQueryClient();
-  return useMutation({
+  const [tracked, setTracked] = useState<{ job: JobView; monitorId: string } | null>(null);
+  const detail = useJobDetail(tracked?.job.id ?? null);
+  const mutation = useMutation({
     mutationFn: (monitorId: string) =>
       api<JobView>(`/monitors/${monitorId}/run`, { method: "POST" }),
+    onSuccess: (job, monitorId) => setTracked({ job, monitorId }),
     onSettled: (_data, _error, monitorId) => {
       void cache.invalidateQueries({ queryKey: ["monitor-jobs", monitorId] });
       void cache.invalidateQueries({ queryKey: ["monitor", monitorId] });
     },
   });
+
+  const currentStatus = tracked
+    ? detail.data?.id === tracked.job.id ? detail.data.status : tracked.job.status
+    : null;
+  useEffect(() => {
+    if (!tracked || !currentStatus || !isTerminalJobStatus(currentStatus)) return;
+    invalidateFinishedRun(cache, tracked.monitorId);
+    setTracked(null);
+  }, [cache, currentStatus, tracked]);
+
+  return { ...mutation, isPending: mutation.isPending || tracked !== null };
 }
 
 export function useRenameMonitor() {

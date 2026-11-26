@@ -5,6 +5,7 @@ import { PageBody, PageHeader } from "@/components/page-header";
 import { EvidenceLinks } from "@/features/monitors/evidence-links";
 import { FieldValues, fieldTypes } from "@/features/monitors/field-values";
 import { SnapshotHistory } from "@/features/monitors/snapshot-history";
+import { snapshotMatchesMonitor } from "@/features/monitors/snapshot-page-utils";
 import { useMonitor, useSnapshot } from "@/lib/api/hooks";
 import { parseSpec } from "@/lib/api/preview";
 import { useFormat } from "@/lib/format";
@@ -30,7 +31,8 @@ export function SnapshotPage({
       </div>
     );
   }
-  if (snapshot.error || !snapshot.data) {
+  const row = snapshot.data;
+  if (snapshot.error || !snapshotMatchesMonitor(row, monitorId)) {
     return (
       <div className="grid h-full place-items-center px-6 text-center">
         <div className="space-y-2">
@@ -44,7 +46,6 @@ export function SnapshotPage({
     );
   }
 
-  const row = snapshot.data;
   // Historical values are labelled by the exact definition collected with them.
   const spec = parseSpec(row.spec);
   const labels = fieldLabels(spec?.fields ?? []);

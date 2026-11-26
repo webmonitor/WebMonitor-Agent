@@ -6,7 +6,13 @@ import { Button } from "@/components/ui/button";
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
+import { ListPagination } from "@/components/list-pagination";
 import { Select } from "@/components/ui/select";
+import {
+  frozenTemplateName,
+  missingGroupIds,
+  withSelectedTemplate,
+} from "@/features/monitors/delivery-settings-utils";
 import { ApiError } from "@/lib/api/client";
 import {
   useEmailTemplates,
@@ -142,8 +148,24 @@ export function DeliverySettingsDialog({
   }
 
   const groupItems = groups.data?.items ?? [];
-  const missing = selectedGroups.filter((id) => !groupItems.some((group) => group.id === id));
+  const missing = missingGroupIds(
+    selectedGroups,
+    groupItems.map((group) => group.id),
+    groups.hasNextPage,
+  );
   const templateItems = templates.data?.items ?? [];
+  const selectedTemplateName = templateId === storedTemplate
+    ? frozenTemplateName(monitor.email_template)
+    : null;
+  const templateOptions = withSelectedTemplate(
+    [
+      { value: "", label: t("templates.systemDefault") },
+      ...templateItems.map((template) => ({ value: template.id, label: template.name })),
+    ],
+    templateId,
+    selectedTemplateName,
+    t("settings.template.selectedFallback", { id: templateId ?? "" }),
+  );
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
@@ -228,7 +250,7 @@ export function DeliverySettingsDialog({
             </div>
             {groups.isPending ? (
               <p className="meta">{t("common.loading")}</p>
-            ) : groupItems.length === 0 && missing.length === 0 ? (
+            ) : groupItems.length === 0 && selectedGroups.length === 0 ? (
               <p className="meta">{t("settings.groups.empty")}</p>
             ) : (
               <ul className="space-y-1.5">
@@ -273,6 +295,7 @@ export function DeliverySettingsDialog({
                 })}
               </ul>
             )}
+            <ListPagination query={groups} />
             {selectedGroups.length === 0 && (
               <p className="text-[13px] text-warning-ink">{t("settings.groups.required")}</p>
             )}
@@ -434,11 +457,9 @@ export function DeliverySettingsDialog({
               value={templateId ?? ""}
               placeholder={t("templates.systemDefault")}
               onChange={(value) => setTemplateId(value || null)}
-              options={[
-                { value: "", label: t("templates.systemDefault") },
-                ...templateItems.map((template) => ({ value: template.id, label: template.name })),
-              ]}
+              options={templateOptions}
             />
+            <ListPagination query={templates} />
             <p className="meta">{t("templates.systemDefault.body")}</p>
           </div>
           )}

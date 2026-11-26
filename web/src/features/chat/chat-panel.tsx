@@ -15,6 +15,15 @@ import {
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { ApiError } from "@/lib/api/client";
+import { useConversationMessages } from "@/lib/api/conversation-stream";
+import {
+  operationIsCurrent,
+  preservesDraftRoute,
+  runAnnouncement,
+  type ChatOperation,
+  type ObservedRun,
+  type RunAnnouncement,
+} from "@/features/chat/chat-state";
 import {
   useCancelRun,
   useConversation,
@@ -419,17 +428,30 @@ export function ChatPanel({
   const [error, setError] = useState<{ code: string | null } | null>(null);
   const [pinned, setPinned] = useState(true);
   const [composerFocused, setComposerFocused] = useState(false);
+  const [announcement, setAnnouncement] = useState<{ id: number; kind: RunAnnouncement } | null>(null);
   const scroller = useRef<HTMLDivElement>(null);
   const composer = useRef<HTMLTextAreaElement>(null);
+  const operationSequence = useRef(0);
+  const currentConversation = useRef(conversationId);
+  const previousConversation = useRef(conversationId);
+  const preserveDraftFor = useRef<string | null>(null);
+  const observedRun = useRef<ObservedRun | null>(null);
+  const announcementSequence = useRef(0);
+  currentConversation.current = conversationId;
 
   const snapshot = conversation.data;
+  const history = useConversationMessages(
+    conversationId,
+    snapshot?.messages,
+    snapshot?.has_more_messages,
+  );
   const agentJobs = snapshot?.jobs.filter((job) => job.kind === "agent");
   const running = agentJobs?.filter((job) => ACTIVE.includes(job.status)).at(-1);
   const lastJob = agentJobs?.at(-1);
   const failed = lastJob?.status === "failed" ? lastJob : undefined;
   const stopped = lastJob?.status === "cancelled" ? lastJob : undefined;
   const limit = snapshot?.limits.message_max_chars ?? 32000;
-  const messages = snapshot?.messages ?? [];
+  const messages = history.messages;
   const activeStep = running?.steps.at(-1);
   const jobsById = new Map(agentJobs?.map((job) => [job.id, job]));
   const turns = buildTurns(messages);
@@ -458,6 +480,25 @@ export function ChatPanel({
     turns.push({ id: `trail-${lastJob.id}`, role: "assistant", jobId: lastJob.id, parts: [] });
   }
 
+  function observeRun(jobId: string | null, status: string, owner: string | null) {
+    const current = { conversationId: owner, jobId, status };
+    const kind = runAnnouncement(observedRun.current, current);
+    observedRun.current = current;
+    if (kind) {
+      announcementSequence.current += 1;
+      setAnnouncement({ id: announcementSequence.current, kind });
+    }
+  }
+
+  function operationApplies(operation: ChatOperation, createdConversationId?: string) {
+    return operationIsCurrent(
+      operation,
+      operationSequence.current,
+      currentConversation.current,
+      createdConversationId,
+    );
+  }
+
   useEffect(() => {
     if (!pinned) return;
     const node = scroller.current;
@@ -465,11 +506,30 @@ export function ChatPanel({
   }, [pinned, messages.length, running?.partial_text, running?.steps.length]);
 
   useEffect(() => {
+    const previous = previousConversation.current;
+    previousConversation.current = conversationId;
+    if (previous === conversationId) return;
     setPinned(true);
-    // Switching conversations never carries the previous draft or failure over.
+    if (preservesDraftRoute(previous, conversationId, preserveDraftFor.current)) {
+      // The new id belongs to the draft just submitted; keep anything typed meanwhile.
+      preserveDraftFor.current = null;
+      return;
+    }
+    preserveDraftFor.current = null;
+    operationSequence.current += 1;
+    observedRun.current = null;
+    setAnnouncement(null);
     setDraft("");
     setError(null);
   }, [conversationId]);
+
+  const lastJobId = lastJob?.id;
+  const lastJobStatus = lastJob?.status;
+  useEffect(() => {
+    if (conversationId && lastJobId && lastJobStatus) {
+      observeRun(lastJobId, lastJobStatus, conversationId);
+    }
+  }, [conversationId, lastJobId, lastJobStatus]);
 
   useEffect(() => {
     const node = composer.current;
@@ -478,27 +538,58 @@ export function ChatPanel({
     node.style.height = `${Math.min(node.scrollHeight, 200)}px`;
   }, [draft]);
 
+  async function loadEarlier() {
+    const node = scroller.current;
+    const height = node?.scrollHeight ?? 0;
+    const top = node?.scrollTop ?? 0;
+    try {
+      await history.fetchOlder();
+    } catch {
+      // The history hook exposes the error beside the retry control.
+    } finally {
+      // Prepended history must not throw the reader to the newest message.
+      requestAnimationFrame(() => {
+        if (node) node.scrollTop = top + node.scrollHeight - height;
+      });
+    }
+  }
+
   async function submit() {
     const submittedDraft = draft;
     const content = submittedDraft.trim();
     if (!content || send.isPending || start.isPending || running) return;
     if (!conversationId && !drafting) return;
+    const operation: ChatOperation = {
+      conversationId,
+      sequence: ++operationSequence.current,
+    };
     setError(null);
     try {
       if (!conversationId) {
         // The conversation is created together with its first message, so an
         // abandoned draft never leaves an empty conversation behind.
-        const conversation = await start.mutateAsync(content);
-        setDraft((current) => clearSubmittedDraft(current, submittedDraft));
-        router.replace(`/app?conversation=${conversation.id}`);
+        const created = await start.mutateAsync(content);
+        if (!operationApplies(operation, created.id)) return;
+        preserveDraftFor.current = created.id;
+        setDraft((current) => operationApplies(operation, created.id)
+          ? clearSubmittedDraft(current, submittedDraft)
+          : current);
+        observeRun(null, "queued", created.id);
+        router.replace(`/app?conversation=${created.id}`);
         return;
       }
-      await send.mutateAsync(content);
-      setDraft((current) => clearSubmittedDraft(current, submittedDraft));
+      const job = await send.mutateAsync(content);
+      if (!operationApplies(operation)) return;
+      setDraft((current) => operationApplies(operation)
+        ? clearSubmittedDraft(current, submittedDraft)
+        : current);
+      observeRun(job.id, job.status, operation.conversationId);
       // Your own message always brings the conversation back to the latest turn.
       setPinned(true);
     } catch (failure) {
-      setError({ code: failure instanceof ApiError ? failure.code : null });
+      if (operationApplies(operation)) {
+        setError({ code: failure instanceof ApiError ? failure.code : null });
+      }
     }
   }
 
@@ -520,6 +611,11 @@ export function ChatPanel({
 
   return (
     <section className="flex h-full min-h-0 min-w-0 flex-col overflow-hidden bg-background">
+      <div className="sr-only" role="status" aria-live="polite" aria-atomic="true">
+        {announcement && (
+          <span key={announcement.id}>{t(`chat.status.${announcement.kind}`)}</span>
+        )}
+      </div>
       <header className="flex h-14 shrink-0 items-center gap-3 px-6">
         <div className="mx-auto flex w-full max-w-[46rem] items-center gap-2">
           <h2 className="truncate text-[15px] font-medium text-ink">
@@ -556,6 +652,26 @@ export function ChatPanel({
               <p className="t-body-sm text-error" role="alert">
                 {t("chat.loadError")}
               </p>
+            )}
+
+            {conversationId && (history.hasOlder || history.error) && (
+              <div className="mb-6 flex flex-col items-center gap-2">
+                {history.error && (
+                  <p className="text-[13px] text-error" role="alert">{t("chat.history.error")}</p>
+                )}
+                <Button
+                  variant="outline"
+                  size="sm"
+                  disabled={history.isLoading}
+                  onClick={() => void loadEarlier()}
+                >
+                  {history.isLoading
+                    ? t("common.loading")
+                    : history.error
+                      ? t("common.retry")
+                      : t("chat.history.loadEarlier")}
+                </Button>
+              </div>
             )}
 
             {empty && (
@@ -674,9 +790,24 @@ export function ChatPanel({
                 variant="outline"
                 aria-label={t("chat.composer.stop")}
                 className="size-9 shrink-0 rounded-md"
-                onClick={() => cancel.mutate(undefined, {
-                  onError: (failure) => setError({ code: failure instanceof ApiError ? failure.code : null }),
-                })}
+                onClick={() => {
+                  const operation: ChatOperation = {
+                    conversationId,
+                    sequence: ++operationSequence.current,
+                  };
+                  cancel.mutate(undefined, {
+                    onSuccess: (job) => {
+                      if (operationApplies(operation)) {
+                        observeRun(job.id, job.status, operation.conversationId);
+                      }
+                    },
+                    onError: (failure) => {
+                      if (operationApplies(operation)) {
+                        setError({ code: failure instanceof ApiError ? failure.code : null });
+                      }
+                    },
+                  });
+                }}
                 disabled={cancel.isPending}
               >
                 <Square className="size-3.5" />

@@ -307,8 +307,12 @@
 }
 
 @media (prefers-reduced-motion: reduce) {
-  * {
-    animation-duration: 0.001ms !important;
+  *,
+  *::before,
+  *::after {
+    /* Infinite pulse/spin must stop too; text and status labels remain visible. */
+    animation: none !important;
     transition-duration: 0.001ms !important;
+    scroll-behavior: auto !important;
   }
 }
