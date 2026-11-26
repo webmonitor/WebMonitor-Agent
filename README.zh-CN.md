@@ -292,7 +292,8 @@ WEBHOOK_SECRET=替换为与接收端共享的密钥
 
 ## 运行与扩展
 
-- 对话通过只读 SSE 推送完整快照和进程内文本增量，断线自动回到轮询；jobs 仍是恢复真相。durable 文本批量落库，不把每个 Token 都写成一次数据库更新。
+- 对话通过只读 SSE 推送最近 50 条消息的完整快照和轻量文本增量，更早消息通过游标分页加载；断线自动回到轮询，jobs 仍是恢复真相。流内每次数据库轮询都会重新验证会话，请求数据库连接不会随长连接占用。durable 文本批量落库，不把每个 Token 都写成一次数据库更新。
+- 单个监控规范最多 64 个字段、32 条规则、每个列表 32 个子字段和 20 个浏览器步骤；原始列表最多 10,000 行，规范化单字段/总结果分别限制为 1 MiB/2 MiB。规则求值有独立总预算，HTTP/JSON/Browser 的重计算不会阻塞事件循环。
 - HTTP 与单步无分页 JSON API 使用 ETag / If-Modified-Since。304 不创建重复快照，只完成检查并保留 baseline 和规则状态；多步或分页 API 仍抓取完整组合结果，新 `spec_version` 会强制全量采集。
 - JSON API 支持 `page`、`cursor`、`offset` 分页，分页参数可放在 URL query 或 POST JSON object body 中。游标必须前进，空页、短页、下一游标消失或达到 total 才会收敛。
 - Chromium 进程默认按 50 次采集或 300 秒轮换（`BROWSER_REUSE_REQUESTS` / `BROWSER_REUSE_SECONDS`，前者设为 1 可恢复冷启动），每次仍使用全新隔离 context。`TARGET_DOMAIN_CONCURRENCY` 限制同域并发，排期带小幅稳定抖动。
@@ -322,7 +323,7 @@ docker compose up -d --wait
 | `monitors:write` | 暂停、恢复和更新监控 |
 | `events:write` | 确认事件 |
 
-默认选中除 `drafts:approve` 外的 Scope；只给客户端实际需要的权限。PAT 通过 `Authorization: Bearer wm_pat_…` 发送，仅用于 `/mcp`，浏览器 Cookie 不能代替 PAT。
+默认选中除 `drafts:approve` 外的 Scope；只给客户端实际需要的权限。派生已有监控同时要求 `read` 和 `drafts:write`；监控、事件与投递的写工具只返回操作 ID 和结果状态，不会借响应向无 `read` 权限的令牌返回完整配置或采集内容。PAT 通过 `Authorization: Bearer wm_pat_…` 发送，仅用于 `/mcp`，浏览器 Cookie 不能代替 PAT。
 
 Cursor 使用原生 Streamable HTTP，将下面内容合并到 `~/.cursor/mcp.json` 或项目的 `.cursor/mcp.json`：
 

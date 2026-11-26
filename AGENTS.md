@@ -18,7 +18,7 @@ flowchart LR
 
 All asynchronous work is a `jobs` row: agent, analyze, preview or production. `services/jobs.py` is the only enqueue/claim/renew/finish/requeue/cancel protocol. Claims use `FOR UPDATE SKIP LOCKED`, leases and partial unique indexes to prevent duplicate active work. Never construct jobs elsewhere or add a second claiming path.
 
-Conversation messages queue agent work. Orchestration rebuilds bounded message history and exposes tools for target analysis, draft saving, preview and creation requests. The browser polls the conversation endpoint; there is no SSE, checkpoint or resume. Progress includes partial text, steps and attempts.
+Conversation messages queue agent work. Orchestration rebuilds bounded message history and exposes tools for target analysis, draft saving, preview and creation requests. Read-only SSE sends a bounded recent snapshot plus lightweight text deltas; older messages use cursor pagination and polling remains the reconnect fallback. Durable jobs are the recovery source. Every stream poll revalidates the browser session and request DB sessions close before streaming starts.
 
 Preview results are frozen into the draft, including fields, coverage, evidence, rule simulation, rendered email, recipients and expiry. Creation occurs only through the approve endpoint and `services/drafts.py:publish_draft`, which locks and revalidates the revision, hash and recipients. A tool request alone never creates the monitor.
 
@@ -44,7 +44,7 @@ Important modules: `cli.py`, `worker.py`, `models.py`, `db.py`, `config.py`; `ap
 
 ## Frontend
 
-Next.js App Router, React, strict TypeScript, Tailwind and TanStack Query. The workspace is conversation-first, with a chat panel and monitor/draft context. Polling is the source of conversation state. Parse untrusted draft preview JSON with the existing zod schema in `web/src/lib/api/preview.ts`.
+Next.js App Router, React, strict TypeScript, Tailwind and TanStack Query. The workspace is conversation-first, with a chat panel and monitor/draft context. SSE is the live source, with polling fallback and cursor-based older history. Parse untrusted draft preview JSON with the existing zod schema in `web/src/lib/api/preview.ts`; its collection limits must match the backend `MonitorSpec`.
 
 HTTP goes only through `web/src/lib/api/client.ts:api()`: relative paths, CSRF on mutations, same-origin credentials, no-store and structured `ApiError`. Preserve the 401 session-clear/login redirect. Do not add direct API fetches or hand-edit generated `schema.d.ts`. Component files use kebab-case and exports PascalCase.
 

@@ -262,7 +262,8 @@ Administrators can use **Test email** and **Test webhook** under **Notifications
 
 ## Operations and extensions
 
-- Conversations use read-only SSE with complete snapshots and process-local text deltas, with polling as the fallback. Durable jobs remain the recovery source, and text persistence is batched instead of written per token.
+- Conversations use read-only SSE with bounded snapshots of the latest 50 messages and lightweight text deltas. Older messages use cursor pagination, polling remains the reconnect fallback, and every database poll revalidates the session. Request database connections close before streaming starts. Durable jobs remain the recovery source, and text persistence is batched instead of written per token.
+- A monitor spec is capped at 64 fields, 32 rules, 32 item fields per list and 20 browser steps. Raw lists are capped at 10,000 rows and normalized per-field/total results at 1 MiB/2 MiB. Rule evaluation has its own total budget, and heavy HTTP/JSON/browser computation runs off the event loop.
 - HTML and single-step, unpaginated JSON APIs negotiate ETag / If-Modified-Since. A 304 completes the check without duplicating the baseline or changing rule state. Multi-step and paginated APIs still fetch the complete composite result, and a new `spec_version` forces a full collection.
 - JSON APIs support `page`, `cursor` and `offset` pagination in the URL query or a POST JSON object body. Cursors must advance; convergence comes only from an empty/short page, an absent next cursor or the declared total.
 - Chromium rotates every 50 collections or 300 seconds by default (`BROWSER_REUSE_REQUESTS` / `BROWSER_REUSE_SECONDS`; use 1 for cold starts), while every collection gets a fresh isolated context. `TARGET_DOMAIN_CONCURRENCY` bounds same-origin work and schedules use small deterministic jitter.
@@ -292,7 +293,7 @@ Open **API tokens & MCP** in the workspace. Enter a name, choose an expiry and s
 | `monitors:write` | Pause, resume and update monitors |
 | `events:write` | Acknowledge events |
 
-All scopes except `drafts:approve` are selected by default; grant only what the client needs. Send the PAT as `Authorization: Bearer wm_pat_…`. It authenticates `/mcp`, not browser API sessions, and cookies cannot substitute for it.
+All scopes except `drafts:approve` are selected by default; grant only what the client needs. Deriving an existing monitor requires both `read` and `drafts:write`. Monitor, event and delivery mutation tools return only operation IDs and result states, never full configuration or collected content when `read` is absent. Send the PAT as `Authorization: Bearer wm_pat_…`. It authenticates `/mcp`, not browser API sessions, and cookies cannot substitute for it.
 
 Cursor supports Streamable HTTP directly. Merge this into `~/.cursor/mcp.json` or the project's `.cursor/mcp.json`:
 

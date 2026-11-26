@@ -198,7 +198,7 @@ Use `PageBody` and `PageHeader` for monitors, events, snapshots, notifications, 
 - Keep the document `lang` synchronized with the active English or Chinese locale.
 - Use semantic headings, associated form labels, localized names for icon-only actions, and text in addition to status color.
 - Preserve `aria-current`, `aria-pressed`, alert/status roles, dialog semantics, keyboard select behavior, and mobile-navigation focus management.
-- Respect reduced motion and ensure all operations remain understandable without animation.
+- Respect reduced motion: remove infinite pulse/spinner animations and keep text status equivalents. Preserve the workspace skip link and polite run-start/completion/failure/cancellation announcements; do not stream tokens into live regions.
 - Check normal-text contrast at 4.5:1 and non-text control/focus contrast at 3:1 when introducing or changing colors.
 
 ### Known limitations to carry into review
@@ -208,8 +208,6 @@ These are current audit items, not accepted design goals:
 - `muted-soft` on `canvas` is approximately 3.38:1 and is used for small metadata and placeholders. Do not expand it to essential normal-size text; strengthen the treatment when auditing those uses.
 - Some low-alpha control focus rings need stronger contrast, particularly on primary-green buttons.
 - Small, icon, and compact row actions include targets below 44×44px. Review WCAG 2.2 target size and spacing before adding more compact actions.
-- Reduced-motion rules shorten durations but do not remove every infinite pulse or spinner animation.
-- The workspace lacks a skip-to-content link, and streamed chat updates do not yet have a consistent live-region strategy.
 - The monitor action menu and token client selector need a keyboard/state-semantics review before being used as patterns for new controls.
 
 New work must not copy these gaps silently. Prefer the established labelled, keyboard-operable patterns and verify the affected flow with keyboard and reduced-motion settings.
