@@ -1,5 +1,6 @@
 """The conversation SSE emits complete, replay-safe authenticated snapshots."""
 import json
+from datetime import timedelta
 
 import httpx
 import pytest
@@ -9,8 +10,9 @@ from tests.integration.test_api_routes import ensure_admin
 from webmonitor.agent import live_text
 from webmonitor.api.routes.streams import stream_conversation
 from webmonitor.config import get_settings
-from webmonitor.models import Conversation, Job
+from webmonitor.models import Conversation, Job, Session as AuthSession, utc_now
 from webmonitor.security.auth import CurrentUser
+from webmonitor.services import accounts
 
 
 @pytest_asyncio.fixture
@@ -43,10 +45,14 @@ async def test_conversation_stream_emits_complete_snapshot(client, session):
     job = Job(user_id=user.id, kind="agent", status="running", conversation_id=conversation.id,
               partial_text="stored")
     session.add(job)
+    token = "stream-test-token"
+    session.add(AuthSession(user_id=user.id, token_hash=accounts.token_hash(token),
+                            expires_at=utc_now() + timedelta(hours=1)))
     await session.commit()
     live_text.append(job.id, " live")
 
     class ConnectedRequest:
+        cookies = {"wm_session": token}
         headers = {}
 
         async def is_disconnected(self):
@@ -76,4 +82,5 @@ async def test_conversation_stream_emits_complete_snapshot(client, session):
     assert payload["conversation"]["title"] == "Live conversation"
     assert payload["messages"] == []
     assert len(payload["jobs"]) == 1
-    assert payload["jobs"][0]["partial_text"] == "stored live"
+    # Durable snapshots never inherit process-local text; deltas carry it separately.
+    assert payload["jobs"][0]["partial_text"] == "stored"

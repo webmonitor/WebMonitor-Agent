@@ -196,7 +196,13 @@ async def _finish(job_id: UUID, worker_id: str, *, error: str | None = None,
         except DomainError:
             return  # A superseding cancellation or lease owner owns the terminal state.
         if cancelled:
-            await jobs.finish(session, job, "cancelled", error_code="run_cancelled")
+            job.partial_text = ""
+            if job.cancel_requested_at is not None:
+                await jobs.finish(session, job, "cancelled", error_code="run_cancelled")
+            else:
+                # Task cancellation also covers process shutdown and local lease
+                # loss. Only an explicit database request is a user cancellation.
+                await jobs.requeue(session, job, error_code="worker_interrupted", delay=0)
         elif error:
             message = RUN_ERROR_MESSAGES.get(error, "The request could not be completed.")
             if reason:
@@ -433,6 +439,11 @@ async def execute_job(job_id: UUID, worker_id: str) -> None:
             })
     except asyncio.CancelledError:
         await _stop_stream(stream)
+        if flusher is not None:
+            flusher.cancel()
+            await asyncio.gather(flusher, return_exceptions=True)
+            flusher = None
+        buffer = ""
         try:
             await _finish(job_id, worker_id, cancelled=True)
         except Exception:

@@ -18,6 +18,7 @@ from webmonitor.schemas.api import (
     DraftView,
     JobDetail,
     JobView,
+    MessagePage,
     Page,
     PostMessageRequest,
 )
@@ -71,6 +72,13 @@ async def snapshot(conversation_id: UUID, response: Response, session: DatabaseS
     result = await conversations.snapshot(session, user, conversation_id)
     _no_store(response)
     return result
+
+
+@router.get("/conversations/{conversation_id}/messages", response_model=MessagePage)
+async def list_messages(conversation_id: UUID, cursor: UUID, session: DatabaseSession,
+                        user: AuthenticatedUser, limit: int = Query(50, ge=1, le=100)):
+    return await conversations.list_messages(session, user, conversation_id,
+                                             cursor=cursor, limit=limit)
 
 
 @router.post("/conversations/{conversation_id}/messages", response_model=JobView, status_code=202)

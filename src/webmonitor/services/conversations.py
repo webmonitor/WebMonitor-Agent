@@ -1,7 +1,7 @@
 """Conversation reads and the two commands: post a message, approve a draft."""
 from uuid import UUID
 
-from sqlalchemy import func, select
+from sqlalchemy import func, or_, select
 from sqlalchemy.dialects.postgresql import distinct_on
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -15,6 +15,7 @@ from webmonitor.schemas.api import (
     DraftView,
     JobView,
     Limits,
+    MessagePage,
     MessageView,
     Page,
     PostMessageRequest,
@@ -24,6 +25,7 @@ from webmonitor.services import jobs
 
 ACTIVE = ("queued", "running")
 AGENT_HISTORY = 20
+SNAPSHOT_MESSAGES = 50
 
 
 async def require_conversation(session: AsyncSession, user: CurrentUser, conversation_id: UUID,
@@ -66,6 +68,12 @@ def conversation_view(conversation: Conversation) -> ConversationView:
         created_at=conversation.created_at, updated_at=conversation.updated_at)
 
 
+def message_view(message: Message) -> MessageView:
+    return MessageView(id=message.id, role=message.role, content=message.content,
+        job_id=message.job_id, client_message_id=message.client_message_id,
+        created_at=message.created_at)
+
+
 def job_view(job: Job) -> JobView:
     return JobView(id=job.id, kind=job.kind, status=job.status,
         conversation_id=job.conversation_id, draft_id=job.draft_id, monitor_id=job.monitor_id,
@@ -103,8 +111,12 @@ def draft_view(draft: Draft, user: CurrentUser) -> DraftView:
 async def snapshot(session: AsyncSession, user: CurrentUser,
                    conversation_id: UUID) -> ConversationSnapshot:
     conversation = await require_conversation(session, user, conversation_id)
-    messages = (await session.scalars(select(Message).where(
-        Message.conversation_id == conversation.id).order_by(Message.created_at, Message.id))).all()
+    latest = (await session.scalars(select(Message).where(
+        Message.conversation_id == conversation.id)
+        .order_by(Message.created_at.desc(), Message.id.desc())
+        .limit(SNAPSHOT_MESSAGES + 1))).all()
+    has_more_messages = len(latest) > SNAPSHOT_MESSAGES
+    messages = list(reversed(latest[:SNAPSHOT_MESSAGES]))
     runs = (await session.scalars(select(Job).where(Job.conversation_id == conversation.id,
         Job.kind == "agent").order_by(Job.created_at.desc(), Job.id.desc())
         .limit(AGENT_HISTORY))).all()
@@ -118,13 +130,32 @@ async def snapshot(session: AsyncSession, user: CurrentUser,
     settings = get_settings()
     return ConversationSnapshot(
         conversation=conversation_view(conversation),
-        messages=[MessageView(id=row.id, role=row.role, content=row.content, job_id=row.job_id,
-                              client_message_id=row.client_message_id, created_at=row.created_at)
-                  for row in messages],
+        messages=[message_view(row) for row in messages],
+        has_more_messages=has_more_messages,
         jobs=[job_view(row) for row in visible_jobs],
         drafts=[draft_view(row, user) for row in drafts],
         limits=Limits(message_max_chars=settings.message_max_chars,
                       preview_ttl_minutes=settings.preview_ttl_minutes))
+
+
+async def list_messages(session: AsyncSession, user: CurrentUser, conversation_id: UUID, *,
+                        cursor: UUID, limit: int) -> MessagePage:
+    """Read one older page without shifting when newer messages arrive."""
+    conversation = await require_conversation(session, user, conversation_id)
+    marker = await session.get(Message, cursor)
+    if marker is None or marker.conversation_id != conversation.id:
+        raise DomainError("not_found", 404)
+    rows = (await session.scalars(select(Message).where(
+        Message.conversation_id == conversation.id,
+        or_(Message.created_at < marker.created_at,
+            (Message.created_at == marker.created_at) & (Message.id < marker.id)))
+        .order_by(Message.created_at.desc(), Message.id.desc()).limit(limit + 1))).all()
+    has_more = len(rows) > limit
+    items = list(reversed(rows[:limit]))
+    total = await session.scalar(select(func.count()).select_from(Message).where(
+        Message.conversation_id == conversation.id))
+    return MessagePage(items=[message_view(row) for row in items],
+        next_cursor=items[0].id if has_more and items else None, total=total or 0)
 
 
 async def post_message(session: AsyncSession, user: CurrentUser, conversation_id: UUID, *,

@@ -60,16 +60,25 @@ def _pick(references: list[dict], index: int) -> dict:
 @router.get("/snapshots/{snapshot_id}/evidence/{index}")
 async def snapshot_evidence(snapshot_id: UUID, index: int, session: DatabaseSession,
                             user: AuthenticatedUser):
-    snapshot = await session.get(Snapshot, snapshot_id)
-    if snapshot is None:
-        raise DomainError("not_found", 404)
-    require_owner(user, await session.get(Monitor, snapshot.monitor_id))
-    return await _response(_pick(list(snapshot.evidence_refs or []), index))
+    try:
+        snapshot = await session.get(Snapshot, snapshot_id)
+        if snapshot is None:
+            raise DomainError("not_found", 404)
+        require_owner(user, await session.get(Monitor, snapshot.monitor_id))
+        # The streaming body must not retain ORM objects or the request connection.
+        reference = dict(_pick(list(snapshot.evidence_refs or []), index))
+    finally:
+        await session.close()
+    return await _response(reference)
 
 
 @router.get("/drafts/{draft_id}/evidence/{index}")
 async def draft_evidence(draft_id: UUID, index: int, session: DatabaseSession,
                          user: AuthenticatedUser):
-    draft = await drafts.require_draft(session, user, draft_id)
-    references = list((draft.extraction_preview or {}).get("evidence_refs") or [])
-    return await _response(_pick(references, index))
+    try:
+        draft = await drafts.require_draft(session, user, draft_id)
+        references = list((draft.extraction_preview or {}).get("evidence_refs") or [])
+        reference = dict(_pick(references, index))
+    finally:
+        await session.close()
+    return await _response(reference)

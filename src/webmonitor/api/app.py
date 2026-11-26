@@ -26,6 +26,7 @@ from webmonitor.api.routes import (
 from webmonitor.config import get_settings
 from webmonitor.db import database_ready, get_engine, initialize_database
 from webmonitor.errors import DomainError, domain_error_handler
+from webmonitor.services import jobs as job_service
 from webmonitor.security.csrf import CSRFMiddleware
 from webmonitor.security.limits import MaxBodyMiddleware, RequestTooLarge
 
@@ -36,6 +37,7 @@ logger = logging.getLogger(__name__)
 async def lifespan(app: FastAPI):
     from agents import set_tracing_disabled
     set_tracing_disabled(True)
+    job_service.reset_worker_shutdown()
     await initialize_database()
     task = None
     if get_settings().workers_enabled:
@@ -56,6 +58,7 @@ async def lifespan(app: FastAPI):
         try:
             yield
         finally:
+            job_service.begin_worker_shutdown()
             if task is not None:
                 task.cancel()
                 try:

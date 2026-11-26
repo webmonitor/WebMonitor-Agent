@@ -220,7 +220,8 @@ export interface paths {
             path?: never;
             cookie?: never;
         };
-        get?: never;
+        /** List Messages */
+        get: operations["list_messages_api_v1_conversations__conversation_id__messages_get"];
         put?: never;
         /** Post Message */
         post: operations["post_message_api_v1_conversations__conversation_id__messages_post"];
@@ -1222,6 +1223,8 @@ export interface components {
             conversation: components["schemas"]["ConversationView"];
             /** Messages */
             messages: components["schemas"]["MessageView"][];
+            /** Has More Messages */
+            has_more_messages: boolean;
             /** Jobs */
             jobs: components["schemas"]["JobView"][];
             /** Drafts */
@@ -2146,6 +2149,15 @@ export interface components {
              * @default true
              */
             active: boolean;
+        };
+        /** MessagePage */
+        MessagePage: {
+            /** Items */
+            items: components["schemas"]["MessageView"][];
+            /** Next Cursor */
+            next_cursor: string | null;
+            /** Total */
+            total: number;
         };
         /** MessageView */
         MessageView: {
@@ -3532,6 +3544,40 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["ConversationSnapshot"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    list_messages_api_v1_conversations__conversation_id__messages_get: {
+        parameters: {
+            query: {
+                cursor: string;
+                limit?: number;
+            };
+            header?: never;
+            path: {
+                conversation_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["MessagePage"];
                 };
             };
             /** @description Validation Error */

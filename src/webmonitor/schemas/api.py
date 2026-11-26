@@ -255,6 +255,12 @@ class MessageView(BaseModel):
     created_at: datetime
 
 
+class MessagePage(BaseModel):
+    items: list[MessageView]
+    next_cursor: UUID | None
+    total: int
+
+
 class JobStep(BaseModel):
     name: str
     status: str
@@ -409,6 +415,7 @@ class Limits(BaseModel):
 class ConversationSnapshot(BaseModel):
     conversation: ConversationView
     messages: list[MessageView]
+    has_more_messages: bool
     jobs: list[JobView]
     drafts: list[DraftView]
     limits: Limits

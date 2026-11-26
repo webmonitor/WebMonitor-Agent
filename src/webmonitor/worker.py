@@ -175,12 +175,21 @@ async def _collect(job_id: UUID, worker_id: str) -> None:
         # Committed: the rows now reference these objects.
         uploaded = []
     except asyncio.CancelledError:
-        await _discard_evidence(uploaded)
+        discard_uploaded = False
         async with _session() as session, session.begin():
             live = await _locked(session, job_id)
+            # A committed snapshot owns its objects even if cancellation was
+            # delivered as the transaction returned. Only uncommitted uploads
+            # are orphans; shutdown and lease loss are recoverable interruptions.
+            discard_uploaded = live is not None and live.status not in jobs.TERMINAL
             if _owned(live, worker_id, terminal=True):
-                await jobs.finish(session, live, "cancelled",
-                                  error_code="collection_cancelled")
+                if live.cancel_requested_at is not None:
+                    await jobs.finish(session, live, "cancelled",
+                                      error_code="collection_cancelled")
+                else:
+                    await jobs.requeue(session, live, error_code="worker_interrupted", delay=0)
+        if discard_uploaded:
+            await _discard_evidence(uploaded)
         raise
     except Exception as exc:
         await _discard_evidence(uploaded)
