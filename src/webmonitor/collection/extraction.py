@@ -9,7 +9,13 @@ from zoneinfo import ZoneInfo
 from bs4 import BeautifulSoup, Tag
 
 from webmonitor.errors import DomainError
-from webmonitor.schemas.monitors import FieldSpec, MonitorSpec, Normalization
+from webmonitor.schemas.monitors import (
+    MAX_LIST_ITEMS,
+    FieldSpec,
+    MonitorSpec,
+    Normalization,
+    canonical_json,
+)
 from webmonitor.security.egress import validate_url
 
 # Shared symbols are interpreted only through the explicit currency contract.
@@ -22,10 +28,71 @@ _CURRENCY_SYMBOLS = {
     'A$': frozenset(('AUD',)), 'C$': frozenset(('CAD',)),
 }
 MISSING = object()
+# Response limits alone do not bound the objects produced by normalization.
+# These are serialized UTF-8 budgets, so non-ASCII text cannot evade them.
+MAX_NORMALIZED_FIELD_BYTES = 1024 * 1024
+MAX_NORMALIZED_RESULT_BYTES = 2 * 1024 * 1024
 
 
 def invalid(field: str, reason: str) -> None:
     raise DomainError('collection_invalid', 422, details={'field': field, 'reason': reason})
+
+
+def check_raw_list_size(field: FieldSpec, path: str, size: int) -> None:
+    """Reject oversized source rows before touching any item normalization."""
+    if size > MAX_LIST_ITEMS:
+        raise DomainError('collection_limit', 422, details={
+            'limit': 'raw_list_items', 'field': path, 'max_items': MAX_LIST_ITEMS})
+    if field.max_items is not None and size > field.max_items:
+        invalid(path, 'max_items')
+
+
+def normalized_utf8_bytes(value: Any) -> int:
+    return len(canonical_json(value).encode('utf-8'))
+
+
+def _check_normalized_field_bytes(path: str, size: int) -> None:
+    if size > MAX_NORMALIZED_FIELD_BYTES:
+        raise DomainError('collection_limit', 422, details={
+            'limit': 'normalized_field_bytes', 'field': path,
+            'max_bytes': MAX_NORMALIZED_FIELD_BYTES})
+
+
+def check_normalized_field(path: str, value: Any) -> int:
+    size = normalized_utf8_bytes(value)
+    _check_normalized_field_bytes(path, size)
+    return size
+
+
+def _accumulate_list_row(path: str, size: int, count: int, row: dict) -> int:
+    # Brackets plus canonical rows and commas equal the final list's JSON size.
+    size += normalized_utf8_bytes(row) + (1 if count else 0)
+    _check_normalized_field_bytes(path, size)
+    return size
+
+
+class NormalizedResultBudget:
+    """Account for the exact canonical result size as top-level fields arrive."""
+
+    def __init__(self) -> None:
+        self._size = 2  # Empty JSON object braces.
+        self._count = 0
+
+    def add(self, name: str, value: Any) -> None:
+        value_size = check_normalized_field(name, value)
+        entry_size = normalized_utf8_bytes(name) + 1 + value_size + (1 if self._count else 0)
+        if self._size + entry_size > MAX_NORMALIZED_RESULT_BYTES:
+            raise DomainError('collection_limit', 422, details={
+                'limit': 'normalized_result_bytes', 'field': name,
+                'max_bytes': MAX_NORMALIZED_RESULT_BYTES})
+        self._size += entry_size
+        self._count += 1
+
+
+def validate_normalized_result(fields: dict) -> None:
+    budget = NormalizedResultBudget()
+    for name, value in fields.items():
+        budget.add(name, value)
 
 
 def normalize_text(value: str, normal: Normalization) -> str:
@@ -180,13 +247,16 @@ def _extract(root: BeautifulSoup | Tag, field: FieldSpec, final_url: str, path: 
     # A row's own attributes/text are selectable without escaping its scope.
     matches = [root] if field.selector == ':scope' and isinstance(root, Tag) and not isinstance(root, BeautifulSoup) else root.select(field.selector)
     if field.type == 'list':
+        check_raw_list_size(field, path, len(matches))
         rows = []
+        normalized_size = 2
         for index, row in enumerate(matches):
             values = {}
             for item in field.item_fields:
                 value = _extract(row, item, final_url, f'{path}[{index}].{item.name}')
                 if value is not MISSING:
                     values[item.name] = value
+            normalized_size = _accumulate_list_row(path, normalized_size, index, values)
             rows.append(values)
         return rows
     if len(matches) > 1:
@@ -208,7 +278,9 @@ def _extract(root: BeautifulSoup | Tag, field: FieldSpec, final_url: str, path: 
             return MISSING
         if isinstance(value, list):
             value = ' '.join(value)
-    return _scalar(value, field, final_url, path)
+    normalized = _scalar(value, field, final_url, path)
+    check_normalized_field(path, normalized)
+    return normalized
 
 
 def extract_fields(html: str, spec: MonitorSpec, final_url: str) -> dict:
@@ -216,8 +288,10 @@ def extract_fields(html: str, spec: MonitorSpec, final_url: str) -> dict:
 
     root = BeautifulSoup(html, 'lxml')
     fields = {}
+    budget = NormalizedResultBudget()
     for field in spec.fields:
         value = _extract(root, field, final_url, field.name)
         if value is not MISSING:
+            budget.add(field.name, value)
             fields[field.name] = value
     return fields

@@ -136,8 +136,8 @@ const fieldShape = {
   required: z.boolean().default(true),
   allow_empty: z.boolean().default(false),
   normalize: normalizationSchema.default({ trim: true, collapse_whitespace: false, true_values: [], false_values: [] }),
-  min_items: z.number().int().nonnegative().nullish(),
-  max_items: z.number().int().nonnegative().nullish(),
+  min_items: z.number().int().nonnegative().max(10000).nullish(),
+  max_items: z.number().int().nonnegative().max(10000).nullish(),
 };
 
 const itemFieldSchema = z.strictObject({
@@ -148,7 +148,7 @@ const itemFieldSchema = z.strictObject({
 const fieldSchema = z.strictObject({
   ...fieldShape,
   // The backend rejects nested lists, so one level covers every valid spec.
-  item_fields: z.array(itemFieldSchema).nullish(),
+  item_fields: z.array(itemFieldSchema).max(32).nullish(),
 });
 
 const browserStepSchema = z.discriminatedUnion("type", [
@@ -231,21 +231,21 @@ export const monitorSpecSchema = z.strictObject({
   name: z.string().min(1).max(200),
   url: z.string().min(1).max(4096),
   collection_mode: z.enum(["http", "browser"]),
-  fields: z.array(fieldSchema).min(1),
+  fields: z.array(fieldSchema).min(1).max(64),
   business_key: z.strictObject({
     field: z.string(),
     item_fields: z.array(z.string()).min(1),
   }).nullish(),
   change_rules: z.strictObject({
     mode: z.enum(["all", "any"]),
-    rules: z.array(ruleSchema).min(1),
+    rules: z.array(ruleSchema).min(1).max(32),
     consecutive_hits: z.number().int().min(1).max(10).default(1),
   }),
   coverage: z.strictObject({
     scope: z.enum(["full", "bounded"]),
     description: z.string().min(1).max(2000),
   }),
-  browser_steps: z.array(browserStepSchema).default([]),
+  browser_steps: z.array(browserStepSchema).max(20).default([]),
   source: sourceSchema.nullish(),
 });
 

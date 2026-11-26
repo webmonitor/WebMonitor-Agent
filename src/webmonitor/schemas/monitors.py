@@ -144,6 +144,9 @@ class Normalization(Contract):
         return self
 
 
+MAX_LIST_ITEMS = 10_000
+
+
 class FieldSpec(Contract):
     name: str = Field(pattern=r'^[A-Za-z][A-Za-z0-9_]{0,63}$')
     type: Literal['text', 'number', 'money', 'date', 'boolean', 'url', 'list']
@@ -154,9 +157,9 @@ class FieldSpec(Contract):
     required: StrictBool = True
     allow_empty: StrictBool = False
     normalize: Normalization = Field(default_factory=Normalization)
-    item_fields: list['FieldSpec'] | None = None
-    min_items: int | None = Field(default=None, ge=0, strict=True)
-    max_items: int | None = Field(default=None, ge=0, strict=True)
+    item_fields: list['FieldSpec'] | None = Field(default=None, max_length=32)
+    min_items: int | None = Field(default=None, ge=0, le=MAX_LIST_ITEMS, strict=True)
+    max_items: int | None = Field(default=None, ge=0, le=MAX_LIST_ITEMS, strict=True)
 
     @field_validator('attribute', mode='before')
     @classmethod
@@ -330,7 +333,7 @@ ChangeRule = Annotated[TextChanged | ValueChanged | RegexMatch | KeywordPresent 
 
 class ChangeRules(Contract):
     mode: Literal['all', 'any']
-    rules: list[ChangeRule] = Field(min_length=1)
+    rules: list[ChangeRule] = Field(min_length=1, max_length=32)
     consecutive_hits: int = Field(default=1, ge=1, le=10, strict=True)
 
 
@@ -523,11 +526,11 @@ class MonitorSpec(Contract):
     name: str = Field(min_length=1, max_length=200)
     url: str = Field(min_length=1, max_length=4096)
     collection_mode: Literal['http', 'browser']
-    fields: list[FieldSpec] = Field(min_length=1)
+    fields: list[FieldSpec] = Field(min_length=1, max_length=64)
     business_key: BusinessKey | None = None
     change_rules: ChangeRules
     coverage: Coverage
-    browser_steps: list[BrowserStep] = Field(default_factory=list)
+    browser_steps: list[BrowserStep] = Field(default_factory=list, max_length=20)
     source: ApiSource | None = None
 
     @field_validator('url')

@@ -4,15 +4,27 @@ Persistent predicates transition on the aggregate; change predicates are new
 per-snapshot evidence and must never be suppressed by a previous true state.
 """
 from decimal import Decimal
+from time import monotonic
 from typing import Any
 
 import regex
 
+from webmonitor.errors import DomainError
 from webmonitor.schemas.monitors import MonitorSpec, canonical_json, content_hash
 
 PERSISTENT = frozenset(('threshold', 'keyword_present', 'keyword_absent', 'regex_match'))
 REGEX_TIMEOUT_SECONDS = 0.05
+RULE_EVALUATION_TIMEOUT_SECONDS = 0.25
 _MISSING = object()
+
+
+def _check_rule_deadline(deadline: float) -> None:
+    if monotonic() >= deadline:
+        # Never return predicates or confirmation state from a partial evaluation.
+        raise DomainError('rule_timeout', 503, details={
+            'reason': 'total_timeout',
+            'timeout_ms': int(RULE_EVALUATION_TIMEOUT_SECONDS * 1000),
+        })
 
 
 def _number(value: Any, currency: str | None) -> Decimal:
@@ -71,6 +83,7 @@ def evaluate_rules(spec: MonitorSpec, previous: dict | None, current: dict, prev
     ``differences`` includes every currently matching rule when an event fires;
     list entries include only this snapshot's added/removed/updated rows.
     """
+    deadline = monotonic() + RULE_EVALUATION_TIMEOUT_SECONDS
     fields = {field.name: field for field in spec.fields}
     predicates: list[bool] = []
     persistent_predicates: list[bool] = []
@@ -79,6 +92,7 @@ def evaluate_rules(spec: MonitorSpec, previous: dict | None, current: dict, prev
     change_evidence = False
     persistent_state: dict[str, bool] = {}
     for index, rule in enumerate(spec.change_rules.rules):
+        _check_rule_deadline(deadline)
         before = previous.get(rule.field, _MISSING) if previous is not None else _MISSING
         after = current.get(rule.field, _MISSING)
         field = fields[rule.field]
@@ -88,10 +102,23 @@ def evaluate_rules(spec: MonitorSpec, previous: dict | None, current: dict, prev
         if rule.type == 'regex_match':
             if after is not _MISSING:
                 try:
-                    matched = regex.compile(rule.pattern).search(
-                        _regex_text(after, field), timeout=REGEX_TIMEOUT_SECONDS) is not None
+                    compiled = regex.compile(rule.pattern)
+                    text = _regex_text(after, field)
+                    _check_rule_deadline(deadline)
+                    remaining = deadline - monotonic()
+                    if remaining <= 0:
+                        _check_rule_deadline(deadline)
+                    timeout = min(REGEX_TIMEOUT_SECONDS, remaining)
+                    matched = compiled.search(text, timeout=timeout) is not None
                     detail['pattern'] = rule.pattern
                 except TimeoutError:
+                    if timeout < REGEX_TIMEOUT_SECONDS or monotonic() >= deadline:
+                        _check_rule_deadline(deadline)
+                        # A timer may fire just before the wall-clock deadline.
+                        raise DomainError('rule_timeout', 503, details={
+                            'reason': 'total_timeout',
+                            'timeout_ms': int(RULE_EVALUATION_TIMEOUT_SECONDS * 1000),
+                        }) from None
                     warnings.append({'code': 'rule_timeout', 'rule_index': index,
                                      'field': rule.field, 'reason': 'regex_timeout'})
         elif rule.type in ('keyword_present', 'keyword_absent'):
@@ -156,6 +183,7 @@ def evaluate_rules(spec: MonitorSpec, previous: dict | None, current: dict, prev
             matches.append({'rule_index': index, 'type': rule.type, 'field': rule.field,
                             'before': None if before is _MISSING or listed else before,
                             'after': None if after is _MISSING or listed else after, **detail})
+        _check_rule_deadline(deadline)
     aggregate = all(predicates) if spec.change_rules.mode == 'all' else any(predicates)
     if persistent_predicates:
         persistent_aggregate = (all(persistent_predicates)
@@ -201,9 +229,12 @@ def evaluate_rules(spec: MonitorSpec, previous: dict | None, current: dict, prev
         event_type = 'list_changed' if 'list' in matched_fields else 'content_changed'
     # Round-trip through canonical serialization avoids Decimal/UUID leaking to JSONB.
     import json
-    return json.loads(canonical_json({
+    _check_rule_deadline(deadline)
+    result = json.loads(canonical_json({
         'triggered': triggered, 'event_type': event_type,
         'differences': matches if triggered else [],
         'rule_state': rule_state,
         'warnings': warnings,
     }))
+    _check_rule_deadline(deadline)
+    return result

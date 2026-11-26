@@ -6,7 +6,15 @@ cleans them again. Only dot keys and numeric indices are addressable.
 import re
 from typing import Any
 
-from webmonitor.collection.extraction import MISSING, invalid, normalize_json_scalar
+from webmonitor.collection.extraction import (
+    MISSING,
+    NormalizedResultBudget,
+    _accumulate_list_row,
+    check_normalized_field,
+    check_raw_list_size,
+    invalid,
+    normalize_json_scalar,
+)
 from webmonitor.schemas.monitors import FieldSpec, MonitorSpec
 
 _SEGMENT = re.compile(r'[A-Za-z0-9_$-]+|\[(\d+)\]')
@@ -43,11 +51,13 @@ def _row(row: dict, field: FieldSpec, final_url: str, path: str) -> dict:
             continue
         value = normalize_json_scalar(raw, item, final_url, item_path)
         if value is not MISSING:
+            check_normalized_field(item_path, value)
             values[item.name] = value
     return values
 
 
-def extract_json_field(body: Any, field: FieldSpec, final_url: str, path: str):
+def extract_json_field(body: Any, field: FieldSpec, final_url: str, path: str, *,
+                       row_limit: int | None = None, prior_rows: int = 0):
     try:
         value = resolve_path(body, field.path)
     except (KeyError, IndexError, TypeError):
@@ -64,23 +74,38 @@ def extract_json_field(body: Any, field: FieldSpec, final_url: str, path: str):
             invalid(path, 'invalid_null')
         return MISSING
     if field.type != 'list':
-        return normalize_json_scalar(value, field, final_url, path)
+        normalized = normalize_json_scalar(value, field, final_url, path)
+        if normalized is not MISSING:
+            check_normalized_field(path, normalized)
+        return normalized
     if not isinstance(value, list):
         invalid(path, 'invalid_list')
+    if prior_rows < 0:
+        raise ValueError('prior_rows must be non-negative')
+    check_raw_list_size(field, path, prior_rows + len(value))
+    if row_limit is not None and row_limit < 0:
+        raise ValueError('row_limit must be non-negative')
     rows = []
+    normalized_size = 2
     for index, row in enumerate(value):
+        if row_limit is not None and index >= row_limit:
+            break
         if not isinstance(row, dict):
             invalid(path, 'invalid_row')
-        rows.append(_row(row, field, final_url, f'{path}[{index}]'))
+        normalized = _row(row, field, final_url, f'{path}[{index}]')
+        normalized_size = _accumulate_list_row(path, normalized_size, index, normalized)
+        rows.append(normalized)
     return rows
 
 
 def extract_json_fields(body: Any, spec: MonitorSpec, final_url: str | None = None) -> dict:
     base = final_url or spec.url
     fields = {}
+    budget = NormalizedResultBudget()
     for field in spec.fields:
         value = extract_json_field(body, field, base, field.name)
         if value is not MISSING:
+            budget.add(field.name, value)
             fields[field.name] = value
     return fields
 

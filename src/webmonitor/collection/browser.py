@@ -1,7 +1,6 @@
 """Bounded fresh-context Chromium collection, without a sandbox fallback."""
 import asyncio
 import base64
-import json
 from contextlib import asynccontextmanager, suppress
 from dataclasses import dataclass
 from time import monotonic
@@ -10,7 +9,7 @@ from playwright.async_api import Error as PlaywrightError
 from playwright.async_api import Page, async_playwright
 from playwright.async_api import TimeoutError as PlaywrightTimeoutError
 
-from webmonitor.collection.extraction import extract_fields
+from webmonitor.collection.extraction import extract_fields, validate_normalized_result
 from webmonitor.collection.host_limit import host_slot
 from webmonitor.collection.network import network_candidate
 from webmonitor.collection.types import (
@@ -313,17 +312,17 @@ async def collect_browser(url: str, spec: MonitorSpec | None = None, *,
                                     skipped['large'] += 1
                                     return
                                 try:
-                                    json.loads(body)
+                                    candidate = await asyncio.to_thread(
+                                        network_candidate, method=request.method, url=request.url,
+                                        status=response.status, content_type=declared,
+                                        headers=dict(request.headers),
+                                        request_body=request.post_data, body=body)
                                 except ValueError:
                                     return
                                 if len(candidates) >= MAX_CANDIDATES:
                                     skipped['limit'] += 1
                                     return
-                                candidates.append(network_candidate(
-                                    method=request.method, url=request.url,
-                                    status=response.status, content_type=declared,
-                                    headers=dict(request.headers),
-                                    request_body=request.post_data, body=body))
+                                candidates.append(candidate)
 
                             def on_response(response):
                                 task = asyncio.create_task(record(response))
@@ -400,7 +399,7 @@ async def collect_browser(url: str, spec: MonitorSpec | None = None, *,
                                         await _settle(page)
                         await capture()
                         html, final_url = snapshots[-1]
-                        analysis, warnings = analyze_html(html)
+                        analysis, warnings = await asyncio.to_thread(analyze_html, html)
                         structure = await page.evaluate("""() => ({shadow: Array.from(document.querySelectorAll('*')).some(e => e.shadowRoot),
                             frames: document.querySelectorAll('iframe').length})""")
                         if structure['shadow'] and 'shadow_dom_not_extracted' not in warnings:
@@ -409,7 +408,8 @@ async def collect_browser(url: str, spec: MonitorSpec | None = None, *,
                             warnings.append('iframe_content_not_extracted')
                         if paginated and 'pagination_coverage_unproven' not in warnings:
                             warnings.append('pagination_coverage_unproven')
-                        coverage = collection_coverage(spec, warnings, paginated=paginated, html=html)
+                        coverage = await asyncio.to_thread(
+                            collection_coverage, spec, warnings, paginated=paginated, html=html)
                         # Playwright's screenshot waits for document.fonts.ready;
                         # blocked web fonts can keep that promise pending forever.
                         shot = await cdp.send('Page.captureScreenshot', {
@@ -427,7 +427,8 @@ async def collect_browser(url: str, spec: MonitorSpec | None = None, *,
                                                   int((monotonic() - started) * 1000), warnings, analysis)
                         if spec:
                             for document, document_url in snapshots:
-                                extracted = extract_fields(document, spec, final_url=document_url)
+                                extracted = await asyncio.to_thread(
+                                    extract_fields, document, spec, final_url=document_url)
                                 for field in spec.fields:
                                     if field.name not in extracted:
                                         continue
@@ -450,7 +451,9 @@ async def collect_browser(url: str, spec: MonitorSpec | None = None, *,
                                             existing.extend(extracted[field.name])
                                     else:
                                         result.fields[field.name] = extracted[field.name]
-                            validate_collection(spec, result.fields, coverage=coverage)
+                                await asyncio.to_thread(validate_normalized_result, result.fields)
+                            await asyncio.to_thread(
+                                validate_collection, spec, result.fields, coverage=coverage)
                         return result
                     finally:
                         if context:

@@ -44,16 +44,18 @@ async def collect_http(url: str, spec: MonitorSpec | None = None, *,
                                   details={'status_code': fetched.status})
             if content_type_base(fetched.headers) not in {'text/html', 'application/xhtml+xml'}:
                 raise DomainError('unsupported_content_type', 422)
-            html = decode_text(fetched.body, fetched.headers)
-            analysis, warnings = analyze_html(html)
+            html = await asyncio.to_thread(decode_text, fetched.body, fetched.headers)
+            analysis, warnings = await asyncio.to_thread(analyze_html, html)
             analysis['collection_mode'] = 'http'
-            coverage = collection_coverage(spec, warnings, html=html)
+            coverage = await asyncio.to_thread(collection_coverage, spec, warnings, html=html)
             result = CollectionResult(fetched.final_url, html, None, {}, coverage,
                                       int((monotonic() - started) * 1000), warnings, analysis,
                                       body_kind='html', validator=validator_from_headers(fetched.headers))
             if spec:
-                result.fields = extract_fields(html, spec, final_url=fetched.final_url)
-                validate_collection(spec, result.fields, coverage=coverage)
+                result.fields = await asyncio.to_thread(
+                    extract_fields, html, spec, final_url=fetched.final_url)
+                await asyncio.to_thread(
+                    validate_collection, spec, result.fields, coverage=coverage)
             return result
     except TimeoutError:
         raise DomainError('collection_timeout', 503) from None

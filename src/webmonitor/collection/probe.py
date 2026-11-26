@@ -48,6 +48,18 @@ def _json_payload(body: bytes) -> tuple[dict | None, str | None]:
     return json_summary(parsed), json.dumps(parsed, ensure_ascii=False)[:JSON_SAMPLE]
 
 
+def _html_payload(text: str) -> dict:
+    soup = BeautifulSoup(text, 'lxml')
+    return {
+        'title': soup.title.get_text(strip=True) if soup.title else None,
+        'text_sample': soup.get_text(' ', strip=True)[:TEXT_SAMPLE],
+        'comments': [str(node).strip()[:500] for node in soup.find_all(
+            string=lambda value: isinstance(value, Comment))[:5]],
+        'scripts': [str(node.get('src', 'inline'))[:1000]
+                    for node in soup.find_all('script', limit=20)],
+    }
+
+
 async def probe(url: str, *, transport: httpx.AsyncBaseTransport | None = None) -> dict:
     """One bounded fetch; the result is already bounded and safe to hand to a model."""
     try:
@@ -61,7 +73,7 @@ async def _probe(url: str, *, transport: httpx.AsyncBaseTransport | None) -> dic
     fetched = await fetch_bounded(url, accept=PROBE_ACCEPT, max_bytes=MAX_HTML_BYTES,
                                   transport=transport)
     media_type = content_type_base(fetched.headers)
-    text = decode_text(fetched.body, fetched.headers)
+    text = await asyncio.to_thread(decode_text, fetched.body, fetched.headers)
     report = {
         'url': url,
         'final_url': fetched.final_url,
@@ -77,15 +89,10 @@ async def _probe(url: str, *, transport: httpx.AsyncBaseTransport | None) -> dic
         'json_sample': None,
     }
     if _json_media(media_type):
-        report['json_summary'], report['json_sample'] = _json_payload(fetched.body)
+        report['json_summary'], report['json_sample'] = await asyncio.to_thread(
+            _json_payload, fetched.body)
         return report
-    soup = BeautifulSoup(text, 'lxml')
-    report['title'] = soup.title.get_text(strip=True) if soup.title else None
-    report['text_sample'] = soup.get_text(' ', strip=True)[:TEXT_SAMPLE]
-    report['comments'] = [str(node).strip()[:500] for node in soup.find_all(
-        string=lambda value: isinstance(value, Comment))[:5]]
-    report['scripts'] = [str(node.get('src', 'inline'))[:1000]
-                         for node in soup.find_all('script', limit=20)]
+    report.update(await asyncio.to_thread(_html_payload, text))
     return report
 
 
@@ -122,7 +129,9 @@ async def _replay(request: ApiRequest, *,
         'text_sample': None,
     }
     if _json_media(media_type):
-        report['json_summary'], report['json_sample'] = _json_payload(fetched.body)
+        report['json_summary'], report['json_sample'] = await asyncio.to_thread(
+            _json_payload, fetched.body)
     else:
-        report['text_sample'] = decode_text(fetched.body, fetched.headers)[:TEXT_SAMPLE]
+        text = await asyncio.to_thread(decode_text, fetched.body, fetched.headers)
+        report['text_sample'] = text[:TEXT_SAMPLE]
     return report

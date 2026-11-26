@@ -120,6 +120,46 @@ test("monitor spec rejects missing required sections and empty min-one collectio
   }).success, false);
 });
 
+test("monitor spec enforces collection resource ceilings at the client boundary", () => {
+  const fields = Array.from({ length: 64 }, (_, index) => ({
+    name: `field_${index}`,
+    type: "text",
+    semantic: `Field ${index}`,
+    selector: "h1",
+  }));
+  const rules = Array.from({ length: 32 }, () => ({ type: "text_changed", field: "field_0" }));
+  assert.equal(monitorSpecSchema.safeParse({ ...validSpec, fields, change_rules: { mode: "any", rules } }).success, true);
+  assert.equal(monitorSpecSchema.safeParse({
+    ...validSpec,
+    fields: [...fields, { name: "overflow", type: "text", semantic: "Overflow", selector: "h1" }],
+  }).success, false);
+  assert.equal(monitorSpecSchema.safeParse({
+    ...validSpec,
+    fields: [fields[0]],
+    change_rules: { mode: "any", rules: [...rules, rules[0]] },
+  }).success, false);
+  assert.equal(monitorSpecSchema.safeParse({
+    ...validSpec,
+    collection_mode: "browser",
+    browser_steps: Array.from({ length: 21 }, () => ({ type: "scroll", max_steps: 1 })),
+  }).success, false);
+  assert.equal(monitorSpecSchema.safeParse({
+    ...validSpec,
+    fields: [{
+      name: "items",
+      type: "list",
+      semantic: "Items",
+      selector: ".item",
+      item_fields: Array.from({ length: 33 }, (_, index) => ({
+        name: `item_${index}`,
+        type: "text",
+        semantic: `Item ${index}`,
+        selector: "span",
+      })),
+    }],
+  }).success, false);
+});
+
 test("delivery settings preserve timing fields and old JSON defaults", () => {
   const legacy = deliverySettingsSchema.safeParse({ notification_group_ids: [] });
   assert.equal(legacy.success, true);

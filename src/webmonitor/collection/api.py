@@ -12,7 +12,11 @@ from urllib.parse import parse_qsl, quote, urlencode, urlsplit, urlunsplit
 
 import httpx
 
-from webmonitor.collection.extraction import MISSING
+from webmonitor.collection.extraction import (
+    MISSING,
+    NormalizedResultBudget,
+    check_normalized_field,
+)
 from webmonitor.collection.fetch import (
     FetchResult,
     conditional_headers,
@@ -78,7 +82,8 @@ async def _send(request: ApiRequest, url: str, *,
         raise DomainError('unsupported_content_type', 422,
                           details={'content_type': media_type})
     try:
-        return fetched, json.loads(fetched.body)
+        # Parsing a bounded response can still monopolize the event loop.
+        return fetched, await asyncio.to_thread(json.loads, fetched.body)
     except ValueError:
         raise DomainError('api_schema_invalid', 422, details={'reason': 'invalid_json'}) from None
 
@@ -172,6 +177,7 @@ async def _paginate(request: ApiRequest, step: dict, pagination: Pagination,
     list_field = next(field for field in spec.fields if field.type == 'list')
     assertions: list[dict] = []
     fields = {}
+    budget = NormalizedResultBudget()
     items: list = []
     total = None
     if pagination.kind == 'page':
@@ -189,22 +195,29 @@ async def _paginate(request: ApiRequest, step: dict, pagination: Pagination,
         pages += 1
         request_url, page_request = _page_request(request, step['url'], pagination, token)
         fetched, body = await _send(page_request, request_url, transport=transport)
-        current_assertions = _assertions(spec.source, body)
+        current_assertions = await asyncio.to_thread(_assertions, spec.source, body)
         if first is None:
             assertions = current_assertions
             first = fetched
             for field in spec.fields:
                 if field.type == 'list':
                     continue
-                value = extract_json_field(body, field, fetched.final_url, field.name)
+                value = await asyncio.to_thread(
+                    extract_json_field, body, field, fetched.final_url, field.name)
                 if value is not MISSING:
+                    budget.add(field.name, value)
                     fields[field.name] = value
             if pagination.stop == 'total_reached':
                 total = _total(body, pagination)
         last = fetched
-        rows = extract_json_field(body, list_field, fetched.final_url, list_field.name)
+        # One extra row proves truncation without normalizing the rest of a page.
+        remaining = pagination.max_items - len(items)
+        rows = await asyncio.to_thread(
+            extract_json_field, body, list_field, fetched.final_url, list_field.name,
+            row_limit=remaining + 1, prior_rows=len(items))
         rows = [] if rows is MISSING else rows
         items.extend(rows)
+        check_normalized_field(list_field.name, items)
         if pages == 1 and not items and not list_field.allow_empty:
             raise DomainError('api_empty_result', 422, details={'field': list_field.name})
         if total is not None:
@@ -244,6 +257,7 @@ async def _paginate(request: ApiRequest, step: dict, pagination: Pagination,
                 raise DomainError('api_schema_invalid', 422,
                                   details={'reason': 'cursor_not_progressing'})
             token = next_cursor
+    budget.add(list_field.name, items)
     fields[list_field.name] = items
     return fields, pages, truncated, converged, first, last, assertions
 
@@ -281,8 +295,9 @@ async def collect_api(url: str, spec: MonitorSpec, *,
                 last = page_one
                 steps.append({'id': final_step.id, 'method': final_step.request.method,
                               'url': request_url, 'status': page_one.status, 'pages': 1})
-                assertions = _assertions(source, last_body)
-                fields = extract_json_fields(last_body, spec, page_one.final_url)
+                assertions = await asyncio.to_thread(_assertions, source, last_body)
+                fields = await asyncio.to_thread(
+                    extract_json_fields, last_body, spec, page_one.final_url)
                 for field in spec.fields:
                     if (field.type == 'list' and not fields.get(field.name)
                             and not field.allow_empty):
@@ -311,13 +326,12 @@ async def collect_api(url: str, spec: MonitorSpec, *,
                 'source': {'kind': 'json', 'steps': steps, 'assertions': assertions,
                            'pages': pages},
             }
-            result = CollectionResult(last.final_url,
-                                      decode_text(page_one.body, page_one.headers),
-                                      None, fields, coverage,
+            evidence = await asyncio.to_thread(decode_text, page_one.body, page_one.headers)
+            result = CollectionResult(last.final_url, evidence, None, fields, coverage,
                                       int((monotonic() - started) * 1000), warnings, analysis,
                                       body_kind='json')
             result.validator = validator_from_headers(last.headers) if len(source.steps) == 1 and source.pagination is None else {}
-            validate_collection(spec, fields, coverage=coverage)
+            await asyncio.to_thread(validate_collection, spec, fields, coverage=coverage)
             return result
     except TimeoutError:
         raise DomainError('collection_timeout', 503) from None

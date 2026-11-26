@@ -3,7 +3,7 @@ import re
 from datetime import datetime
 from decimal import Decimal, InvalidOperation
 
-from webmonitor.collection.extraction import invalid
+from webmonitor.collection.extraction import invalid, validate_normalized_result
 from webmonitor.schemas.monitors import Coverage, FieldSpec, MonitorSpec, canonical_json
 from webmonitor.security.egress import validate_url
 
@@ -98,6 +98,7 @@ def validate_collection(spec: MonitorSpec, fields: dict, previous: dict | None =
         invalid('', 'invalid_fields')
     if set(fields) - {field.name for field in spec.fields}:
         invalid('', 'unknown_field')
+    validate_normalized_result(fields)
     actual = spec.coverage if coverage is None else coverage
     if isinstance(actual, dict):
         try:
